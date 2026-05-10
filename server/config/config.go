@@ -16,13 +16,14 @@ const defaultFile = "config.yaml"
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
-	Agent    AgentSettings    `yaml:"agent"`
-	Logging  LoggingSettings  `yaml:"logging"`
-	Tasks    TasksSettings    `yaml:"tasks"`
-	Storage  StorageSettings  `yaml:"storage"`
-	Server   ServerSettings   `yaml:"server"`
-	Security SecuritySettings `yaml:"security"`
-	Notifier NotifierSettings `yaml:"notifier"`
+	Agent     AgentSettings     `yaml:"agent"`
+	Logging   LoggingSettings   `yaml:"logging"`
+	Tasks     TasksSettings     `yaml:"tasks"`
+	Storage   StorageSettings   `yaml:"storage"`
+	Server    ServerSettings    `yaml:"server"`
+	Security  SecuritySettings  `yaml:"security"`
+	Notifier  NotifierSettings  `yaml:"notifier"`
+	DailyTasks DailyTasksSettings `yaml:"daily_tasks"`
 }
 
 // AgentSettings controls Claude API behaviour.
@@ -60,6 +61,19 @@ type ServerSettings struct {
 type SecuritySettings struct {
 	Scheme string `yaml:"scheme"`
 	Token  string `yaml:"token"`
+}
+
+// DailyTasksSettings controls the background maintenance loop.
+type DailyTasksSettings struct {
+	// WakeTime is the local wall-clock time (HH:MM) at which the loop fires
+	// each day. Defaults to "00:00" (midnight) when unset.
+	WakeTime   string            `yaml:"wake_time"`
+	PatchCheck PatchCheckSettings `yaml:"patch_check"`
+}
+
+// PatchCheckSettings controls the scheduled patch-availability check.
+type PatchCheckSettings struct {
+	Enabled bool `yaml:"enabled"`
 }
 
 // NotifierSettings groups all event-sink configuration.
@@ -107,6 +121,9 @@ func Load() (*Settings, error) {
 	}
 	if s.Security.Scheme == "" {
 		s.Security.Scheme = "none"
+	}
+	if s.DailyTasks.WakeTime == "" {
+		s.DailyTasks.WakeTime = "00:00"
 	}
 
 	return &s, nil

@@ -26,6 +26,13 @@ security:
   scheme: bearer
   token: change-me
 
+# daily_tasks controls the background maintenance loop.
+# The loop goroutine always starts; individual tasks are gated by their own enabled flag.
+daily_tasks:
+  wake_time: "00:00"     # local wall-clock time (HH:MM) to run all enabled tasks (default: midnight)
+  patch_check:
+    enabled: true        # check for OS updates and notify when found
+
 # Notifier sends event messages to configured sinks before and after patching.
 notifier:
   email:

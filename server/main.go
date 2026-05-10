@@ -19,6 +19,7 @@ import (
 	"agent_patches/server/executor"
 	"agent_patches/server/logger"
 	"agent_patches/server/notifier"
+	"agent_patches/server/scheduler"
 	"agent_patches/server/storage"
 	"agent_patches/server/tasks"
 )
@@ -40,6 +41,7 @@ func main() {
 
 	store := storage.NewStore(cfg.Storage.TasksFile)
 	notify := notifier.New(&cfg.Notifier)
+	sched := scheduler.New(&cfg.DailyTasks, notify)
 
 	registry := tasks.NewRegistry()
 
@@ -91,6 +93,8 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+
+	sched.Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)
