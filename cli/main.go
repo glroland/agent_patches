@@ -4,19 +4,17 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"log/slog"
 	"os"
 	"strings"
 
 	"agent_patches/cli/client"
-	"agent_patches/endpoint-server/logger"
 )
 
 func main() {
 	server  := flag.String("server", "http://localhost:8080", "A2A server URL")
 	token   := flag.String("token", "", "Bearer token for authentication")
 	info    := flag.Bool("info", false, "Print the agent card and exit")
-	verbose := flag.Bool("v", false, "Enable debug logging")
+	verbose := flag.Bool("v", false, "Print progress messages")
 
 	flag.Usage = func() {
 		fmt.Fprintln(os.Stderr, "Usage: patches-cli [flags] <message>")
@@ -32,17 +30,15 @@ func main() {
 
 	flag.Parse()
 
-	level := "info"
-	if *verbose {
-		level = "debug"
-	}
-	logger.Setup(level)
-
 	ctx := context.Background()
+
+	if *verbose {
+		fmt.Fprintf(os.Stderr, "Connecting to %s...\n", *server)
+	}
 
 	c, err := client.New(ctx, *server, *token)
 	if err != nil {
-		slog.Error("failed to connect to server", "server", *server, "error", err)
+		fmt.Fprintf(os.Stderr, "Error: could not connect to %s: %v\n", *server, err)
 		os.Exit(1)
 	}
 
@@ -58,11 +54,14 @@ func main() {
 	}
 
 	input := strings.Join(args, " ")
-	slog.Debug("sending task", "server", *server, "input_len", len(input))
+
+	if *verbose {
+		fmt.Fprintf(os.Stderr, "Sending task (%d chars)...\n", len(input))
+	}
 
 	result, err := c.SendTask(ctx, input)
 	if err != nil {
-		slog.Error("task failed", "error", err)
+		fmt.Fprintf(os.Stderr, "Error: task failed: %v\n", err)
 		os.Exit(1)
 	}
 
