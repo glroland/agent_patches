@@ -10,7 +10,7 @@ Group=agent_patches
 
 # Working directory is where tasks.jsonl is written (storage.tasks_file default)
 WorkingDirectory=/opt/agent_patches
-ExecStart=/opt/agent_patches/bin/patches-server
+ExecStart=/opt/agent_patches/bin/patches-endpoint-server
 Environment=AGENT_PATCHES_CONFIG=/opt/agent_patches/config/config.yaml
 
 Restart=on-failure

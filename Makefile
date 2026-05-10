@@ -1,4 +1,4 @@
-BINARY     := patches-server
+BINARY     := patches-endpoint-server
 CLI_BINARY := patches-cli
 SRC_DIR    := ./endpoint-server
 CLI_DIR    := ./cli
@@ -15,7 +15,7 @@ install:
 ## build: compile both the server and CLI binaries into target/
 build: build-server build-cli
 
-## build-server: compile the patches-server binary
+## build-server: compile the patches-endpoint-server binary
 build-server:
 	mkdir -p $(TARGET_DIR)
 	$(GO) build -o $(TARGET_DIR)/$(BINARY) $(SRC_DIR)

@@ -19,7 +19,7 @@
   vars:
     install_root: /opt/agent_patches
     service_user: agent_patches
-    binary_src: "{{ playbook_dir }}/../target/patches-server"
+    binary_src: "{{ playbook_dir }}/../target/patches-endpoint-server"
     config_src: "{{ playbook_dir }}/../../../home-utils/admin/agent_patches/endpoint-server-config.yaml"
     # nologin path differs between Debian (/usr/sbin) and Fedora (/sbin)
     nologin_shell: "{{ '/usr/sbin/nologin' if ansible_os_family == 'Debian' else '/sbin/nologin' }}"
@@ -61,7 +61,7 @@
     - name: Deploy server binary
       ansible.builtin.copy:
         src: "{{ binary_src }}"
-        dest: "{{ install_root }}/bin/patches-server"
+        dest: "{{ install_root }}/bin/patches-endpoint-server"
         owner: "{{ service_user }}"
         group: "{{ service_user }}"
         mode: "0755"
