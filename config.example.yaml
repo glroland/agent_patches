@@ -25,3 +25,17 @@ server:
 security:
   scheme: bearer
   token: change-me
+
+# Notifier sends event messages to configured sinks before and after patching.
+notifier:
+  email:
+    enabled: false
+    host: smtp.example.com
+    port: 587
+    username: alerts@example.com
+    password: change-me
+    from: alerts@example.com
+    to:
+      - admin@example.com
+    # tls_mode: "starttls" (default, port 587) | "tls" (implicit TLS, port 465) | "none" (local relay)
+    tls_mode: starttls

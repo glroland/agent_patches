@@ -18,6 +18,7 @@ import (
 	"agent_patches/server/config"
 	"agent_patches/server/executor"
 	"agent_patches/server/logger"
+	"agent_patches/server/notifier"
 	"agent_patches/server/storage"
 	"agent_patches/server/tasks"
 )
@@ -38,6 +39,7 @@ func main() {
 	)
 
 	store := storage.NewStore(cfg.Storage.TasksFile)
+	notify := notifier.New(&cfg.Notifier)
 
 	registry := tasks.NewRegistry()
 
@@ -48,7 +50,7 @@ func main() {
 	}
 	registry.Register(helloTool)
 
-	patchTool, err := tasks.NewPatchTool()
+	patchTool, err := tasks.NewPatchTool(notify)
 	if err != nil {
 		slog.Error("failed to create patch tool", "error", err)
 		return

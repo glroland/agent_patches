@@ -314,10 +314,158 @@ func TestPatcher_OS_ReturnsInjectedType(t *testing.T) {
 	}
 }
 
+// ---- UpdatesAvailable — Debian ----------------------------------------------
+
+func TestUpdatesAvailable_Debian_None(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"apt-get": {output: "Reading package lists...\n0 upgraded, 0 newly installed, 0 to remove and 0 not upgraded.\n"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDebian, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if available {
+		t.Error("expected available=false when summary shows 0 upgraded")
+	}
+	if cmdr.callCount("apt-get") != 2 {
+		t.Errorf("apt-get called %d times, want 2 (update + dry-run)", cmdr.callCount("apt-get"))
+	}
+}
+
+func TestUpdatesAvailable_Debian_HasUpdates(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"apt-get": {output: "The following packages will be upgraded:\n  curl\n5 upgraded, 0 newly installed, 0 to remove and 1 not upgraded.\n"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDebian, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if !available {
+		t.Error("expected available=true when summary shows 5 upgraded")
+	}
+}
+
+func TestUpdatesAvailable_Debian_UpdateFails(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"apt-get": {output: "E: Could not get lock", exitCode: 100},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDebian, cmdr)
+	_, _, err := p.UpdatesAvailable(context.Background())
+	if err == nil {
+		t.Fatal("UpdatesAvailable() expected error when apt-get update fails")
+	}
+}
+
+// ---- UpdatesAvailable — Fedora ----------------------------------------------
+
+func TestUpdatesAvailable_Fedora_None(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"dnf": {output: "Last metadata expiration check: ..."},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSFedora, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if available {
+		t.Error("expected available=false when dnf exits 0")
+	}
+}
+
+func TestUpdatesAvailable_Fedora_HasUpdates(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"dnf": {output: "curl   x86_64   8.0-1.fc40   updates   200 k\n", exitCode: 100},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSFedora, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if !available {
+		t.Error("expected available=true when dnf exits 100")
+	}
+}
+
+func TestUpdatesAvailable_Fedora_FallsBackToYum(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"dnf": {output: "dnf: command not found", exitCode: 127},
+			"yum": {output: "curl   x86_64   8.0-1.el9   updates   200 k\n", exitCode: 100},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSFedora, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if !available {
+		t.Error("expected available=true when yum exits 100")
+	}
+	if !cmdr.called("yum") {
+		t.Error("expected yum to be called as dnf fallback")
+	}
+}
+
+// ---- UpdatesAvailable — Windows ---------------------------------------------
+
+func TestUpdatesAvailable_Windows_None(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"powershell.exe": {output: "0 update(s) available"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSWindows, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if available {
+		t.Error("expected available=false when count is 0")
+	}
+}
+
+func TestUpdatesAvailable_Windows_HasUpdates(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"powershell.exe": {output: "3 update(s) available"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSWindows, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if !available {
+		t.Error("expected available=true when count is non-zero")
+	}
+}
+
+// ---- UpdatesAvailable — unsupported OS --------------------------------------
+
+func TestUpdatesAvailable_UnknownOS_ReturnsError(t *testing.T) {
+	p := patching.NewWithCommander(patching.OSUnknown, &mockCmdr{})
+	_, _, err := p.UpdatesAvailable(context.Background())
+	if err == nil {
+		t.Fatal("UpdatesAvailable() expected error for unsupported OS")
+	}
+}
+
 // ---- NewPatchTool -----------------------------------------------------------
 
 func TestNewPatchTool_NameAndDescription(t *testing.T) {
-	tool, err := tasks.NewPatchTool()
+	tool, err := tasks.NewPatchTool(nil)
 	if err != nil {
 		t.Fatalf("NewPatchTool() error: %v", err)
 	}

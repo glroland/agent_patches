@@ -22,6 +22,7 @@ type Settings struct {
 	Storage  StorageSettings  `yaml:"storage"`
 	Server   ServerSettings   `yaml:"server"`
 	Security SecuritySettings `yaml:"security"`
+	Notifier NotifierSettings `yaml:"notifier"`
 }
 
 // AgentSettings controls Claude API behaviour.
@@ -59,6 +60,27 @@ type ServerSettings struct {
 type SecuritySettings struct {
 	Scheme string `yaml:"scheme"`
 	Token  string `yaml:"token"`
+}
+
+// NotifierSettings groups all event-sink configuration.
+type NotifierSettings struct {
+	Email EmailNotifierSettings `yaml:"email"`
+}
+
+// EmailNotifierSettings configures the SMTP email sink.
+// TLSMode controls transport security:
+//   - "starttls" (default) — plain TCP upgraded via STARTTLS; typical port 587
+//   - "tls"                — implicit TLS from the start; typical port 465
+//   - "none"               — no encryption; only suitable for local relay servers
+type EmailNotifierSettings struct {
+	Enabled  bool     `yaml:"enabled"`
+	Host     string   `yaml:"host"`
+	Port     int      `yaml:"port"`
+	Username string   `yaml:"username"`
+	Password string   `yaml:"password"`
+	From     string   `yaml:"from"`
+	To       []string `yaml:"to"`
+	TLSMode  string   `yaml:"tls_mode"`
 }
 
 // Load reads and parses the YAML config file. The file path is taken from the

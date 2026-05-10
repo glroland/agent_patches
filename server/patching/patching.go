@@ -86,7 +86,7 @@ func (p *Patcher) Run(ctx context.Context) (string, error) {
 
 	out, err := p.applyUpdates(ctx)
 	logf("=== Package Update ===")
-	logf(strings.TrimRight(out, "\n"))
+	logf("%s", strings.TrimRight(out, "\n"))
 	logf("")
 	if err != nil {
 		return sb.String(), fmt.Errorf("update failed: %w", err)
@@ -110,12 +110,87 @@ func (p *Patcher) Run(ctx context.Context) (string, error) {
 	slog.Info("patching: reboot required — rebooting now")
 
 	if out, err := p.reboot(ctx); err != nil {
-		logf(out)
+		logf("%s", out)
 		return sb.String(), fmt.Errorf("reboot failed: %w", err)
 	}
 
 	logf("Reboot command issued successfully.")
 	return sb.String(), nil
+}
+
+// UpdatesAvailable checks whether the package manager reports pending updates
+// without applying them. It returns true when at least one update is pending,
+// along with a human-readable summary of what was found.
+func (p *Patcher) UpdatesAvailable(ctx context.Context) (bool, string, error) {
+	switch p.os {
+	case OSDebian:
+		return p.checkDebianUpdates(ctx)
+	case OSFedora:
+		return p.checkFedoraUpdates(ctx)
+	case OSWindows:
+		return p.checkWindowsUpdates(ctx)
+	default:
+		return false, "", fmt.Errorf("unsupported OS: %s", p.os)
+	}
+}
+
+// checkDebianUpdates refreshes package lists then dry-runs the upgrade to
+// count pending packages. The summary line "0 upgraded, 0 newly installed,
+// 0 to remove" signals nothing to do.
+func (p *Patcher) checkDebianUpdates(ctx context.Context) (bool, string, error) {
+	if _, err := p.commander.Run(ctx, "apt-get", "update", "-q"); err != nil {
+		return false, "", fmt.Errorf("apt-get update: %w", err)
+	}
+	out, err := p.commander.Run(ctx, "apt-get", "upgrade", "--dry-run")
+	if err != nil {
+		return false, out, fmt.Errorf("apt-get upgrade --dry-run: %w", err)
+	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), "0 upgraded, 0 newly installed, 0 to remove") {
+			return false, out, nil
+		}
+	}
+	return true, out, nil
+}
+
+// checkFedoraUpdates uses dnf check-update, which exits 100 when updates are
+// available and 0 when none. Falls back to yum if dnf is not installed.
+func (p *Patcher) checkFedoraUpdates(ctx context.Context) (bool, string, error) {
+	out, err := p.commander.Run(ctx, "dnf", "check-update")
+	if err == nil {
+		return false, out, nil // exit 0 = nothing to update
+	}
+	var ec *ExitCodeError
+	if errors.As(err, &ec) && ec.ExitCode() == 100 {
+		return true, out, nil // exit 100 = updates are available
+	}
+	slog.Warn("patching: dnf check-update failed, trying yum", "error", err)
+
+	out2, err2 := p.commander.Run(ctx, "yum", "check-update")
+	if err2 == nil {
+		return false, out2, nil
+	}
+	if errors.As(err2, &ec) && ec.ExitCode() == 100 {
+		return true, out2, nil
+	}
+	return false, out + out2, fmt.Errorf("dnf check-update: %w; yum check-update: %v", err, err2)
+}
+
+// checkWindowsUpdates runs a PowerShell search without downloading or
+// installing anything, then checks whether the result count is non-zero.
+func (p *Patcher) checkWindowsUpdates(ctx context.Context) (bool, string, error) {
+	script := strings.Join([]string{
+		`$ErrorActionPreference = 'Stop'`,
+		`$session  = New-Object -ComObject Microsoft.Update.Session`,
+		`$searcher = $session.CreateUpdateSearcher()`,
+		`$results  = $searcher.Search("IsInstalled=0 and Type='Software'")`,
+		`Write-Output "$($results.Updates.Count) update(s) available"`,
+	}, "; ")
+	out, err := p.commander.Run(ctx, "powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", script)
+	if err != nil {
+		return false, out, fmt.Errorf("windows update check: %w", err)
+	}
+	return !strings.Contains(out, "0 update(s) available"), out, nil
 }
 
 // applyUpdates dispatches to the OS-specific update method.
