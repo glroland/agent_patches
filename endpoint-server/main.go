@@ -14,15 +14,15 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
-	"agent_patches/server/agent"
-	"agent_patches/server/config"
-	"agent_patches/server/executor"
-	"agent_patches/server/logger"
-	"agent_patches/server/loginmon"
-	"agent_patches/server/notifier"
-	"agent_patches/server/scheduler"
-	"agent_patches/server/storage"
-	"agent_patches/server/tasks"
+	"agent_patches/endpoint-server/agent"
+	"agent_patches/endpoint-server/config"
+	"agent_patches/endpoint-server/executor"
+	"agent_patches/endpoint-server/logger"
+	"agent_patches/endpoint-server/loginmon"
+	"agent_patches/endpoint-server/notifier"
+	"agent_patches/endpoint-server/scheduler"
+	"agent_patches/endpoint-server/storage"
+	"agent_patches/endpoint-server/tasks"
 )
 
 func main() {

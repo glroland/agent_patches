@@ -1,6 +1,6 @@
 BINARY     := patches-server
 CLI_BINARY := patches-cli
-SRC_DIR    := ./server
+SRC_DIR    := ./endpoint-server
 CLI_DIR    := ./cli
 TARGET_DIR := target
 GO         := go

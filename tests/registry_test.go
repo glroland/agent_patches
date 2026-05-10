@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"agent_patches/server/tasks"
+	"agent_patches/endpoint-server/tasks"
 )
 
 func TestRegistry_EmptyByDefault(t *testing.T) {

@@ -9,7 +9,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
-	"agent_patches/server/executor"
+	"agent_patches/endpoint-server/executor"
 )
 
 // mockRunner is a test double for executor.Runner.

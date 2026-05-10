@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"agent_patches/cli/client"
-	"agent_patches/server/logger"
+	"agent_patches/endpoint-server/logger"
 )
 
 func main() {

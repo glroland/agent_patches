@@ -9,7 +9,7 @@ import (
 	"net/smtp"
 	"strings"
 
-	"agent_patches/server/config"
+	"agent_patches/endpoint-server/config"
 )
 
 // Sink sends a notification to an external service.

@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"agent_patches/server/tasks"
+	"agent_patches/endpoint-server/tasks"
 )
 
 func TestNewHelloTool_NoError(t *testing.T) {

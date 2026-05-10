@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"agent_patches/server/config"
-	"agent_patches/server/notifier"
-	"agent_patches/server/patching"
+	"agent_patches/endpoint-server/config"
+	"agent_patches/endpoint-server/notifier"
+	"agent_patches/endpoint-server/patching"
 )
 
 // stubChecker is a test double for updateChecker.

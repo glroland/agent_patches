@@ -10,8 +10,8 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"agent_patches/server/config"
-	"agent_patches/server/notifier"
+	"agent_patches/endpoint-server/config"
+	"agent_patches/endpoint-server/notifier"
 )
 
 const (

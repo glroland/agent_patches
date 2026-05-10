@@ -1,6 +1,6 @@
 package tasks
 
-import "agent_patches/server/tool"
+import "agent_patches/endpoint-server/tool"
 
 // Registry holds all registered task tools available to the agent.
 type Registry struct {

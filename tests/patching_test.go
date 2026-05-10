@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/server/patching"
-	"agent_patches/server/tasks"
+	"agent_patches/endpoint-server/patching"
+	"agent_patches/endpoint-server/tasks"
 )
 
 // ---- mock Commander ---------------------------------------------------------

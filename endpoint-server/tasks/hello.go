@@ -3,7 +3,7 @@ package tasks
 import (
 	"context"
 
-	"agent_patches/server/tool"
+	"agent_patches/endpoint-server/tool"
 )
 
 type helloInput struct{}
