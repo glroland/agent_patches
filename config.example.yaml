@@ -1,0 +1,27 @@
+agent:
+  model: claude-opus-4-7
+  max_tokens: 4096
+  max_iterations: 10
+  system_prompt: |
+    You are agent_patches, an AI agent that handles server administration tasks.
+    Use the available tools to carry out the user's request. Be concise and direct.
+
+logging:
+  level: info
+
+tasks:
+  enabled:
+    - hello
+
+storage:
+  tasks_file: tasks.jsonl
+
+server:
+  host: 0.0.0.0
+  port: 8080
+
+# security.scheme: "none" | "bearer"
+# When scheme is "bearer", callers must supply: Authorization: Bearer <token>
+security:
+  scheme: bearer
+  token: change-me
