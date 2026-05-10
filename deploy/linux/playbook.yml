@@ -3,10 +3,10 @@
 # Run as root: ansible-playbook -i <inventory> deploy/playbook.yml
 #
 # The server binary must be built locally before running this playbook:
-#   make build
+#   make release
 #
 # To redeploy after a binary update:
-#   make build && ansible-playbook -i <inventory> deploy/playbook.yml
+#   make release && ansible-playbook -i <inventory> deploy/playbook.yml
 #
 # Config is deployed from config.example.yaml on first run only (force: false).
 # Edit /opt/agent_patches/config/config.yaml on the target host after deployment,
@@ -19,7 +19,7 @@
   vars:
     install_root: /opt/agent_patches
     service_user: agent_patches
-    binary_src: "{{ playbook_dir }}/../target/patches-endpoint-server"
+    binary_src: "{{ playbook_dir }}/../target/linux-x86_64/patches-endpoint-server"
     config_src: "{{ playbook_dir }}/../../../home-utils/admin/agent_patches/endpoint-server-config.yaml"
     # nologin path differs between Debian (/usr/sbin) and Fedora (/sbin)
     nologin_shell: "{{ '/usr/sbin/nologin' if ansible_os_family == 'Debian' else '/sbin/nologin' }}"
