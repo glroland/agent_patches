@@ -6,9 +6,21 @@ TARGET_DIR := target
 GO         := go
 
 # Release subdirectories per platform
-LINUX_DIR   := $(TARGET_DIR)/linux-x86_64
-MAC_DIR     := $(TARGET_DIR)/darwin-x86_64
-WINDOWS_DIR := $(TARGET_DIR)/windows-x86_64
+LINUX_AMD64_DIR   := $(TARGET_DIR)/linux-x86_64
+LINUX_ARM64_DIR   := $(TARGET_DIR)/linux-arm64
+MAC_AMD64_DIR     := $(TARGET_DIR)/darwin-x86_64
+MAC_ARM64_DIR     := $(TARGET_DIR)/darwin-arm64
+WINDOWS_AMD64_DIR := $(TARGET_DIR)/windows-x86_64
+
+# Detect the current platform to locate the right release binary for `make run`.
+# uname -s: Linux | Darwin   uname -m: x86_64 | arm64 | ...
+UNAME_OS   := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+UNAME_ARCH := $(shell uname -m)
+PLATFORM_DIR := $(TARGET_DIR)/$(UNAME_OS)-$(UNAME_ARCH)
+
+# Config file used by `make run`. Defaults to config.yaml in the project root.
+# Override with: make run CONFIG=/path/to/config.yaml
+CONFIG ?= $(CURDIR)/config.yaml
 
 .PHONY: install build build-server build-cli release release-server release-cli \
         test run run-cli clean fmt lint vet help
@@ -31,30 +43,34 @@ build-cli:
 	mkdir -p $(TARGET_DIR)
 	$(GO) build -o $(TARGET_DIR)/$(CLI_BINARY) $(CLI_DIR)
 
-## release: cross-compile both binaries for linux-x86_64, darwin-x86_64, and windows-x86_64
+## release: cross-compile both binaries for all target platforms
 release: release-server release-cli
 
 ## release-server: cross-compile patches-endpoint-server for all target platforms
 release-server:
-	mkdir -p $(LINUX_DIR) $(MAC_DIR) $(WINDOWS_DIR)
-	GOOS=linux   GOARCH=amd64 $(GO) build -o $(LINUX_DIR)/$(BINARY)          $(SRC_DIR)
-	GOOS=darwin  GOARCH=amd64 $(GO) build -o $(MAC_DIR)/$(BINARY)            $(SRC_DIR)
-	GOOS=windows GOARCH=amd64 $(GO) build -o $(WINDOWS_DIR)/$(BINARY).exe    $(SRC_DIR)
+	mkdir -p $(LINUX_AMD64_DIR) $(LINUX_ARM64_DIR) $(MAC_AMD64_DIR) $(MAC_ARM64_DIR) $(WINDOWS_AMD64_DIR)
+	GOOS=linux   GOARCH=amd64 $(GO) build -o $(LINUX_AMD64_DIR)/$(BINARY)          $(SRC_DIR)
+	GOOS=linux   GOARCH=arm64 $(GO) build -o $(LINUX_ARM64_DIR)/$(BINARY)          $(SRC_DIR)
+	GOOS=darwin  GOARCH=amd64 $(GO) build -o $(MAC_AMD64_DIR)/$(BINARY)            $(SRC_DIR)
+	GOOS=darwin  GOARCH=arm64 $(GO) build -o $(MAC_ARM64_DIR)/$(BINARY)            $(SRC_DIR)
+	GOOS=windows GOARCH=amd64 $(GO) build -o $(WINDOWS_AMD64_DIR)/$(BINARY).exe    $(SRC_DIR)
 
 ## release-cli: cross-compile patches-cli for all target platforms
 release-cli:
-	mkdir -p $(LINUX_DIR) $(MAC_DIR) $(WINDOWS_DIR)
-	GOOS=linux   GOARCH=amd64 $(GO) build -o $(LINUX_DIR)/$(CLI_BINARY)       $(CLI_DIR)
-	GOOS=darwin  GOARCH=amd64 $(GO) build -o $(MAC_DIR)/$(CLI_BINARY)         $(CLI_DIR)
-	GOOS=windows GOARCH=amd64 $(GO) build -o $(WINDOWS_DIR)/$(CLI_BINARY).exe $(CLI_DIR)
+	mkdir -p $(LINUX_AMD64_DIR) $(LINUX_ARM64_DIR) $(MAC_AMD64_DIR) $(MAC_ARM64_DIR) $(WINDOWS_AMD64_DIR)
+	GOOS=linux   GOARCH=amd64 $(GO) build -o $(LINUX_AMD64_DIR)/$(CLI_BINARY)       $(CLI_DIR)
+	GOOS=linux   GOARCH=arm64 $(GO) build -o $(LINUX_ARM64_DIR)/$(CLI_BINARY)       $(CLI_DIR)
+	GOOS=darwin  GOARCH=amd64 $(GO) build -o $(MAC_AMD64_DIR)/$(CLI_BINARY)         $(CLI_DIR)
+	GOOS=darwin  GOARCH=arm64 $(GO) build -o $(MAC_ARM64_DIR)/$(CLI_BINARY)         $(CLI_DIR)
+	GOOS=windows GOARCH=amd64 $(GO) build -o $(WINDOWS_AMD64_DIR)/$(CLI_BINARY).exe $(CLI_DIR)
 
 ## test: run all unit tests
 test:
 	$(GO) test ./tests/... -v
 
-## run: build and start the server (pass ARGS="..." to supply arguments)
-run: build-server
-	./$(TARGET_DIR)/$(BINARY) $(ARGS)
+## run: build for the current platform and start the server using config.yaml from the project root
+run: release-server
+	AGENT_PATCHES_CONFIG=$(CONFIG) ./$(PLATFORM_DIR)/$(BINARY) $(ARGS)
 
 ## run-cli: build and run the CLI client (pass ARGS="<message>" to send a task)
 run-cli: build-cli
