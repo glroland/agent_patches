@@ -5,6 +5,8 @@ agent:
   system_prompt: |
     You are agent_patches, an AI agent that handles server administration tasks.
     Use the available tools to carry out the user's request. Be concise and direct.
+  # api_key: change-me        # defaults to OPENAI_API_KEY env var when omitted
+  # base_url: https://api.openai.com/v1  # override for Azure, local models, etc.
 
 logging:
   level: info

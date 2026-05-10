@@ -27,12 +27,14 @@ type Settings struct {
 	LoginMonitor LoginMonitorSettings `yaml:"login_monitor"`
 }
 
-// AgentSettings controls Claude API behaviour.
+// AgentSettings controls OpenAI API behaviour.
 type AgentSettings struct {
 	Model        string `yaml:"model"`
 	MaxTokens    int    `yaml:"max_tokens"`
 	SystemPrompt string `yaml:"system_prompt"`
 	MaxIter      int    `yaml:"max_iterations"`
+	APIKey       string `yaml:"api_key"`
+	BaseURL      string `yaml:"base_url"`
 }
 
 // LoggingSettings controls log verbosity.

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/openai/openai-go"
+	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 
 	"agent_patches/server/config"
@@ -27,8 +28,15 @@ func New(tools []tool.Tool, cfg *config.Settings) *Agent {
 		"max_iterations", cfg.Agent.MaxIter,
 		"tools", len(tools),
 	)
+	opts := []option.RequestOption{}
+	if cfg.Agent.APIKey != "" {
+		opts = append(opts, option.WithAPIKey(cfg.Agent.APIKey))
+	}
+	if cfg.Agent.BaseURL != "" {
+		opts = append(opts, option.WithBaseURL(cfg.Agent.BaseURL))
+	}
 	return &Agent{
-		client: openai.NewClient(),
+		client: openai.NewClient(opts...),
 		tools:  tools,
 		cfg:    cfg,
 	}
