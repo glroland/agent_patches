@@ -5,6 +5,7 @@ go 1.25.0
 require (
 	github.com/a2aproject/a2a-go/v2 v2.2.1
 	github.com/anthropics/anthropic-sdk-go v1.41.0
+	github.com/godbus/dbus/v5 v5.2.2
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -22,4 +23,5 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	golang.org/x/mod v0.33.0 // indirect
 	golang.org/x/sync v0.19.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 )

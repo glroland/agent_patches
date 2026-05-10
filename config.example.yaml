@@ -26,6 +26,11 @@ security:
   scheme: bearer
   token: change-me
 
+# login_monitor listens for interactive user logins via systemd-logind (D-Bus).
+# Requires the server to run on a Linux host with systemd.
+login_monitor:
+  enabled: true
+
 # daily_tasks controls the background maintenance loop.
 # The loop goroutine always starts; individual tasks are gated by their own enabled flag.
 daily_tasks:
