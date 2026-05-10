@@ -18,6 +18,7 @@ import (
 	"agent_patches/server/config"
 	"agent_patches/server/executor"
 	"agent_patches/server/logger"
+	"agent_patches/server/loginmon"
 	"agent_patches/server/notifier"
 	"agent_patches/server/scheduler"
 	"agent_patches/server/storage"
@@ -95,6 +96,7 @@ func main() {
 	defer stop()
 
 	sched.Start(ctx)
+	loginmon.New(&cfg.LoginMonitor, notify).Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)
