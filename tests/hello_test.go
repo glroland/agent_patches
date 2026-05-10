@@ -44,19 +44,11 @@ func TestHelloTool_Execute_ReturnsWorld(t *testing.T) {
 	}
 
 	input, _ := json.Marshal(struct{}{})
-	blocks, err := tool.Execute(context.Background(), input)
+	result, err := tool.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Execute() unexpected error: %v", err)
 	}
-	if len(blocks) == 0 {
-		t.Fatal("Execute() returned no content blocks")
-	}
-
-	block := blocks[0]
-	if block.OfText == nil {
-		t.Fatal("Execute() result block has no text")
-	}
-	if got := block.OfText.Text; got != "world" {
-		t.Errorf("Execute() text = %q, want %q", got, "world")
+	if result != "world" {
+		t.Errorf("Execute() result = %q, want %q", result, "world")
 	}
 }

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
+	"agent_patches/server/tool"
 )
 
 // TaskRecord captures a single tool execution persisted to the tasks file.
@@ -85,60 +85,54 @@ func (s *Store) All() ([]TaskRecord, error) {
 	return records, scanner.Err()
 }
 
-// storedTool wraps a BetaTool, recording every execution in a Store.
+// storedTool wraps a Tool, recording every execution in a Store.
 type storedTool struct {
-	inner anthropic.BetaTool
+	inner tool.Tool
 	store *Store
 }
 
-// WrapTool returns a BetaTool that delegates to tool and records each call in
-// store. Storage failures are logged but never abort task execution.
-func WrapTool(tool anthropic.BetaTool, store *Store) anthropic.BetaTool {
-	return &storedTool{inner: tool, store: store}
+// WrapTool returns a Tool that delegates to t and records each call in store.
+// Storage failures are logged but never abort task execution.
+func WrapTool(t tool.Tool, store *Store) tool.Tool {
+	return &storedTool{inner: t, store: store}
 }
 
 // WrapAll wraps every tool in tools with store and returns the new slice.
-func WrapAll(tools []anthropic.BetaTool, store *Store) []anthropic.BetaTool {
-	wrapped := make([]anthropic.BetaTool, len(tools))
+func WrapAll(tools []tool.Tool, store *Store) []tool.Tool {
+	wrapped := make([]tool.Tool, len(tools))
 	for i, t := range tools {
 		wrapped[i] = WrapTool(t, store)
 	}
 	return wrapped
 }
 
-func (t *storedTool) Name() string        { return t.inner.Name() }
-func (t *storedTool) Description() string { return t.inner.Description() }
-func (t *storedTool) InputSchema() anthropic.BetaToolInputSchemaParam {
-	return t.inner.InputSchema()
-}
+func (t *storedTool) Name() string                 { return t.inner.Name() }
+func (t *storedTool) Description() string          { return t.inner.Description() }
+func (t *storedTool) InputSchema() json.RawMessage { return t.inner.InputSchema() }
 
-func (t *storedTool) Execute(ctx context.Context, input json.RawMessage) ([]anthropic.BetaToolResultBlockParamContentUnion, error) {
+func (t *storedTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
 	slog.Debug("storage: executing tool", "tool", t.inner.Name())
 
-	blocks, execErr := t.inner.Execute(ctx, input)
+	result, execErr := t.inner.Execute(ctx, input)
 
 	record := TaskRecord{
 		ID:         fmt.Sprintf("%x", time.Now().UnixNano()),
 		Name:       t.inner.Name(),
 		Input:      input,
+		Result:     result,
 		ExecutedAt: time.Now().UTC(),
 	}
 	if execErr != nil {
+		record.Result = ""
 		record.Error = execErr.Error()
 		slog.Warn("storage: tool execution error", "tool", t.inner.Name(), "error", execErr)
 	} else {
-		for _, b := range blocks {
-			if b.OfText != nil {
-				record.Result = b.OfText.Text
-				break
-			}
-		}
-		slog.Debug("storage: tool executed", "tool", t.inner.Name(), "result_len", len(record.Result))
+		slog.Debug("storage: tool executed", "tool", t.inner.Name(), "result_len", len(result))
 	}
 
 	if err := t.store.Append(record); err != nil {
 		slog.Warn("storage: failed to persist record", "tool", t.inner.Name(), "error", err)
 	}
 
-	return blocks, execErr
+	return result, execErr
 }

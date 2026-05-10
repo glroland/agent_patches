@@ -7,10 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/anthropics/anthropic-sdk-go"
-
 	"agent_patches/server/storage"
 	"agent_patches/server/tasks"
+	"agent_patches/server/tool"
 )
 
 // ---- Store tests ----
@@ -176,12 +175,12 @@ func TestWrapTool_StillReturnsResult(t *testing.T) {
 	wrapped := storage.WrapTool(inner, store)
 
 	input, _ := json.Marshal(struct{}{})
-	blocks, err := wrapped.Execute(context.Background(), input)
+	result, err := wrapped.Execute(context.Background(), input)
 	if err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
-	if len(blocks) == 0 || blocks[0].OfText == nil || blocks[0].OfText.Text != "world" {
-		t.Errorf("Execute() result = %+v, want text block with 'world'", blocks)
+	if result != "world" {
+		t.Errorf("Execute() result = %q, want %q", result, "world")
 	}
 }
 
@@ -190,7 +189,7 @@ func TestWrapAll_WrapsEveryTool(t *testing.T) {
 	t1, _ := tasks.NewHelloTool()
 	t2, _ := tasks.NewHelloTool()
 
-	wrapped := storage.WrapAll([]anthropic.BetaTool{t1, t2}, store)
+	wrapped := storage.WrapAll([]tool.Tool{t1, t2}, store)
 	if len(wrapped) != 2 {
 		t.Fatalf("WrapAll len = %d, want 2", len(wrapped))
 	}

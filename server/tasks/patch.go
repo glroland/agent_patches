@@ -6,11 +6,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/anthropics/anthropic-sdk-go"
-	"github.com/anthropics/anthropic-sdk-go/toolrunner"
-
 	"agent_patches/server/notifier"
 	"agent_patches/server/patching"
+	"agent_patches/server/tool"
 )
 
 type patchInput struct{}
@@ -19,20 +17,20 @@ type patchInput struct{}
 // It auto-detects whether the OS is Windows, Debian-based, or Fedora-based,
 // runs the appropriate package manager, and reboots the system if required.
 // n may be nil, in which case notifications are silently skipped.
-func NewPatchTool(n *notifier.Notifier) (anthropic.BetaTool, error) {
-	return toolrunner.NewBetaToolFromJSONSchema(
+func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
+	return tool.New(
 		"patch",
 		"Patches the current system. Detects the OS (Windows, Debian-based Linux, "+
 			"or Fedora-based Linux), runs the appropriate update commands, checks "+
 			"whether a reboot is required, and reboots the system if so.",
-		func(ctx context.Context, _ patchInput) (anthropic.BetaToolResultBlockParamContentUnion, error) {
+		func(ctx context.Context, _ patchInput) (string, error) {
 			host, _ := os.Hostname()
 
 			p, err := patching.New()
 			if err != nil {
 				msg := fmt.Sprintf("OS detection failed: %v", err)
 				n.Notify(ctx, fmt.Sprintf("[%s] Patch Failed", host), msg)
-				return textResult(msg), nil
+				return msg, nil
 			}
 
 			available, checkOut, err := p.UpdatesAvailable(ctx)
@@ -41,7 +39,7 @@ func NewPatchTool(n *notifier.Notifier) (anthropic.BetaTool, error) {
 				// and surface any real error itself.
 				slog.Warn("patch: update check failed, proceeding anyway", "error", err)
 			} else if !available {
-				return textResult("No updates available. System is up to date.\n\n" + checkOut), nil
+				return "No updates available. System is up to date.\n\n" + checkOut, nil
 			}
 
 			n.Notify(ctx,
@@ -55,20 +53,14 @@ func NewPatchTool(n *notifier.Notifier) (anthropic.BetaTool, error) {
 					fmt.Sprintf("[%s] Patch Failed", host),
 					fmt.Sprintf("Patch run on host %q encountered an error.\n\nError: %v\n\nOutput:\n%s", host, err, log),
 				)
-				return textResult(fmt.Sprintf("%serror: %v", log, err)), nil
+				return fmt.Sprintf("%serror: %v", log, err), nil
 			}
 
 			n.Notify(ctx,
 				fmt.Sprintf("[%s] Patch Complete", host),
 				fmt.Sprintf("System patch completed successfully on host %q.\n\nOutput:\n%s", host, log),
 			)
-			return textResult(log), nil
+			return log, nil
 		},
 	)
-}
-
-func textResult(s string) anthropic.BetaToolResultBlockParamContentUnion {
-	return anthropic.BetaToolResultBlockParamContentUnion{
-		OfText: &anthropic.BetaTextBlockParam{Text: s},
-	}
 }
