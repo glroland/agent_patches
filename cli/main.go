@@ -31,6 +31,10 @@ func main() {
 
 	flag.Parse()
 
+	if *token == "" {
+		*token = os.Getenv("AGENT_PATCHES_TOKEN")
+	}
+
 	ctx := context.Background()
 
 	if *verbose {
