@@ -18,6 +18,7 @@ type OSType string
 const (
 	OSDebian  OSType = "debian"
 	OSFedora  OSType = "fedora"
+	OSDarwin  OSType = "darwin"
 	OSWindows OSType = "windows"
 	OSUnknown OSType = "unknown"
 )
@@ -44,6 +45,9 @@ func (e *ExitCodeError) ExitCode() int  { return e.Code }
 type Patcher struct {
 	os        OSType
 	commander Commander
+	// darwinRebootRequired is set by patchDarwin when the softwareupdate output
+	// indicates a restart is needed; read back by needsReboot.
+	darwinRebootRequired bool
 }
 
 // New creates a Patcher that auto-detects the running OS.
@@ -127,6 +131,8 @@ func (p *Patcher) UpdatesAvailable(ctx context.Context) (bool, string, error) {
 		return p.checkDebianUpdates(ctx)
 	case OSFedora:
 		return p.checkFedoraUpdates(ctx)
+	case OSDarwin:
+		return p.checkDarwinUpdates(ctx)
 	case OSWindows:
 		return p.checkWindowsUpdates(ctx)
 	default:
@@ -200,6 +206,8 @@ func (p *Patcher) applyUpdates(ctx context.Context) (string, error) {
 		return p.patchDebian(ctx)
 	case OSFedora:
 		return p.patchFedora(ctx)
+	case OSDarwin:
+		return p.patchDarwin(ctx)
 	case OSWindows:
 		return p.patchWindows(ctx)
 	default:
@@ -257,6 +265,33 @@ func (p *Patcher) patchWindows(ctx context.Context) (string, error) {
 	return p.commander.Run(ctx, "powershell.exe", "-ExecutionPolicy", "Bypass", "-NoProfile", "-Command", script)
 }
 
+// checkDarwinUpdates runs softwareupdate -l and reports whether any updates are
+// listed. The output contains "No new software available." when the system is
+// fully up to date.
+func (p *Patcher) checkDarwinUpdates(ctx context.Context) (bool, string, error) {
+	out, err := p.commander.Run(ctx, "softwareupdate", "-l")
+	if err != nil {
+		return false, out, fmt.Errorf("softwareupdate -l: %w", err)
+	}
+	if strings.Contains(out, "No new software available") {
+		return false, out, nil
+	}
+	return true, out, nil
+}
+
+// patchDarwin installs all available macOS software updates via softwareupdate.
+// It parses the command output to detect whether a restart will be required and
+// stores the result in darwinRebootRequired for needsReboot to consume.
+func (p *Patcher) patchDarwin(ctx context.Context) (string, error) {
+	out, err := p.commander.Run(ctx, "softwareupdate", "--install", "--all")
+	if err != nil {
+		return out, fmt.Errorf("softwareupdate --install --all: %w", err)
+	}
+	lower := strings.ToLower(out)
+	p.darwinRebootRequired = strings.Contains(lower, "restart") || strings.Contains(lower, "reboot")
+	return out, nil
+}
+
 // needsReboot returns true when the OS signals that a reboot is required.
 func (p *Patcher) needsReboot(ctx context.Context) (bool, error) {
 	switch p.os {
@@ -291,6 +326,9 @@ func (p *Patcher) needsReboot(ctx context.Context) (bool, error) {
 		slog.Warn("patching: needs-restarting unavailable, skipping reboot check", "error", err)
 		return false, nil
 
+	case OSDarwin:
+		return p.darwinRebootRequired, nil
+
 	case OSWindows:
 		// Pending reboot is indicated by the presence of this registry key.
 		const key = `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired`
@@ -307,7 +345,7 @@ func (p *Patcher) needsReboot(ctx context.Context) (bool, error) {
 // reboot issues the OS-specific shutdown/reboot command.
 func (p *Patcher) reboot(ctx context.Context) (string, error) {
 	switch p.os {
-	case OSDebian, OSFedora:
+	case OSDebian, OSFedora, OSDarwin:
 		return p.commander.Run(ctx, "shutdown", "-r", "now")
 	case OSWindows:
 		return p.commander.Run(ctx, "shutdown", "/r", "/t", "0")
@@ -319,6 +357,8 @@ func (p *Patcher) reboot(ctx context.Context) (string, error) {
 // the content of /etc/os-release.
 func detectOS() (OSType, error) {
 	switch runtime.GOOS {
+	case "darwin":
+		return OSDarwin, nil
 	case "windows":
 		return OSWindows, nil
 	case "linux":

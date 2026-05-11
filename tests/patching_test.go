@@ -277,6 +277,49 @@ func TestPatcher_Windows_RebootRequired(t *testing.T) {
 	}
 }
 
+// ---- Patcher.Run — macOS ----------------------------------------------------
+
+func TestPatcher_Darwin_NoReboot(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"softwareupdate": {output: "Software Update Tool\nDone."},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDarwin, cmdr)
+
+	log, err := p.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error: %v\nlog:\n%s", err, log)
+	}
+	if !cmdr.called("softwareupdate") {
+		t.Error("expected softwareupdate to be called")
+	}
+	if strings.Contains(log, "Reboot required") {
+		t.Errorf("unexpected reboot in log:\n%s", log)
+	}
+}
+
+func TestPatcher_Darwin_RebootRequired(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"softwareupdate": {output: "Installing macOS Sequoia...\nA restart is required to complete the installation."},
+			"shutdown":       {output: ""},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDarwin, cmdr)
+
+	log, err := p.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run() error: %v\nlog:\n%s", err, log)
+	}
+	if !strings.Contains(log, "Reboot required") {
+		t.Errorf("expected 'Reboot required' in log:\n%s", log)
+	}
+	if !cmdr.called("shutdown") {
+		t.Error("expected shutdown to be called")
+	}
+}
+
 // ---- Patcher.Run — unsupported OS ------------------------------------------
 
 func TestPatcher_UnsupportedOS_ReturnsError(t *testing.T) {
@@ -306,7 +349,7 @@ func TestExitCodeError_Code(t *testing.T) {
 // ---- Patcher.OS -------------------------------------------------------------
 
 func TestPatcher_OS_ReturnsInjectedType(t *testing.T) {
-	for _, tc := range []patching.OSType{patching.OSDebian, patching.OSFedora, patching.OSWindows} {
+	for _, tc := range []patching.OSType{patching.OSDebian, patching.OSFedora, patching.OSDarwin, patching.OSWindows} {
 		p := patching.NewWithCommander(tc, &mockCmdr{})
 		if got := p.OS(); got != tc {
 			t.Errorf("OS() = %q, want %q", got, tc)
@@ -449,6 +492,40 @@ func TestUpdatesAvailable_Windows_HasUpdates(t *testing.T) {
 	}
 	if !available {
 		t.Error("expected available=true when count is non-zero")
+	}
+}
+
+// ---- UpdatesAvailable — macOS -----------------------------------------------
+
+func TestUpdatesAvailable_Darwin_None(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"softwareupdate": {output: "Software Update Tool\nNo new software available."},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDarwin, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if available {
+		t.Error("expected available=false when no new software available")
+	}
+}
+
+func TestUpdatesAvailable_Darwin_HasUpdates(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"softwareupdate": {output: "Software Update Tool\n* Label: macOS Sequoia 15.4\n  Title: macOS Sequoia, Action: restart"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDarwin, cmdr)
+	available, _, err := p.UpdatesAvailable(context.Background())
+	if err != nil {
+		t.Fatalf("UpdatesAvailable() error: %v", err)
+	}
+	if !available {
+		t.Error("expected available=true when updates are listed")
 	}
 }
 
