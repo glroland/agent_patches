@@ -48,7 +48,7 @@ build-cli:
 	$(GO) build -o $(TARGET_DIR)/$(CLI_BINARY) $(CLI_DIR)
 
 ## release: cross-compile both binaries for all target platforms
-release: release-server release-cli
+release: clean release-server release-cli
 
 ## release-server: cross-compile patches-endpoint-server for all target platforms
 release-server:
@@ -81,8 +81,8 @@ run-cli: build-cli
 	./$(TARGET_DIR)/$(CLI_BINARY) $(ARGS)
 
 ## deploy: release and deploy to all hosts in the Ansible inventory
-deploy: release-server
-	ansible-playbook -i $(INVENTORY) $(PLAYBOOK)
+deploy:
+	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -K -i $(INVENTORY) $(PLAYBOOK)
 
 ## fmt: format all Go source files
 fmt:

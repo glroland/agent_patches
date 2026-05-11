@@ -37,9 +37,10 @@ type AgentSettings struct {
 	BaseURL      string `yaml:"base_url"`
 }
 
-// LoggingSettings controls log verbosity.
+// LoggingSettings controls log verbosity and output destination.
 type LoggingSettings struct {
 	Level string `yaml:"level"`
+	File  string `yaml:"file"`
 }
 
 // TasksSettings lists which tasks the agent exposes.
@@ -54,8 +55,9 @@ type StorageSettings struct {
 
 // ServerSettings controls the HTTP listener.
 type ServerSettings struct {
-	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
+	Host      string `yaml:"host"`
+	Port      int    `yaml:"port"`
+	PublicURL string `yaml:"public_url"`
 }
 
 // SecuritySettings controls request authentication.

@@ -11,6 +11,13 @@
 # Config is deployed from config.example.yaml on first run only (force: false).
 # Edit /opt/agent_patches/config/config.yaml on the target host after deployment,
 # then restart the service: systemctl restart agent_patches
+#
+#  # Generate a key (skip if you already have one)
+#  ssh-keygen -t ed25519 -C "deploy key"
+#
+#  # Copy your public key to the server (prompts for password once)
+#  ssh-copy-id user@<hostname>
+
 
 - name: Deploy agent_patches server
   hosts: all
@@ -19,10 +26,12 @@
   vars:
     install_root: /opt/agent_patches
     service_user: agent_patches
-    binary_src: "{{ playbook_dir }}/../target/linux-x86_64/patches-endpoint-server"
+    binary_src: "{{ playbook_dir }}/../../target/linux-x86_64/patches-endpoint-server"
     config_src: "{{ playbook_dir }}/../../../home-utils/admin/agent_patches/endpoint-server-config.yaml"
     # nologin path differs between Debian (/usr/sbin) and Fedora (/sbin)
     nologin_shell: "{{ '/usr/sbin/nologin' if ansible_os_family == 'Debian' else '/sbin/nologin' }}"
+    # sudo group differs between Debian/Ubuntu (sudo) and Fedora/RHEL (wheel)
+    sudo_group: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
 
   tasks:
     - name: Create agent_patches system user
@@ -32,7 +41,7 @@
         create_home: false
         shell: "{{ nologin_shell }}"
         comment: agent_patches service account
-        groups: wheel
+        groups: "{{ sudo_group }}"
         append: true
 
     - name: Create directory structure
@@ -50,6 +59,8 @@
         - path: "{{ install_root }}/config"
           mode: "0750"
         - path: "{{ install_root }}/data"
+          mode: "0750"
+        - path: "{{ install_root }}/logs"
           mode: "0750"
 
     - name: Set ownership of install root recursively
@@ -82,29 +93,20 @@
     - name: Flush handlers
       ansible.builtin.meta: flush_handlers
 
-    - name: Deploy default config (skipped when config already exists)
+    - name: Deploy config
       ansible.builtin.copy:
         src: "{{ config_src }}"
         dest: "{{ install_root }}/config/config.yaml"
         owner: "{{ service_user }}"
         group: "{{ service_user }}"
         mode: "0640"
-        force: false
-      register: config_deployed
+        force: true
 
-    - name: Warn that config needs customisation after first deploy
-      ansible.builtin.debug:
-        msg: >-
-          Config deployed to {{ install_root }}/config/config.yaml.
-          Edit it (bearer token, SMTP credentials, Claude model) then run
-          'systemctl restart agent_patches' on {{ inventory_hostname }}.
-      when: config_deployed.changed
-
-    - name: Enable and start agent_patches service
+    - name: Enable and restart agent_patches service
       ansible.builtin.systemd:
         name: agent_patches
         enabled: true
-        state: started
+        state: restarted
 
   handlers:
     - name: Reload systemd

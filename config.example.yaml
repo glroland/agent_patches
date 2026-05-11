@@ -10,6 +10,7 @@ agent:
 
 logging:
   level: info
+  # file: /var/log/agent_patches.log  # omit to log to stderr
 
 tasks:
   enabled:
@@ -21,6 +22,7 @@ storage:
 server:
   host: 0.0.0.0
   port: 8080
+  # public_url: http://server.home.example.com:8080  # URL embedded in the agent card; set this when clients connect remotely
 
 # security.scheme: "none" | "bearer"
 # When scheme is "bearer", callers must supply: Authorization: Bearer <token>

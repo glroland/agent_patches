@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"os/signal"
 	"strings"
 	"syscall"
@@ -33,7 +34,10 @@ func main() {
 		return
 	}
 
-	logger.Setup(cfg.Logging.Level)
+	if err := logger.Setup(cfg.Logging.Level, cfg.Logging.File); err != nil {
+		slog.Error("failed to open log file", "error", err)
+		return
+	}
 	slog.Info("agent_patches starting",
 		"model", cfg.Agent.Model,
 		"security", cfg.Security.Scheme,
@@ -73,9 +77,17 @@ func main() {
 	reqHandler := a2asrv.NewHandler(exec, handlerOpts...)
 
 	addr := fmt.Sprintf("%s:%d", cfg.Server.Host, cfg.Server.Port)
-	cardURL := fmt.Sprintf("http://%s:%d", cfg.Server.Host, cfg.Server.Port)
-	if cfg.Server.Host == "0.0.0.0" || cfg.Server.Host == "" {
-		cardURL = fmt.Sprintf("http://localhost:%d", cfg.Server.Port)
+	cardURL := cfg.Server.PublicURL
+	if cardURL == "" {
+		host := cfg.Server.Host
+		if host == "0.0.0.0" || host == "" {
+			if h, err := os.Hostname(); err == nil {
+				host = h
+			} else {
+				host = "localhost"
+			}
+		}
+		cardURL = fmt.Sprintf("http://%s:%d", host, cfg.Server.Port)
 	}
 
 	card := buildAgentCard(cardURL, cfg, registry)
