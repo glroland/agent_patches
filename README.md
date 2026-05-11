@@ -51,6 +51,7 @@ agent:
 
 logging:
   level: info              # debug | info | warn | error
+  # file: /var/log/agent_patches.log  # omit to log to stderr
 
 storage:
   tasks_file: tasks.jsonl  # persists in-progress task state
@@ -58,6 +59,9 @@ storage:
 server:
   host: 0.0.0.0
   port: 8080
+  # public_url: http://myserver.example.com:8080
+  # URL embedded in the agent card. Defaults to http://<hostname>:<port>.
+  # Set this when clients connect via a hostname that differs from os.Hostname().
 
 # security.scheme: "none" | "bearer"
 security:

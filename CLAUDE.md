@@ -5,15 +5,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-make build          # compile server (target/patches-server) and CLI (target/patches-cli)
+make build          # compile server (target/patches-endpoint-server) and CLI (target/patches-cli)
 make test           # go test ./tests/... -v
 make lint           # go fmt ./... && go vet ./...
-make run            # build + start the server
+make run            # cross-compile for all platforms + start the server
 make run-cli ARGS="<message>"  # build + send one task via the CLI
+make deploy         # cross-compile + deploy to all Ansible inventory hosts (prompts for sudo password)
 
 # build or test a single package
-go build ./server/scheduler/
-go test ./server/scheduler/ -run TestNextWake
+go build ./endpoint-server/scheduler/
+go test ./endpoint-server/scheduler/ -run TestNextWake
 go test ./tests/ -run TestPatcher_Debian
 ```
 
@@ -39,15 +40,15 @@ HTTP JSON-RPC → a2asrv.Handler → executor.Executor → agent.Agent (Claude t
 
 ### Adding a new tool
 
-1. Create `server/tasks/<name>.go` defining an input struct and a `New<Name>Tool(...)` constructor that calls `toolrunner.NewBetaToolFromJSONSchema`.
-2. Register it in `server/main.go` with `registry.Register(tool)`.
+1. Create `endpoint-server/tasks/<name>.go` defining an input struct and a `New<Name>Tool(...)` constructor that calls `toolrunner.NewBetaToolFromJSONSchema`.
+2. Register it in `endpoint-server/main.go` with `registry.Register(tool)`.
 3. Add tests in `tests/` following the patterns in `patching_test.go`.
 
 The tool receives a `context.Context` and its typed input; return a `BetaToolResultBlockParamContentUnion` via the `textResult` helper.
 
 ### Adding a new daily task
 
-Add a method on `scheduler.Scheduler` and call it from `scheduler.run`.  Add a corresponding `Enabled bool` field under `DailyTasksSettings` in `server/config/config.go` and gate the method on that flag.
+Add a method on `scheduler.Scheduler` and call it from `scheduler.run`.  Add a corresponding `Enabled bool` field under `DailyTasksSettings` in `endpoint-server/config/config.go` and gate the method on that flag.
 
 ### Patching pipeline
 
@@ -76,5 +77,7 @@ The `nextWakeFunc` field is overridable in tests to inject a short duration inst
 |---|---|
 | `server.host` | `0.0.0.0` |
 | `server.port` | `8080` |
+| `server.public_url` | `http://<os.Hostname()>:<port>` (dynamic) |
 | `security.scheme` | `none` |
 | `daily_tasks.wake_time` | `00:00` |
+| `logging.file` | _(stderr)_ |
