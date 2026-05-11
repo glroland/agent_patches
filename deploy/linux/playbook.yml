@@ -49,6 +49,8 @@
           mode: "0755"
         - path: "{{ install_root }}/config"
           mode: "0750"
+        - path: "{{ install_root }}/data"
+          mode: "0750"
 
     - name: Set ownership of install root recursively
       ansible.builtin.file:
