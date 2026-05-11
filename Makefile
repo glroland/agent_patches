@@ -22,8 +22,12 @@ PLATFORM_DIR := $(TARGET_DIR)/$(UNAME_OS)-$(UNAME_ARCH)
 # Override with: make run CONFIG=/path/to/config.yaml
 CONFIG ?= $(CURDIR)/config.yaml
 
+# Ansible inventory used by `make deploy`.
+INVENTORY := $(CURDIR)/../home-utils/admin/agent_patches/inventory.yaml
+PLAYBOOK  := $(CURDIR)/deploy/linux/playbook.yml
+
 .PHONY: install build build-server build-cli release release-server release-cli \
-        test run run-cli clean fmt lint vet help
+        test run run-cli deploy clean fmt lint vet help
 
 ## install: download and tidy all module dependencies
 install:
@@ -75,6 +79,10 @@ run: release-server
 ## run-cli: build and run the CLI client (pass ARGS="<message>" to send a task)
 run-cli: build-cli
 	./$(TARGET_DIR)/$(CLI_BINARY) $(ARGS)
+
+## deploy: release and deploy to all hosts in the Ansible inventory
+deploy: release-server
+	ansible-playbook -i $(INVENTORY) $(PLAYBOOK)
 
 ## fmt: format all Go source files
 fmt:
