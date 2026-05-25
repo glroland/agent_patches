@@ -5,8 +5,6 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=agent_patches
-Group=agent_patches
 
 # Working directory is where tasks.jsonl is written (storage.tasks_file default)
 WorkingDirectory=/opt/agent_patches
@@ -20,13 +18,7 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=agent_patches
 
-# Hardening
-NoNewPrivileges=true
 PrivateTmp=true
-ProtectSystem=strict
-# Allow writes to the working directory (tasks.jsonl); config is root-owned
-# so the service user can read but not modify it even though the path is listed.
-ReadWritePaths=/opt/agent_patches
 
 [Install]
 WantedBy=multi-user.target

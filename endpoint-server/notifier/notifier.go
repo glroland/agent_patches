@@ -36,7 +36,11 @@ func New(cfg *config.NotifierSettings) *Notifier {
 // Notify sends subject and body to every configured sink. Errors are logged
 // but do not block delivery to remaining sinks.
 func (n *Notifier) Notify(ctx context.Context, subject, body string) {
-	if n == nil || len(n.sinks) == 0 {
+	if n == nil {
+		return
+	}
+	if len(n.sinks) == 0 {
+		slog.Warn("notifier: notification dropped, no sinks configured", "subject", subject)
 		return
 	}
 	for _, s := range n.sinks {
@@ -60,6 +64,12 @@ func newEmailSink(cfg *config.EmailNotifierSettings) *emailSink {
 }
 
 func (e *emailSink) Send(_ context.Context, subject, body string) error {
+	slog.Debug("notifier: Notify called",
+		"to", strings.Join(e.cfg.To, ", "),
+		"from", e.cfg.From,
+		"subject", subject,
+		"body", body,
+	)
 	msg := buildMessage(e.cfg.From, e.cfg.To, subject, body)
 	addr := fmt.Sprintf("%s:%d", e.cfg.Host, e.cfg.Port)
 
