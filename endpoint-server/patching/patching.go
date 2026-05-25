@@ -144,8 +144,8 @@ func (p *Patcher) UpdatesAvailable(ctx context.Context) (bool, string, error) {
 // count pending packages. The summary line "0 upgraded, 0 newly installed,
 // 0 to remove" signals nothing to do.
 func (p *Patcher) checkDebianUpdates(ctx context.Context) (bool, string, error) {
-	if _, err := p.commander.Run(ctx, "apt-get", "update", "-q"); err != nil {
-		return false, "", fmt.Errorf("apt-get update: %w", err)
+	if out, err := p.commander.Run(ctx, "apt-get", "update", "-q"); err != nil {
+		return false, out, fmt.Errorf("apt-get update: %w", err)
 	}
 	out, err := p.commander.Run(ctx, "apt-get", "upgrade", "--dry-run")
 	if err != nil {

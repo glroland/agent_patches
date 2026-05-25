@@ -101,7 +101,7 @@ func (s *Scheduler) checkPatches(ctx context.Context) {
 
 	available, details, err := p.UpdatesAvailable(ctx)
 	if err != nil {
-		slog.Warn("daily_tasks: patch check failed", "error", err)
+		slog.Warn("daily_tasks: patch check failed", "error", err, "output", details)
 		return
 	}
 
