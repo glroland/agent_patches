@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/endpoint-server/config"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 const validYAML = `

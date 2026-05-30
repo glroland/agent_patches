@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"agent_patches/endpoint-server/logger"
+	"agent_patches/endpoint-server/utils/logger"
 )
 
 func TestSetup_InfoLevel(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
-	"agent_patches/endpoint-server/config"
 	"agent_patches/endpoint-server/notifier"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 const (
@@ -165,7 +165,7 @@ type sessionInfo struct {
 	RemoteUser  string
 	TTY         string
 	Display     string
-	Leader      uint32   // PID of the session leader process
+	Leader      uint32 // PID of the session leader process
 	Timestamp   time.Time
 }
 

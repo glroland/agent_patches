@@ -10,8 +10,8 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 
-	"agent_patches/endpoint-server/config"
 	"agent_patches/endpoint-server/tool"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 // Agent drives the tool-use loop against the OpenAI chat completions API.

@@ -10,8 +10,12 @@ import (
 // Setup configures the default slog logger from a level string and optional
 // file path. When file is empty, output goes to stderr. When a file path is
 // provided, output goes to that file (appended, created if missing).
-func Setup(level, file string) error {
-	w, err := openWriter(file)
+func Setup(level string, file ...string) error {
+	var path string
+	if len(file) > 0 {
+		path = file[0]
+	}
+	w, err := openWriter(path)
 	if err != nil {
 		return err
 	}
