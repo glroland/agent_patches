@@ -35,6 +35,14 @@ security:
 login_monitor:
   enabled: true
 
+# memory_monitor periodically checks RAM and swap usage and notifies when either
+# exceeds the configured threshold. Works on Linux, macOS, and Windows.
+memory_monitor:
+  enabled: true
+  threshold_percent: 90       # alert when RAM used % reaches or exceeds this (default: 90)
+  swap_threshold_percent: 80  # alert when swap used % reaches or exceeds this; 0 = disabled (default: 80)
+  interval: "5m"              # how often to check; any Go duration string (default: 5m)
+
 # disk_monitor periodically checks all local disks and notifies when any exceeds
 # the usage threshold. Works on Linux, macOS, and Windows.
 disk_monitor:

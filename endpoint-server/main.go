@@ -20,6 +20,7 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/observers/diskmon"
 	"agent_patches/endpoint-server/observers/loginmon"
+	"agent_patches/endpoint-server/observers/memmon"
 	"agent_patches/endpoint-server/scheduler"
 	"agent_patches/endpoint-server/tasks/hello"
 	"agent_patches/endpoint-server/tasks/patch"
@@ -113,6 +114,7 @@ func main() {
 	sched.Start(ctx)
 	loginmon.New(&cfg.LoginMonitor, notify).Start(ctx)
 	diskmon.New(&cfg.DiskMonitor, notify).Start(ctx)
+	memmon.New(&cfg.MemoryMonitor, notify).Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)

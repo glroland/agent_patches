@@ -23,9 +23,10 @@ type Settings struct {
 	Server       ServerSettings       `yaml:"server"`
 	Security     SecuritySettings     `yaml:"security"`
 	Notifier     NotifierSettings     `yaml:"notifier"`
-	DailyTasks   DailyTasksSettings   `yaml:"daily_tasks"`
-	LoginMonitor LoginMonitorSettings `yaml:"login_monitor"`
-	DiskMonitor  DiskMonitorSettings  `yaml:"disk_monitor"`
+	DailyTasks     DailyTasksSettings     `yaml:"daily_tasks"`
+	LoginMonitor   LoginMonitorSettings   `yaml:"login_monitor"`
+	DiskMonitor    DiskMonitorSettings    `yaml:"disk_monitor"`
+	MemoryMonitor  MemoryMonitorSettings  `yaml:"memory_monitor"`
 }
 
 // AgentSettings controls OpenAI API behaviour.
@@ -85,6 +86,15 @@ type PatchCheckSettings struct {
 // LoginMonitorSettings controls the systemd-logind login monitor.
 type LoginMonitorSettings struct {
 	Enabled bool `yaml:"enabled"`
+}
+
+// MemoryMonitorSettings controls the periodic memory usage monitor.
+type MemoryMonitorSettings struct {
+	Enabled              bool    `yaml:"enabled"`
+	ThresholdPercent     float64 `yaml:"threshold_percent"`
+	SwapThresholdPercent float64 `yaml:"swap_threshold_percent"`
+	// Interval is a Go duration string (e.g. "5m", "1h") for how often to check.
+	Interval string `yaml:"interval"`
 }
 
 // DiskMonitorSettings controls the periodic disk space monitor.
@@ -149,6 +159,15 @@ func Load() (*Settings, error) {
 	}
 	if s.DiskMonitor.Interval == "" {
 		s.DiskMonitor.Interval = "1h"
+	}
+	if s.MemoryMonitor.ThresholdPercent == 0 {
+		s.MemoryMonitor.ThresholdPercent = 90
+	}
+	if s.MemoryMonitor.SwapThresholdPercent == 0 {
+		s.MemoryMonitor.SwapThresholdPercent = 80
+	}
+	if s.MemoryMonitor.Interval == "" {
+		s.MemoryMonitor.Interval = "5m"
 	}
 
 	return &s, nil
