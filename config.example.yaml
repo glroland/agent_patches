@@ -35,6 +35,13 @@ security:
 login_monitor:
   enabled: true
 
+# disk_monitor periodically checks all local disks and notifies when any exceeds
+# the usage threshold. Works on Linux, macOS, and Windows.
+disk_monitor:
+  enabled: true
+  threshold_percent: 85   # alert when used % reaches or exceeds this value (default: 85)
+  interval: "1h"          # how often to check; any Go duration string (default: 1h)
+
 # daily_tasks controls the background maintenance loop.
 # The loop goroutine always starts; individual tasks are gated by their own enabled flag.
 daily_tasks:

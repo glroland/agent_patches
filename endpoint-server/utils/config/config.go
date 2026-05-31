@@ -25,6 +25,7 @@ type Settings struct {
 	Notifier     NotifierSettings     `yaml:"notifier"`
 	DailyTasks   DailyTasksSettings   `yaml:"daily_tasks"`
 	LoginMonitor LoginMonitorSettings `yaml:"login_monitor"`
+	DiskMonitor  DiskMonitorSettings  `yaml:"disk_monitor"`
 }
 
 // AgentSettings controls OpenAI API behaviour.
@@ -86,6 +87,14 @@ type LoginMonitorSettings struct {
 	Enabled bool `yaml:"enabled"`
 }
 
+// DiskMonitorSettings controls the periodic disk space monitor.
+type DiskMonitorSettings struct {
+	Enabled          bool    `yaml:"enabled"`
+	ThresholdPercent float64 `yaml:"threshold_percent"`
+	// Interval is a Go duration string (e.g. "1h", "30m") for how often to check.
+	Interval string `yaml:"interval"`
+}
+
 // NotifierSettings groups all event-sink configuration.
 type NotifierSettings struct {
 	Email EmailNotifierSettings `yaml:"email"`
@@ -134,6 +143,12 @@ func Load() (*Settings, error) {
 	}
 	if s.DailyTasks.WakeTime == "" {
 		s.DailyTasks.WakeTime = "00:00"
+	}
+	if s.DiskMonitor.ThresholdPercent == 0 {
+		s.DiskMonitor.ThresholdPercent = 85
+	}
+	if s.DiskMonitor.Interval == "" {
+		s.DiskMonitor.Interval = "1h"
 	}
 
 	return &s, nil
