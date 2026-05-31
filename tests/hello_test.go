@@ -5,18 +5,18 @@ import (
 	"encoding/json"
 	"testing"
 
-	"agent_patches/endpoint-server/tasks"
+	"agent_patches/endpoint-server/tasks/hello"
 )
 
 func TestNewHelloTool_NoError(t *testing.T) {
-	_, err := tasks.NewHelloTool()
+	_, err := hello.NewHelloTool()
 	if err != nil {
 		t.Fatalf("NewHelloTool() unexpected error: %v", err)
 	}
 }
 
 func TestHelloTool_Name(t *testing.T) {
-	tool, err := tasks.NewHelloTool()
+	tool, err := hello.NewHelloTool()
 	if err != nil {
 		t.Fatalf("NewHelloTool() unexpected error: %v", err)
 	}
@@ -27,7 +27,7 @@ func TestHelloTool_Name(t *testing.T) {
 }
 
 func TestHelloTool_Description(t *testing.T) {
-	tool, err := tasks.NewHelloTool()
+	tool, err := hello.NewHelloTool()
 	if err != nil {
 		t.Fatalf("NewHelloTool() unexpected error: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestHelloTool_Description(t *testing.T) {
 }
 
 func TestHelloTool_Execute_ReturnsWorld(t *testing.T) {
-	tool, err := tasks.NewHelloTool()
+	tool, err := hello.NewHelloTool()
 	if err != nil {
 		t.Fatalf("NewHelloTool() unexpected error: %v", err)
 	}

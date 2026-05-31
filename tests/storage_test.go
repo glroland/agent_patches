@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"agent_patches/endpoint-server/tasks"
+	"agent_patches/endpoint-server/tasks/hello"
 	"agent_patches/endpoint-server/tool"
 	"agent_patches/endpoint-server/utils/storage"
 )
@@ -122,7 +122,7 @@ func TestStore_Append_RecordsError(t *testing.T) {
 
 func TestWrapTool_DelegatesMetadata(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	inner, _ := tasks.NewHelloTool()
+	inner, _ := hello.NewHelloTool()
 	wrapped := storage.WrapTool(inner, store)
 
 	if wrapped.Name() != inner.Name() {
@@ -135,7 +135,7 @@ func TestWrapTool_DelegatesMetadata(t *testing.T) {
 
 func TestWrapTool_RecordsExecution(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	inner, _ := tasks.NewHelloTool()
+	inner, _ := hello.NewHelloTool()
 	wrapped := storage.WrapTool(inner, store)
 
 	input, _ := json.Marshal(struct{}{})
@@ -171,7 +171,7 @@ func TestWrapTool_RecordsExecution(t *testing.T) {
 
 func TestWrapTool_StillReturnsResult(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	inner, _ := tasks.NewHelloTool()
+	inner, _ := hello.NewHelloTool()
 	wrapped := storage.WrapTool(inner, store)
 
 	input, _ := json.Marshal(struct{}{})
@@ -186,8 +186,8 @@ func TestWrapTool_StillReturnsResult(t *testing.T) {
 
 func TestWrapAll_WrapsEveryTool(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	t1, _ := tasks.NewHelloTool()
-	t2, _ := tasks.NewHelloTool()
+	t1, _ := hello.NewHelloTool()
+	t2, _ := hello.NewHelloTool()
 
 	wrapped := storage.WrapAll([]tool.Tool{t1, t2}, store)
 	if len(wrapped) != 2 {

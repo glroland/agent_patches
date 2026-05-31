@@ -17,9 +17,11 @@ import (
 
 	"agent_patches/endpoint-server/agent"
 	"agent_patches/endpoint-server/executor"
-	"agent_patches/endpoint-server/loginmon"
+	"agent_patches/endpoint-server/observers/loginmon"
 	"agent_patches/endpoint-server/scheduler"
 	"agent_patches/endpoint-server/tasks"
+	"agent_patches/endpoint-server/tasks/hello"
+	"agent_patches/endpoint-server/tasks/patch"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
 	"agent_patches/endpoint-server/utils/notifier"
@@ -50,14 +52,14 @@ func main() {
 
 	registry := tasks.NewRegistry()
 
-	helloTool, err := tasks.NewHelloTool()
+	helloTool, err := hello.NewHelloTool()
 	if err != nil {
 		slog.Error("failed to create hello tool", "error", err)
 		return
 	}
 	registry.Register(helloTool)
 
-	patchTool, err := tasks.NewPatchTool(notify)
+	patchTool, err := patch.NewPatchTool(notify)
 	if err != nil {
 		slog.Error("failed to create patch tool", "error", err)
 		return

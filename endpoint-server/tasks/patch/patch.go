@@ -1,4 +1,4 @@
-package tasks
+package patch
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"os"
 
-	"agent_patches/endpoint-server/patching"
+	"agent_patches/endpoint-server/tasks/patch/patching"
 	"agent_patches/endpoint-server/tool"
 	"agent_patches/endpoint-server/utils/notifier"
 )

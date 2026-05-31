@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"agent_patches/endpoint-server/patching"
+	"agent_patches/endpoint-server/tasks/patch/patching"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )

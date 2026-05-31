@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/endpoint-server/patching"
-	"agent_patches/endpoint-server/tasks"
+	"agent_patches/endpoint-server/tasks/patch"
+	"agent_patches/endpoint-server/tasks/patch/patching"
 )
 
 // ---- mock Commander ---------------------------------------------------------
@@ -22,9 +22,9 @@ type cmdStub struct {
 }
 
 type mockCmdr struct {
-	stubs  map[string]cmdStub // keyed by executable name
-	calls  []cmdCall
-	fallback cmdStub           // returned when no stub matches
+	stubs    map[string]cmdStub // keyed by executable name
+	calls    []cmdCall
+	fallback cmdStub // returned when no stub matches
 }
 
 func (m *mockCmdr) Run(_ context.Context, name string, args ...string) (string, error) {
@@ -132,7 +132,7 @@ ID_LIKE="debian"`
 func TestPatcher_Debian_NoReboot(t *testing.T) {
 	cmdr := &mockCmdr{
 		stubs: map[string]cmdStub{
-			"apt-get":         {output: "apt-get ok"},
+			"apt-get":          {output: "apt-get ok"},
 			"needs-restarting": {output: ""},
 		},
 	}
@@ -195,7 +195,7 @@ func TestPatcher_Fedora_RebootRequired(t *testing.T) {
 	cmdr := &mockCmdr{
 		stubs: map[string]cmdStub{
 			"dnf":              {output: "dnf ok"},
-			"needs-restarting": {exitCode: 1},       // exit 1 = reboot needed
+			"needs-restarting": {exitCode: 1}, // exit 1 = reboot needed
 			"shutdown":         {output: "shutting down"},
 		},
 	}
@@ -542,7 +542,7 @@ func TestUpdatesAvailable_UnknownOS_ReturnsError(t *testing.T) {
 // ---- NewPatchTool -----------------------------------------------------------
 
 func TestNewPatchTool_NameAndDescription(t *testing.T) {
-	tool, err := tasks.NewPatchTool(nil)
+	tool, err := patch.NewPatchTool(nil)
 	if err != nil {
 		t.Fatalf("NewPatchTool() error: %v", err)
 	}

@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"agent_patches/endpoint-server/tasks"
+	"agent_patches/endpoint-server/tasks/hello"
 )
 
 func TestRegistry_EmptyByDefault(t *testing.T) {
@@ -16,7 +17,7 @@ func TestRegistry_EmptyByDefault(t *testing.T) {
 func TestRegistry_Register(t *testing.T) {
 	r := tasks.NewRegistry()
 
-	tool, err := tasks.NewHelloTool()
+	tool, err := hello.NewHelloTool()
 	if err != nil {
 		t.Fatalf("NewHelloTool() unexpected error: %v", err)
 	}
@@ -30,8 +31,8 @@ func TestRegistry_Register(t *testing.T) {
 func TestRegistry_Tools_RetainsOrder(t *testing.T) {
 	r := tasks.NewRegistry()
 
-	tool1, _ := tasks.NewHelloTool()
-	tool2, _ := tasks.NewHelloTool()
+	tool1, _ := hello.NewHelloTool()
+	tool2, _ := hello.NewHelloTool()
 	r.Register(tool1)
 	r.Register(tool2)
 
