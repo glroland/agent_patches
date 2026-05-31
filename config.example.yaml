@@ -70,6 +70,15 @@ daily_tasks:
   patch_check:
     enabled: true        # check for OS updates and notify when found
 
+# ai_sysadmin runs a background AI agent that wakes up every interval, reads
+# all memory-domain snapshots, analyses trends and anomalies, plans remediation,
+# and executes corrective actions via shell commands. A notification email is
+# sent whenever anomalies are detected or any commands are executed.
+ai_sysadmin:
+  enabled: false
+  interval: "5m"    # how often the research → plan → act cycle runs (default: 5m)
+  # model: gpt-4o  # optional override of agent.model for sysadmin cycles
+
 # memory configures the file-backed agent memory store.
 # Snapshots are retained for 60 minutes (one per 5-minute bucket); older files
 # are automatically deleted on each write. attrs.json stores general attributes

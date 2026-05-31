@@ -30,6 +30,7 @@ type Settings struct {
 	NetworkUpload    NetworkUploadSettings    `yaml:"network_upload_monitor"`
 	NetworkDownload  NetworkDownloadSettings  `yaml:"network_download_monitor"`
 	Memory           MemorySettings           `yaml:"memory"`
+	AISysAdmin       AISysAdminSettings       `yaml:"ai_sysadmin"`
 }
 
 // AgentSettings controls OpenAI API behaviour.
@@ -128,6 +129,15 @@ type NotifierSettings struct {
 	Email EmailNotifierSettings `yaml:"email"`
 }
 
+// AISysAdminSettings controls the background AI sysadmin agent.
+type AISysAdminSettings struct {
+	Enabled  bool   `yaml:"enabled"`
+	// Interval is a Go duration string for how often the analysis cycle runs.
+	Interval string `yaml:"interval"`
+	// Model overrides agent.model for the sysadmin cycle when set.
+	Model string `yaml:"model"`
+}
+
 // MemorySettings configures the file-backed agent memory store.
 type MemorySettings struct {
 	// Root is the directory under which domain subdirs and attrs.json are stored.
@@ -201,6 +211,9 @@ func Load() (*Settings, error) {
 	}
 	if s.Memory.Root == "" {
 		s.Memory.Root = "./agent_memory"
+	}
+	if s.AISysAdmin.Interval == "" {
+		s.AISysAdmin.Interval = "5m"
 	}
 
 	return &s, nil

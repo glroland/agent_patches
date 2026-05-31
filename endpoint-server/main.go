@@ -18,6 +18,7 @@ import (
 	"agent_patches/endpoint-server/a2a/agent"
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
+	"agent_patches/endpoint-server/aisysadmin"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/observers/diskmon"
 	"agent_patches/endpoint-server/observers/loginmon"
@@ -136,6 +137,8 @@ func main() {
 	dlm := netmon.NewDownloadMonitor(&cfg.NetworkDownload, notify)
 	dlm.Mem = mem.Domain("net_download")
 	dlm.Start(ctx)
+
+	aisysadmin.New(&cfg.AISysAdmin, &cfg.Agent, mem, notify).Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)
