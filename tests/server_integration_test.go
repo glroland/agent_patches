@@ -11,7 +11,7 @@ import (
 	"github.com/a2aproject/a2a-go/v2/a2aclient"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
 
-	"agent_patches/endpoint-server/executor"
+	"agent_patches/endpoint-server/a2a/executor"
 )
 
 // startTestServer spins up an httptest server with an optional bearer token.

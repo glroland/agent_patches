@@ -3,7 +3,7 @@ package tests
 import (
 	"testing"
 
-	"agent_patches/endpoint-server/tasks"
+	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/tasks/hello"
 )
 
