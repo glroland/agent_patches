@@ -23,10 +23,12 @@ type Settings struct {
 	Server       ServerSettings       `yaml:"server"`
 	Security     SecuritySettings     `yaml:"security"`
 	Notifier     NotifierSettings     `yaml:"notifier"`
-	DailyTasks     DailyTasksSettings     `yaml:"daily_tasks"`
-	LoginMonitor   LoginMonitorSettings   `yaml:"login_monitor"`
-	DiskMonitor    DiskMonitorSettings    `yaml:"disk_monitor"`
-	MemoryMonitor  MemoryMonitorSettings  `yaml:"memory_monitor"`
+	DailyTasks       DailyTasksSettings       `yaml:"daily_tasks"`
+	LoginMonitor     LoginMonitorSettings     `yaml:"login_monitor"`
+	DiskMonitor      DiskMonitorSettings      `yaml:"disk_monitor"`
+	MemoryMonitor    MemoryMonitorSettings    `yaml:"memory_monitor"`
+	NetworkUpload    NetworkUploadSettings    `yaml:"network_upload_monitor"`
+	NetworkDownload  NetworkDownloadSettings  `yaml:"network_download_monitor"`
 }
 
 // AgentSettings controls OpenAI API behaviour.
@@ -86,6 +88,21 @@ type PatchCheckSettings struct {
 // LoginMonitorSettings controls the systemd-logind login monitor.
 type LoginMonitorSettings struct {
 	Enabled bool `yaml:"enabled"`
+}
+
+// NetworkUploadSettings controls the upload-rate monitor.
+type NetworkUploadSettings struct {
+	Enabled       bool    `yaml:"enabled"`
+	ThresholdMBps float64 `yaml:"threshold_mbps"`
+	// Interval is a Go duration string (e.g. "1m", "30s") for how often to sample.
+	Interval string `yaml:"interval"`
+}
+
+// NetworkDownloadSettings controls the download-rate monitor.
+type NetworkDownloadSettings struct {
+	Enabled       bool    `yaml:"enabled"`
+	ThresholdMBps float64 `yaml:"threshold_mbps"`
+	Interval      string  `yaml:"interval"`
 }
 
 // MemoryMonitorSettings controls the periodic memory usage monitor.
@@ -159,6 +176,12 @@ func Load() (*Settings, error) {
 	}
 	if s.DiskMonitor.Interval == "" {
 		s.DiskMonitor.Interval = "1h"
+	}
+	if s.NetworkUpload.Interval == "" {
+		s.NetworkUpload.Interval = "1m"
+	}
+	if s.NetworkDownload.Interval == "" {
+		s.NetworkDownload.Interval = "1m"
 	}
 	if s.MemoryMonitor.ThresholdPercent == 0 {
 		s.MemoryMonitor.ThresholdPercent = 90

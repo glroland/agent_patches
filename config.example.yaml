@@ -35,6 +35,19 @@ security:
 login_monitor:
   enabled: true
 
+# network_upload_monitor alerts when the outbound (upload) rate exceeds the threshold.
+# network_download_monitor alerts when the inbound (download) rate exceeds the threshold.
+# Both measure aggregate throughput across all physical interfaces; thresholds are in MB/s.
+network_upload_monitor:
+  enabled: false
+  threshold_mbps: 100  # alert when upload rate reaches or exceeds this MB/s
+  interval: "1m"       # sampling interval; any Go duration string (default: 1m)
+
+network_download_monitor:
+  enabled: false
+  threshold_mbps: 100  # alert when download rate reaches or exceeds this MB/s
+  interval: "1m"
+
 # memory_monitor periodically checks RAM and swap usage and notifies when either
 # exceeds the configured threshold. Works on Linux, macOS, and Windows.
 memory_monitor:
