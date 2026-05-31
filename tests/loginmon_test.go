@@ -1,12 +1,14 @@
-package loginmon
+package tests
 
 import (
 	"strings"
 	"testing"
 	"time"
+
+	"agent_patches/endpoint-server/observers/loginmon"
 )
 
-var baseInfo = &sessionInfo{
+var baseInfo = &loginmon.SessionInfo{
 	Username:    "alice",
 	Class:       "user",
 	SessionType: "tty",
@@ -18,17 +20,17 @@ var baseInfo = &sessionInfo{
 }
 
 func TestBuildMessage_ContainsEssentialFields(t *testing.T) {
-	msg := buildMessage("webserver01", "3", baseInfo)
+	msg := loginmon.BuildMessage("webserver01", "3", baseInfo)
 
 	for _, want := range []string{
 		"webserver01",
 		"alice",
-		"2025",     // timestamp present
-		"3",        // session ID
-		"tty",      // session type
+		"2025",      // timestamp present
+		"3",         // session ID
+		"tty",       // session type
 		"10.0.0.42", // remote host
-		"pts/1",    // TTY
-		"4321",     // leader PID
+		"pts/1",     // TTY
+		"4321",      // leader PID
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("buildMessage missing %q\nfull message:\n%s", want, msg)
@@ -41,7 +43,7 @@ func TestBuildMessage_LocalLogin(t *testing.T) {
 	info.Remote = false
 	info.RemoteHost = ""
 
-	msg := buildMessage("host", "1", &info)
+	msg := loginmon.BuildMessage("host", "1", &info)
 
 	if !strings.Contains(msg, "local console") {
 		t.Errorf("expected 'local console' for non-remote session, got:\n%s", msg)
@@ -55,7 +57,7 @@ func TestBuildMessage_RemoteUserIncluded(t *testing.T) {
 	info := *baseInfo
 	info.RemoteUser = "bob"
 
-	msg := buildMessage("host", "1", &info)
+	msg := loginmon.BuildMessage("host", "1", &info)
 
 	if !strings.Contains(msg, "bob") {
 		t.Errorf("expected remote user 'bob' in message:\n%s", msg)
@@ -67,7 +69,7 @@ func TestBuildMessage_DisplayIncluded(t *testing.T) {
 	info.SessionType = "x11"
 	info.Display = ":0"
 
-	msg := buildMessage("host", "1", &info)
+	msg := loginmon.BuildMessage("host", "1", &info)
 
 	if !strings.Contains(msg, ":0") {
 		t.Errorf("expected display ':0' in message:\n%s", msg)
@@ -78,7 +80,7 @@ func TestBuildMessage_NoLeaderPIDWhenZero(t *testing.T) {
 	info := *baseInfo
 	info.Leader = 0
 
-	msg := buildMessage("host", "1", &info)
+	msg := loginmon.BuildMessage("host", "1", &info)
 
 	if strings.Contains(msg, "Leader PID") {
 		t.Errorf("Leader PID line should be omitted when PID is 0:\n%s", msg)

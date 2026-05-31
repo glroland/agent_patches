@@ -151,12 +151,12 @@ func (m *Monitor) handleSessionNew(ctx context.Context, conn *dbus.Conn, sig *db
 	host, _ := os.Hostname()
 	m.notifier.Notify(ctx,
 		fmt.Sprintf("[%s] Login: %s", host, info.Username),
-		buildMessage(host, sessionID, info),
+		BuildMessage(host, sessionID, info),
 	)
 }
 
-// sessionInfo holds the properties we extract from a logind session object.
-type sessionInfo struct {
+// SessionInfo holds the properties we extract from a logind session object.
+type SessionInfo struct {
 	Username    string
 	Class       string // "user", "greeter", "lock-screen", "background"
 	SessionType string // "tty", "x11", "wayland", "mir", "unspecified"
@@ -170,8 +170,8 @@ type sessionInfo struct {
 }
 
 // fetchSessionInfo calls GetAll on the session D-Bus object and maps the
-// returned variant map to a sessionInfo.
-func fetchSessionInfo(conn *dbus.Conn, path dbus.ObjectPath) (*sessionInfo, error) {
+// returned variant map to a SessionInfo.
+func fetchSessionInfo(conn *dbus.Conn, path dbus.ObjectPath) (*SessionInfo, error) {
 	obj := conn.Object(logindDest, path)
 
 	var props map[string]dbus.Variant
@@ -179,7 +179,7 @@ func fetchSessionInfo(conn *dbus.Conn, path dbus.ObjectPath) (*sessionInfo, erro
 		return nil, fmt.Errorf("GetAll(%s): %w", path, err)
 	}
 
-	info := &sessionInfo{}
+	info := &SessionInfo{}
 
 	if v, ok := props["Name"]; ok {
 		info.Username, _ = v.Value().(string)
@@ -221,8 +221,8 @@ func fetchSessionInfo(conn *dbus.Conn, path dbus.ObjectPath) (*sessionInfo, erro
 	return info, nil
 }
 
-// buildMessage composes the human-readable notification body.
-func buildMessage(host, sessionID string, info *sessionInfo) string {
+// BuildMessage composes the human-readable notification body.
+func BuildMessage(host, sessionID string, info *SessionInfo) string {
 	var sb strings.Builder
 
 	fmt.Fprintf(&sb, "Interactive login detected on host %q.\n\n", host)

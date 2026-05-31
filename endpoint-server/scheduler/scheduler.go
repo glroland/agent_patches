@@ -12,8 +12,8 @@ import (
 	"agent_patches/endpoint-server/utils/notifier"
 )
 
-// updateChecker is satisfied by *patching.Patcher; injected in tests.
-type updateChecker interface {
+// UpdateChecker is satisfied by *patching.Patcher; injected in tests.
+type UpdateChecker interface {
 	UpdatesAvailable(ctx context.Context) (bool, string, error)
 	OS() patching.OSType
 }
@@ -25,8 +25,8 @@ type updateChecker interface {
 type Scheduler struct {
 	cfg          *config.DailyTasksSettings
 	notifier     *notifier.Notifier
-	newPatcher   func() (updateChecker, error)
-	nextWakeFunc func() (time.Duration, error) // overridable for tests
+	NewPatcher   func() (UpdateChecker, error)
+	NextWakeFunc func() (time.Duration, error) // overridable for tests
 }
 
 // New creates a Scheduler.
@@ -34,10 +34,10 @@ func New(cfg *config.DailyTasksSettings, n *notifier.Notifier) *Scheduler {
 	s := &Scheduler{
 		cfg:        cfg,
 		notifier:   n,
-		newPatcher: defaultPatcherFactory,
+		NewPatcher: defaultPatcherFactory,
 	}
-	s.nextWakeFunc = func() (time.Duration, error) {
-		return nextWake(cfg.WakeTime)
+	s.NextWakeFunc = func() (time.Duration, error) {
+		return NextWake(cfg.WakeTime)
 	}
 	return s
 }
@@ -57,7 +57,7 @@ func (s *Scheduler) loop(ctx context.Context) {
 	s.run(ctx)
 
 	for {
-		d, err := s.nextWakeFunc()
+		d, err := s.NextWakeFunc()
 		if err != nil {
 			slog.Error("daily_tasks: invalid wake_time, loop exiting", "error", err)
 			return
@@ -80,12 +80,12 @@ func (s *Scheduler) loop(ctx context.Context) {
 // Add new task calls here as they are introduced.
 func (s *Scheduler) run(ctx context.Context) {
 	slog.Debug("daily_tasks: running tasks")
-	s.checkPatches(ctx)
+	s.CheckPatches(ctx)
 }
 
-// checkPatches queries the OS package manager for pending updates and notifies
+// CheckPatches queries the OS package manager for pending updates and notifies
 // when any are found. Skipped entirely when PatchCheck.Enabled is false.
-func (s *Scheduler) checkPatches(ctx context.Context) {
+func (s *Scheduler) CheckPatches(ctx context.Context) {
 	if !s.cfg.PatchCheck.Enabled {
 		slog.Debug("daily_tasks: patch check disabled")
 		return
@@ -93,7 +93,7 @@ func (s *Scheduler) checkPatches(ctx context.Context) {
 
 	slog.Info("daily_tasks: checking for available patches")
 
-	p, err := s.newPatcher()
+	p, err := s.NewPatcher()
 	if err != nil {
 		slog.Warn("daily_tasks: patch check: patcher init failed", "error", err)
 		return
@@ -120,11 +120,11 @@ func (s *Scheduler) checkPatches(ctx context.Context) {
 	)
 }
 
-// nextWake returns the duration until the next occurrence of wakeTime (HH:MM)
+// NextWake returns the duration until the next occurrence of wakeTime (HH:MM)
 // in the local timezone. If wakeTime is empty it defaults to "00:00".
 // The returned duration is always positive: if the target time has already
 // passed today, the next occurrence is tomorrow.
-func nextWake(wakeTime string) (time.Duration, error) {
+func NextWake(wakeTime string) (time.Duration, error) {
 	if wakeTime == "" {
 		wakeTime = "00:00"
 	}
@@ -144,6 +144,6 @@ func nextWake(wakeTime string) (time.Duration, error) {
 }
 
 // defaultPatcherFactory is the production factory; tests substitute their own.
-func defaultPatcherFactory() (updateChecker, error) {
+func defaultPatcherFactory() (UpdateChecker, error) {
 	return patching.New()
 }

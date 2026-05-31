@@ -1,4 +1,4 @@
-package scheduler
+package tests
 
 import (
 	"context"
@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
+	"agent_patches/endpoint-server/scheduler"
 	"agent_patches/endpoint-server/tasks/patch/patching"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
 
-// stubChecker is a test double for updateChecker.
+// stubChecker is a test double for scheduler.UpdateChecker.
 type stubChecker struct {
 	available bool
 	details   string
@@ -25,53 +26,52 @@ func (s *stubChecker) UpdatesAvailable(_ context.Context) (bool, string, error) 
 }
 func (s *stubChecker) OS() patching.OSType { return patching.OSDebian }
 
-func newTestScheduler(cfg *config.DailyTasksSettings, checker *stubChecker) *Scheduler {
-	s := New(cfg, notifier.New(&config.NotifierSettings{}))
-	s.newPatcher = func() (updateChecker, error) { return checker, nil }
+func newTestScheduler(cfg *config.DailyTasksSettings, checker *stubChecker) *scheduler.Scheduler {
+	s := scheduler.New(cfg, notifier.New(&config.NotifierSettings{}))
+	s.NewPatcher = func() (scheduler.UpdateChecker, error) { return checker, nil }
 	return s
 }
 
-// ---- nextWake ---------------------------------------------------------------
+// ---- NextWake ---------------------------------------------------------------
 
 func TestNextWake_ValidTimes(t *testing.T) {
 	for _, wt := range []string{"00:00", "06:30", "12:00", "23:59"} {
-		d, err := nextWake(wt)
+		d, err := scheduler.NextWake(wt)
 		if err != nil {
-			t.Fatalf("nextWake(%q) error: %v", wt, err)
+			t.Fatalf("NextWake(%q) error: %v", wt, err)
 		}
 		if d <= 0 || d > 24*time.Hour {
-			t.Errorf("nextWake(%q) = %v, want in (0, 24h]", wt, d)
+			t.Errorf("NextWake(%q) = %v, want in (0, 24h]", wt, d)
 		}
 	}
 }
 
 func TestNextWake_EmptyDefaultsMidnight(t *testing.T) {
-	d, err := nextWake("")
+	d, err := scheduler.NextWake("")
 	if err != nil {
-		t.Fatalf("nextWake(\"\") error: %v", err)
+		t.Fatalf("NextWake(\"\") error: %v", err)
 	}
 	if d <= 0 || d > 24*time.Hour {
-		t.Errorf("nextWake(\"\") = %v, want in (0, 24h]", d)
+		t.Errorf("NextWake(\"\") = %v, want in (0, 24h]", d)
 	}
 }
 
 func TestNextWake_InvalidFormat(t *testing.T) {
 	for _, bad := range []string{"25:00", "12:60", "noon", "1200"} {
-		if _, err := nextWake(bad); err == nil {
-			t.Errorf("nextWake(%q) expected error, got nil", bad)
+		if _, err := scheduler.NextWake(bad); err == nil {
+			t.Errorf("NextWake(%q) expected error, got nil", bad)
 		}
 	}
 }
 
 func TestNextWake_AlwaysFuture(t *testing.T) {
-	// Whatever the current time is, nextWake must return a positive duration.
 	for _, wt := range []string{"00:00", "12:00", "23:59"} {
-		d, err := nextWake(wt)
+		d, err := scheduler.NextWake(wt)
 		if err != nil {
-			t.Fatalf("nextWake(%q) error: %v", wt, err)
+			t.Fatalf("NextWake(%q) error: %v", wt, err)
 		}
 		if d <= 0 {
-			t.Errorf("nextWake(%q) = %v, must be positive", wt, d)
+			t.Errorf("NextWake(%q) = %v, must be positive", wt, d)
 		}
 	}
 }
@@ -85,7 +85,7 @@ func TestCheckPatches_Disabled_SkipsChecker(t *testing.T) {
 		PatchCheck: config.PatchCheckSettings{Enabled: false},
 	}
 	s := newTestScheduler(cfg, checker)
-	s.checkPatches(context.Background())
+	s.CheckPatches(context.Background())
 
 	if checker.calls.Load() != 0 {
 		t.Errorf("checker called %d times, want 0 when disabled", checker.calls.Load())
@@ -101,7 +101,7 @@ func TestCheckPatches_Enabled_NoUpdates(t *testing.T) {
 		PatchCheck: config.PatchCheckSettings{Enabled: true},
 	}
 	s := newTestScheduler(cfg, checker)
-	s.checkPatches(context.Background())
+	s.CheckPatches(context.Background())
 
 	if checker.calls.Load() != 1 {
 		t.Errorf("checker called %d times, want 1", checker.calls.Load())
@@ -117,7 +117,7 @@ func TestCheckPatches_Enabled_UpdatesAvailable(t *testing.T) {
 		PatchCheck: config.PatchCheckSettings{Enabled: true},
 	}
 	s := newTestScheduler(cfg, checker)
-	s.checkPatches(context.Background())
+	s.CheckPatches(context.Background())
 
 	if checker.calls.Load() != 1 {
 		t.Errorf("checker called %d times, want 1", checker.calls.Load())
@@ -133,9 +133,7 @@ func TestScheduler_StartsAndStops(t *testing.T) {
 		PatchCheck: config.PatchCheckSettings{Enabled: true},
 	}
 	s := newTestScheduler(cfg, checker)
-	// Replace the real wall-clock schedule with a 50 ms tick so the test
-	// can observe multiple fires without waiting until midnight.
-	s.nextWakeFunc = func() (time.Duration, error) { return 50 * time.Millisecond, nil }
+	s.NextWakeFunc = func() (time.Duration, error) { return 50 * time.Millisecond, nil }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -143,7 +141,6 @@ func TestScheduler_StartsAndStops(t *testing.T) {
 	s.Start(ctx)
 	<-ctx.Done()
 
-	// Startup run + at least one 50 ms tick within 200 ms window = ≥2 calls.
 	if checker.calls.Load() < 2 {
 		t.Errorf("checker called %d times, want ≥2 (startup + at least one tick)", checker.calls.Load())
 	}
@@ -156,13 +153,11 @@ func TestScheduler_StopsOnContextCancel(t *testing.T) {
 		PatchCheck: config.PatchCheckSettings{Enabled: true},
 	}
 	s := newTestScheduler(cfg, checker)
-	// Long next-wake so no tick fires during the test.
-	s.nextWakeFunc = func() (time.Duration, error) { return 10 * time.Second, nil }
+	s.NextWakeFunc = func() (time.Duration, error) { return 10 * time.Second, nil }
 
 	ctx, cancel := context.WithCancel(context.Background())
 	s.Start(ctx)
 
-	// Allow the startup run to complete.
 	time.Sleep(20 * time.Millisecond)
 	beforeCancel := checker.calls.Load()
 
