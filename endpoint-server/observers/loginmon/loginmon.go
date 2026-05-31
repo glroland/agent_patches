@@ -10,9 +10,22 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
+
+type loginMemSnapshot struct {
+	Username    string    `json:"username"`
+	Class       string    `json:"class"`
+	SessionType string    `json:"session_type"`
+	Remote      bool      `json:"remote"`
+	RemoteHost  string    `json:"remote_host,omitempty"`
+	RemoteUser  string    `json:"remote_user,omitempty"`
+	TTY         string    `json:"tty,omitempty"`
+	Display     string    `json:"display,omitempty"`
+	EventTime   time.Time `json:"event_time"`
+}
 
 const (
 	logindDest   = "org.freedesktop.login1"
@@ -28,6 +41,7 @@ const (
 type Monitor struct {
 	cfg      *config.LoginMonitorSettings
 	notifier *notifier.Notifier
+	Mem      *memory.DomainStore // optional; nil disables memory writes
 }
 
 // New creates a Monitor.
@@ -147,6 +161,23 @@ func (m *Monitor) handleSessionNew(ctx context.Context, conn *dbus.Conn, sig *db
 		"remote", info.Remote,
 		"from", info.RemoteHost,
 	)
+
+	if m.Mem != nil {
+		snap := loginMemSnapshot{
+			Username:    info.Username,
+			Class:       info.Class,
+			SessionType: info.SessionType,
+			Remote:      info.Remote,
+			RemoteHost:  info.RemoteHost,
+			RemoteUser:  info.RemoteUser,
+			TTY:         info.TTY,
+			Display:     info.Display,
+			EventTime:   info.Timestamp,
+		}
+		if err := m.Mem.Write(snap); err != nil {
+			slog.Debug("login_monitor: memory write failed", "error", err)
+		}
+	}
 
 	host, _ := os.Hostname()
 	m.notifier.Notify(ctx,

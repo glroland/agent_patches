@@ -8,9 +8,22 @@ import (
 	"strings"
 	"time"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
+
+type memSnapshot struct {
+	CheckedAt      time.Time `json:"checked_at"`
+	TotalBytes     uint64    `json:"total_bytes"`
+	AvailableBytes uint64    `json:"available_bytes"`
+	UsedBytes      uint64    `json:"used_bytes"`
+	UsedPct        float64   `json:"used_pct"`
+	SwapTotalBytes uint64    `json:"swap_total_bytes"`
+	SwapFreeBytes  uint64    `json:"swap_free_bytes"`
+	SwapUsedBytes  uint64    `json:"swap_used_bytes"`
+	SwapUsedPct    float64   `json:"swap_used_pct"`
+}
 
 // MemStat holds memory usage statistics for the current host.
 type MemStat struct {
@@ -54,6 +67,7 @@ type Monitor struct {
 	cfg       *config.MemoryMonitorSettings
 	notifier  *notifier.Notifier
 	GetMemory func() (MemStat, error) // overridable for tests
+	Mem       *memory.DomainStore    // optional; nil disables memory writes
 }
 
 // New creates a Monitor.
@@ -115,6 +129,23 @@ func (m *Monitor) Check(ctx context.Context) {
 		"ram_total", formatBytes(stat.Total),
 		"swap_used_pct", fmt.Sprintf("%.1f%%", stat.SwapUsedPct()),
 	)
+
+	if m.Mem != nil {
+		snap := memSnapshot{
+			CheckedAt:      time.Now().UTC(),
+			TotalBytes:     stat.Total,
+			AvailableBytes: stat.Available,
+			UsedBytes:      stat.Used(),
+			UsedPct:        stat.UsedPct(),
+			SwapTotalBytes: stat.SwapTotal,
+			SwapFreeBytes:  stat.SwapFree,
+			SwapUsedBytes:  stat.SwapUsed(),
+			SwapUsedPct:    stat.SwapUsedPct(),
+		}
+		if err := m.Mem.Write(snap); err != nil {
+			slog.Debug("memory_monitor: memory write failed", "error", err)
+		}
+	}
 
 	ramAlert := stat.UsedPct() >= m.cfg.ThresholdPercent
 	swapAlert := m.cfg.SwapThresholdPercent > 0 &&

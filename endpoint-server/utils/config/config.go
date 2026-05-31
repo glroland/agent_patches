@@ -29,6 +29,7 @@ type Settings struct {
 	MemoryMonitor    MemoryMonitorSettings    `yaml:"memory_monitor"`
 	NetworkUpload    NetworkUploadSettings    `yaml:"network_upload_monitor"`
 	NetworkDownload  NetworkDownloadSettings  `yaml:"network_download_monitor"`
+	Memory           MemorySettings           `yaml:"memory"`
 }
 
 // AgentSettings controls OpenAI API behaviour.
@@ -127,6 +128,12 @@ type NotifierSettings struct {
 	Email EmailNotifierSettings `yaml:"email"`
 }
 
+// MemorySettings configures the file-backed agent memory store.
+type MemorySettings struct {
+	// Root is the directory under which domain subdirs and attrs.json are stored.
+	Root string `yaml:"root"`
+}
+
 // EmailNotifierSettings configures the SMTP email sink.
 // TLSMode controls transport security:
 //   - "starttls" (default) — plain TCP upgraded via STARTTLS; typical port 587
@@ -191,6 +198,9 @@ func Load() (*Settings, error) {
 	}
 	if s.MemoryMonitor.Interval == "" {
 		s.MemoryMonitor.Interval = "5m"
+	}
+	if s.Memory.Root == "" {
+		s.Memory.Root = "./agent_memory"
 	}
 
 	return &s, nil

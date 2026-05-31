@@ -8,9 +8,20 @@ import (
 	"sync"
 	"time"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
+
+type uploadSnapshot struct {
+	CheckedAt time.Time `json:"checked_at"`
+	RateMBps  float64   `json:"rate_mbps"`
+}
+
+type downloadSnapshot struct {
+	CheckedAt time.Time `json:"checked_at"`
+	RateMBps  float64   `json:"rate_mbps"`
+}
 
 // UploadMonitor periodically samples network counters and notifies when the
 // outbound (upload) rate exceeds the configured threshold.
@@ -20,6 +31,7 @@ type UploadMonitor struct {
 	// Snapshot returns cumulative (bytesIn, bytesOut) across all non-loopback
 	// interfaces. Overridable for tests.
 	Snapshot func() (in, out uint64, err error)
+	Mem      *memory.DomainStore // optional; nil disables memory writes
 
 	mu       sync.Mutex
 	lastOut  uint64
@@ -34,6 +46,7 @@ type DownloadMonitor struct {
 	// Snapshot returns cumulative (bytesIn, bytesOut) across all non-loopback
 	// interfaces. Overridable for tests.
 	Snapshot func() (in, out uint64, err error)
+	Mem      *memory.DomainStore // optional; nil disables memory writes
 
 	mu       sync.Mutex
 	lastIn   uint64
@@ -115,6 +128,12 @@ func (m *UploadMonitor) Check(ctx context.Context) {
 
 	slog.Debug("net_upload_monitor: sampled", "rate_mbps", fmt.Sprintf("%.2f", rateMBps))
 
+	if m.Mem != nil {
+		if err := m.Mem.Write(uploadSnapshot{CheckedAt: now.UTC(), RateMBps: rateMBps}); err != nil {
+			slog.Debug("net_upload_monitor: memory write failed", "error", err)
+		}
+	}
+
 	if rateMBps < m.cfg.ThresholdMBps {
 		return
 	}
@@ -192,6 +211,12 @@ func (m *DownloadMonitor) Check(ctx context.Context) {
 	m.lastTime = now
 
 	slog.Debug("net_download_monitor: sampled", "rate_mbps", fmt.Sprintf("%.2f", rateMBps))
+
+	if m.Mem != nil {
+		if err := m.Mem.Write(downloadSnapshot{CheckedAt: now.UTC(), RateMBps: rateMBps}); err != nil {
+			slog.Debug("net_download_monitor: memory write failed", "error", err)
+		}
+	}
 
 	if rateMBps < m.cfg.ThresholdMBps {
 		return

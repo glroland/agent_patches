@@ -18,6 +18,7 @@ import (
 	"agent_patches/endpoint-server/a2a/agent"
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/observers/diskmon"
 	"agent_patches/endpoint-server/observers/loginmon"
 	"agent_patches/endpoint-server/observers/memmon"
@@ -112,12 +113,29 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	mem := memory.New(&cfg.Memory)
+
 	sched.Start(ctx)
-	loginmon.New(&cfg.LoginMonitor, notify).Start(ctx)
-	diskmon.New(&cfg.DiskMonitor, notify).Start(ctx)
-	memmon.New(&cfg.MemoryMonitor, notify).Start(ctx)
-	netmon.NewUploadMonitor(&cfg.NetworkUpload, notify).Start(ctx)
-	netmon.NewDownloadMonitor(&cfg.NetworkDownload, notify).Start(ctx)
+
+	lm := loginmon.New(&cfg.LoginMonitor, notify)
+	lm.Mem = mem.Domain("logins")
+	lm.Start(ctx)
+
+	dm := diskmon.New(&cfg.DiskMonitor, notify)
+	dm.Mem = mem.Domain("disk")
+	dm.Start(ctx)
+
+	mm := memmon.New(&cfg.MemoryMonitor, notify)
+	mm.Mem = mem.Domain("memory")
+	mm.Start(ctx)
+
+	um := netmon.NewUploadMonitor(&cfg.NetworkUpload, notify)
+	um.Mem = mem.Domain("net_upload")
+	um.Start(ctx)
+
+	dlm := netmon.NewDownloadMonitor(&cfg.NetworkDownload, notify)
+	dlm.Mem = mem.Domain("net_download")
+	dlm.Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)

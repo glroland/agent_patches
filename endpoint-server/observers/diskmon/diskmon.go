@@ -8,9 +8,24 @@ import (
 	"strings"
 	"time"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
+
+type diskMemSnap struct {
+	Mount      string  `json:"mount"`
+	FSType     string  `json:"fs_type,omitempty"`
+	TotalBytes uint64  `json:"total_bytes"`
+	FreeBytes  uint64  `json:"free_bytes"`
+	UsedBytes  uint64  `json:"used_bytes"`
+	UsedPct    float64 `json:"used_pct"`
+}
+
+type diskSnapshot struct {
+	CheckedAt time.Time     `json:"checked_at"`
+	Disks     []diskMemSnap `json:"disks"`
+}
 
 // DiskStat holds usage statistics for one local disk.
 type DiskStat struct {
@@ -39,7 +54,8 @@ func (d DiskStat) UsedPct() float64 {
 type Monitor struct {
 	cfg      *config.DiskMonitorSettings
 	notifier *notifier.Notifier
-	GetDisks func() ([]DiskStat, error) // overridable for tests
+	GetDisks func() ([]DiskStat, error)    // overridable for tests
+	Mem      *memory.DomainStore           // optional; nil disables memory writes
 }
 
 // New creates a Monitor.
@@ -104,6 +120,23 @@ func (m *Monitor) Check(ctx context.Context) {
 		)
 		if d.UsedPct() >= m.cfg.ThresholdPercent {
 			alerts = append(alerts, d)
+		}
+	}
+
+	if m.Mem != nil {
+		snaps := make([]diskMemSnap, 0, len(disks))
+		for _, d := range disks {
+			snaps = append(snaps, diskMemSnap{
+				Mount:      d.Mount,
+				FSType:     d.FSType,
+				TotalBytes: d.Total,
+				FreeBytes:  d.Free,
+				UsedBytes:  d.Used(),
+				UsedPct:    d.UsedPct(),
+			})
+		}
+		if err := m.Mem.Write(diskSnapshot{CheckedAt: time.Now().UTC(), Disks: snaps}); err != nil {
+			slog.Debug("disk_monitor: memory write failed", "error", err)
 		}
 	}
 

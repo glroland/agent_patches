@@ -70,6 +70,13 @@ daily_tasks:
   patch_check:
     enabled: true        # check for OS updates and notify when found
 
+# memory configures the file-backed agent memory store.
+# Snapshots are retained for 60 minutes (one per 5-minute bucket); older files
+# are automatically deleted on each write. attrs.json stores general attributes
+# without history.
+memory:
+  root: ./agent_memory   # root directory for all memory files (default: ./agent_memory)
+
 # Notifier sends event messages to configured sinks before and after patching.
 notifier:
   email:
