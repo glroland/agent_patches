@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"agent_patches/endpoint-server/storage"
 	"agent_patches/endpoint-server/tasks"
 	"agent_patches/endpoint-server/tool"
+	"agent_patches/endpoint-server/utils/storage"
 )
 
 // ---- Store tests ----

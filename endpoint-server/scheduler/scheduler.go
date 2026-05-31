@@ -7,9 +7,9 @@ import (
 	"os"
 	"time"
 
-	"agent_patches/endpoint-server/notifier"
 	"agent_patches/endpoint-server/patching"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 // updateChecker is satisfied by *patching.Patcher; injected in tests.

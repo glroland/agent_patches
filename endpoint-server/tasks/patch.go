@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"os"
 
-	"agent_patches/endpoint-server/notifier"
 	"agent_patches/endpoint-server/patching"
 	"agent_patches/endpoint-server/tool"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 type patchInput struct{}

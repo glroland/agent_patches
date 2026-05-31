@@ -18,12 +18,12 @@ import (
 	"agent_patches/endpoint-server/agent"
 	"agent_patches/endpoint-server/executor"
 	"agent_patches/endpoint-server/loginmon"
-	"agent_patches/endpoint-server/notifier"
 	"agent_patches/endpoint-server/scheduler"
-	"agent_patches/endpoint-server/storage"
 	"agent_patches/endpoint-server/tasks"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
+	"agent_patches/endpoint-server/utils/notifier"
+	"agent_patches/endpoint-server/utils/storage"
 )
 
 func main() {
