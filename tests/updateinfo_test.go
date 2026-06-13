@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -20,6 +21,32 @@ func (failTransport) RoundTrip(*http.Request) (*http.Response, error) {
 }
 
 var noHTTP = &http.Client{Transport: failTransport{}}
+
+// warnFailHandler is an slog.Handler that fails the test on any Warn-or-above
+// log record, surfacing swallowed errors that would otherwise pass silently.
+type warnFailHandler struct {
+	t *testing.T
+}
+
+func (h warnFailHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= slog.LevelWarn
+}
+
+func (h warnFailHandler) Handle(_ context.Context, r slog.Record) error {
+	h.t.Errorf("unexpected %s log: %s", r.Level, r.Message)
+	return nil
+}
+
+func (h warnFailHandler) WithAttrs(_ []slog.Attr) slog.Handler { return h }
+func (h warnFailHandler) WithGroup(_ string) slog.Handler      { return h }
+
+// failOnWarnLogs installs a handler that fails t if any Warn-or-above log is
+// emitted during the test, and returns a func that restores the prior default.
+func failOnWarnLogs(t *testing.T) func() {
+	prev := slog.Default()
+	slog.SetDefault(slog.New(warnFailHandler{t: t}))
+	return func() { slog.SetDefault(prev) }
+}
 
 // ---- ParseDebianInstLines ---------------------------------------------------
 
@@ -210,6 +237,27 @@ func TestFormatUpdateReport_WithCVEs(t *testing.T) {
 // ---- ListUpdates — Debian (mock commander, no HTTP) -------------------------
 
 func TestListUpdates_Debian_PackageParsing(t *testing.T) {
+	nvdResp := `{"vulnerabilities":[{"cve":{"metrics":{"cvssMetricV31":[{"cvssData":{"baseScore":7.5,"baseSeverity":"HIGH"}}]}}}]}`
+
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body string
+		switch {
+		case strings.Contains(r.URL.Path, "/security/api/v1/cves") && strings.Contains(r.URL.RawQuery, "package=curl"):
+			body = `{"results":[{"id":"CVE-2024-1234","priority":"high"}]}`
+		case strings.Contains(r.URL.Path, "/security/api/v1/cves") && strings.Contains(r.URL.RawQuery, "package=libssl3"):
+			body = `{"results":[]}`
+		case strings.Contains(r.URL.Host, "nvd"):
+			body = nvdResp
+		default:
+			return nil, fmt.Errorf("unexpected request to %s", r.URL)
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
 	cmdr := &mockCmdr{
 		stubs: map[string]cmdStub{
 			"apt-get": {output: `Reading package lists... Done
@@ -220,7 +268,9 @@ Inst libssl3:amd64 [3.0.2-0ubuntu1.15] (3.0.2-0ubuntu1.16 Ubuntu [amd64])
 		},
 	}
 	p := patching.NewWithCommander(patching.OSDebian, cmdr)
-	p.HTTPClient = noHTTP // disable actual HTTP calls
+	p.HTTPClient = &http.Client{Transport: transport}
+
+	defer failOnWarnLogs(t)()
 
 	updates, err := p.ListUpdates(context.Background())
 	if err != nil {
@@ -235,9 +285,11 @@ Inst libssl3:amd64 [3.0.2-0ubuntu1.15] (3.0.2-0ubuntu1.16 Ubuntu [amd64])
 	if updates[0].Description != "command line tool for transferring data with URL syntax" {
 		t.Errorf("unexpected description: %q", updates[0].Description)
 	}
-	// CVEs will be empty because HTTP is disabled — verify no panic.
-	if updates[0].CVEs != nil {
-		t.Errorf("expected no CVEs when HTTP is disabled, got %v", updates[0].CVEs)
+	if len(updates[0].CVEs) != 1 || updates[0].CVEs[0].ID != "CVE-2024-1234" {
+		t.Errorf("expected CVE-2024-1234 for curl, got %v", updates[0].CVEs)
+	}
+	if len(updates[1].CVEs) != 0 {
+		t.Errorf("expected no CVEs for libssl3, got %v", updates[1].CVEs)
 	}
 }
 
@@ -270,6 +322,29 @@ func TestListUpdates_Fedora_PackageParsing(t *testing.T) {
 // ---- ListUpdates — Darwin (mock commander, no HTTP) -------------------------
 
 func TestListUpdates_Darwin_PackageParsing(t *testing.T) {
+	releaseIndexHTML := `<a href="/en-us/100001">About the security content of macOS Sequoia 15.4.1</a>`
+	releasePageHTML := `<p>Fixes CVE-2024-1234.</p>`
+	nvdResp := `{"vulnerabilities":[{"cve":{"metrics":{"cvssMetricV31":[{"cvssData":{"baseScore":7.5,"baseSeverity":"HIGH"}}]}}}]}`
+
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		var body string
+		switch {
+		case r.URL.Host == "support.apple.com" && r.URL.Path == "/en-us/100100":
+			body = releaseIndexHTML
+		case r.URL.Host == "support.apple.com" && r.URL.Path == "/en-us/100001":
+			body = releasePageHTML
+		case strings.Contains(r.URL.Host, "nvd"):
+			body = nvdResp
+		default:
+			return nil, fmt.Errorf("unexpected request to %s", r.URL)
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
 	cmdr := &mockCmdr{
 		stubs: map[string]cmdStub{
 			"softwareupdate": {output: `Software Update Tool
@@ -280,7 +355,9 @@ func TestListUpdates_Darwin_PackageParsing(t *testing.T) {
 		},
 	}
 	p := patching.NewWithCommander(patching.OSDarwin, cmdr)
-	p.HTTPClient = noHTTP
+	p.HTTPClient = &http.Client{Transport: transport}
+
+	defer failOnWarnLogs(t)()
 
 	updates, err := p.ListUpdates(context.Background())
 	if err != nil {
@@ -291,6 +368,9 @@ func TestListUpdates_Darwin_PackageParsing(t *testing.T) {
 	}
 	if updates[0].Name != "macOS Sequoia 15.4.1-24E263" {
 		t.Errorf("updates[0].Name = %q", updates[0].Name)
+	}
+	if len(updates[0].CVEs) != 1 || updates[0].CVEs[0].ID != "CVE-2024-1234" {
+		t.Errorf("expected CVE-2024-1234, got %v", updates[0].CVEs)
 	}
 }
 
