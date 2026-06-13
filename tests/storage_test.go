@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"agent_patches/endpoint-server/tasks/hello"
+	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/tool"
 	"agent_patches/endpoint-server/utils/storage"
 )
@@ -30,7 +30,7 @@ func TestStore_Append_CreatesFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "tasks.jsonl")
 	store := storage.NewStore(path)
 
-	if err := store.Append(storage.TaskRecord{ID: "1", Name: "hello"}); err != nil {
+	if err := store.Append(storage.TaskRecord{ID: "1", Name: "ping"}); err != nil {
 		t.Fatalf("Append() error: %v", err)
 	}
 
@@ -48,9 +48,9 @@ func TestStore_AppendAndAll_RoundTrip(t *testing.T) {
 
 	want := storage.TaskRecord{
 		ID:         "abc123",
-		Name:       "hello",
+		Name:       "ping",
 		Input:      json.RawMessage(`{"key":"val"}`),
-		Result:     "world",
+		Result:     "pong",
 		ExecutedAt: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC),
 	}
 
@@ -122,7 +122,7 @@ func TestStore_Append_RecordsError(t *testing.T) {
 
 func TestWrapTool_DelegatesMetadata(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	inner, _ := hello.NewHelloTool()
+	inner, _ := ping.NewPingTool()
 	wrapped := storage.WrapTool(inner, store)
 
 	if wrapped.Name() != inner.Name() {
@@ -135,7 +135,7 @@ func TestWrapTool_DelegatesMetadata(t *testing.T) {
 
 func TestWrapTool_RecordsExecution(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	inner, _ := hello.NewHelloTool()
+	inner, _ := ping.NewPingTool()
 	wrapped := storage.WrapTool(inner, store)
 
 	input, _ := json.Marshal(struct{}{})
@@ -152,11 +152,11 @@ func TestWrapTool_RecordsExecution(t *testing.T) {
 	}
 
 	r := records[0]
-	if r.Name != "hello" {
-		t.Errorf("Name = %q, want %q", r.Name, "hello")
+	if r.Name != "ping" {
+		t.Errorf("Name = %q, want %q", r.Name, "ping")
 	}
-	if r.Result != "world" {
-		t.Errorf("Result = %q, want %q", r.Result, "world")
+	if r.Result != "pong" {
+		t.Errorf("Result = %q, want %q", r.Result, "pong")
 	}
 	if r.Error != "" {
 		t.Errorf("Error = %q, want empty", r.Error)
@@ -171,7 +171,7 @@ func TestWrapTool_RecordsExecution(t *testing.T) {
 
 func TestWrapTool_StillReturnsResult(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	inner, _ := hello.NewHelloTool()
+	inner, _ := ping.NewPingTool()
 	wrapped := storage.WrapTool(inner, store)
 
 	input, _ := json.Marshal(struct{}{})
@@ -179,15 +179,15 @@ func TestWrapTool_StillReturnsResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Execute() error: %v", err)
 	}
-	if result != "world" {
-		t.Errorf("Execute() result = %q, want %q", result, "world")
+	if result != "pong" {
+		t.Errorf("Execute() result = %q, want %q", result, "pong")
 	}
 }
 
 func TestWrapAll_WrapsEveryTool(t *testing.T) {
 	store := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
-	t1, _ := hello.NewHelloTool()
-	t2, _ := hello.NewHelloTool()
+	t1, _ := ping.NewPingTool()
+	t2, _ := ping.NewPingTool()
 
 	wrapped := storage.WrapAll([]tool.Tool{t1, t2}, store)
 	if len(wrapped) != 2 {

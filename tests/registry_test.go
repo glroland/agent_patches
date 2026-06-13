@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	tasks "agent_patches/endpoint-server/a2a/registry"
-	"agent_patches/endpoint-server/tasks/hello"
+	"agent_patches/endpoint-server/skills/ping"
 )
 
 func TestRegistry_EmptyByDefault(t *testing.T) {
@@ -17,9 +17,9 @@ func TestRegistry_EmptyByDefault(t *testing.T) {
 func TestRegistry_Register(t *testing.T) {
 	r := tasks.NewRegistry()
 
-	tool, err := hello.NewHelloTool()
+	tool, err := ping.NewPingTool()
 	if err != nil {
-		t.Fatalf("NewHelloTool() unexpected error: %v", err)
+		t.Fatalf("NewPingTool() unexpected error: %v", err)
 	}
 	r.Register(tool)
 
@@ -31,8 +31,8 @@ func TestRegistry_Register(t *testing.T) {
 func TestRegistry_Tools_RetainsOrder(t *testing.T) {
 	r := tasks.NewRegistry()
 
-	tool1, _ := hello.NewHelloTool()
-	tool2, _ := hello.NewHelloTool()
+	tool1, _ := ping.NewPingTool()
+	tool2, _ := ping.NewPingTool()
 	r.Register(tool1)
 	r.Register(tool2)
 

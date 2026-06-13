@@ -19,10 +19,10 @@ import (
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/aisysadmin"
+	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
-	"agent_patches/endpoint-server/scheduler"
-	"agent_patches/endpoint-server/tasks/hello"
-	"agent_patches/endpoint-server/tasks/patch"
+	"agent_patches/endpoint-server/skills/patch"
+	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
 	"agent_patches/endpoint-server/utils/notifier"
@@ -49,16 +49,15 @@ func main() {
 
 	store := storage.NewStore(cfg.Storage.TasksFile)
 	notify := notifier.New(&cfg.Notifier)
-	sched := scheduler.New(&cfg.DailyTasks, notify)
 
 	registry := tasks.NewRegistry()
 
-	helloTool, err := hello.NewHelloTool()
+	pingTool, err := ping.NewPingTool()
 	if err != nil {
-		slog.Error("failed to create hello tool", "error", err)
+		slog.Error("failed to create ping tool", "error", err)
 		return
 	}
-	registry.Register(helloTool)
+	registry.Register(pingTool)
 
 	patchTool, err := patch.NewPatchTool(notify)
 	if err != nil {
@@ -112,9 +111,9 @@ func main() {
 
 	mem := memory.New(&cfg.Memory)
 
-	sched.Start(ctx)
-
 	aisysadmin.New(&cfg.AISysAdmin, &cfg.Agent, mem, notify).Start(ctx)
+
+	loop.New(&cfg.Loop).Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)

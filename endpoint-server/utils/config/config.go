@@ -31,6 +31,14 @@ type Settings struct {
 	NetworkDownload  NetworkDownloadSettings  `yaml:"network_download_monitor"`
 	Memory           MemorySettings           `yaml:"memory"`
 	AISysAdmin       AISysAdminSettings       `yaml:"ai_sysadmin"`
+	Loop             LoopSettings             `yaml:"loop"`
+}
+
+// LoopSettings controls the generic background wake-up loop.
+type LoopSettings struct {
+	// Interval is a Go duration string (e.g. "30s", "5m") for how often the
+	// loop wakes up. Defaults to "60s" when unset.
+	Interval string `yaml:"interval"`
 }
 
 // AgentSettings controls OpenAI API behaviour.
@@ -214,6 +222,9 @@ func Load() (*Settings, error) {
 	}
 	if s.AISysAdmin.Interval == "" {
 		s.AISysAdmin.Interval = "5m"
+	}
+	if s.Loop.Interval == "" {
+		s.Loop.Interval = "60s"
 	}
 
 	return &s, nil

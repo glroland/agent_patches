@@ -86,6 +86,12 @@ ai_sysadmin:
 memory:
   root: ./agent_memory   # root directory for all memory files (default: ./agent_memory)
 
+# loop is a generic background loop that wakes up on a fixed interval for the
+# lifetime of the server. It always starts automatically; the interval is
+# the only configurable setting.
+loop:
+  interval: "60s"   # how often the loop wakes up; any Go duration string (default: 60s)
+
 # Notifier sends event messages to configured sinks before and after patching.
 notifier:
   email:
