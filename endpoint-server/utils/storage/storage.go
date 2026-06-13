@@ -111,7 +111,7 @@ func (t *storedTool) Description() string          { return t.inner.Description(
 func (t *storedTool) InputSchema() json.RawMessage { return t.inner.InputSchema() }
 
 func (t *storedTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
-	slog.Debug("storage: executing tool", "tool", t.inner.Name())
+	slog.Info("skill: called", "skill", t.inner.Name(), "input", string(input))
 
 	result, execErr := t.inner.Execute(ctx, input)
 
@@ -126,8 +126,10 @@ func (t *storedTool) Execute(ctx context.Context, input json.RawMessage) (string
 		record.Result = ""
 		record.Error = execErr.Error()
 		slog.Warn("storage: tool execution error", "tool", t.inner.Name(), "error", execErr)
+		slog.Info("skill: completed", "skill", t.inner.Name(), "error", execErr.Error())
 	} else {
 		slog.Debug("storage: tool executed", "tool", t.inner.Name(), "result_len", len(result))
+		slog.Info("skill: completed", "skill", t.inner.Name(), "result", result)
 	}
 
 	if err := t.store.Append(record); err != nil {
