@@ -19,6 +19,17 @@ type SizedEntry struct {
 // making the scan unbounded.
 const maxDirsExplored = 50
 
+// pseudoFSDirs lists top-level directory names that host pseudo/virtual
+// filesystems on Unix-like systems (procfs, sysfs, devtmpfs, etc.). Their
+// reported sizes (e.g. /proc/kcore appearing as the size of physical memory)
+// do not reflect real disk usage, so they are excluded from the scan.
+var pseudoFSDirs = map[string]bool{
+	"proc": true,
+	"sys":  true,
+	"dev":  true,
+	"run":  true,
+}
+
 // dirNode tracks a directory discovered during the scan. total starts as
 // the directory's own immediate file size (depth 1, no recursion) and grows
 // as descendants are discovered and their sizes are propagated upward.
@@ -61,6 +72,10 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 		for _, e := range entries {
 			path := filepath.Join(cur.path, e.Name())
 			if e.IsDir() {
+				if cur.parent == nil && pseudoFSDirs[e.Name()] {
+					slog.Debug("check_drives: skipping pseudo filesystem", "path", path)
+					continue
+				}
 				child := &dirNode{path: path, total: dirSelfSize(path), parent: cur}
 				candidates = append(candidates, child)
 				queue = append(queue, child)
