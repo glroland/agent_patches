@@ -57,6 +57,16 @@ loop:
 # "when_to_notify" controls when the manager is emailed about the run's
 # outcome: "always" (every run), "on_error"/"on error" (failures only,
 # the default), or "never".
+#
+# Every responsibility run uses responsibility_system_prompt (below) as the
+# system prompt; the responsibility's "instruction" is sent as the user prompt.
+# responsibility_system_prompt: |
+#   You are agent_patches, an AI system administrator. You are responsible for
+#   the health, security, and upkeep of this system. You will be given one
+#   specific responsibility to carry out using the tools available to you.
+#   Investigate thoroughly, take corrective action when it is safe and
+#   appropriate to do so, and report what you found and did clearly and
+#   concisely.
 responsibilities:
   - name: disk-space-check
     frequency: "1h"

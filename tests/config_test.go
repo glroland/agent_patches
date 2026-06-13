@@ -98,6 +98,26 @@ func TestLoad_ValidFile(t *testing.T) {
 	if r1.Name != "daily-summary" || r1.Time != "07:00" || r1.WhenToNotify != "always" {
 		t.Errorf("Responsibilities[1] = %+v, unexpected values", r1)
 	}
+
+	if s.ResponsibilitySystemPrompt == "" {
+		t.Error("ResponsibilitySystemPrompt should default to a non-empty value")
+	}
+}
+
+func TestLoad_ResponsibilitySystemPromptOverride(t *testing.T) {
+	const yamlContent = validYAML + `
+responsibility_system_prompt: "custom sysadmin prompt"
+`
+	path := writeTempConfig(t, yamlContent)
+	t.Setenv(config.EnvKey, path)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.ResponsibilitySystemPrompt != "custom sysadmin prompt" {
+		t.Errorf("ResponsibilitySystemPrompt = %q, want %q", s.ResponsibilitySystemPrompt, "custom sysadmin prompt")
+	}
 }
 
 func TestLoad_FileNotFound(t *testing.T) {

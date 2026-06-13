@@ -14,6 +14,15 @@ const EnvKey = "AGENT_PATCHES_CONFIG"
 // defaultFile is resolved relative to the working directory when EnvKey is unset.
 const defaultFile = "config.yaml"
 
+// defaultResponsibilitySystemPrompt is used as the system prompt for every
+// responsibility run when ResponsibilitySystemPrompt is unset.
+const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system administrator. ` +
+	`You are responsible for the health, security, and upkeep of this system. ` +
+	`You will be given one specific responsibility to carry out using the tools ` +
+	`available to you. Investigate thoroughly, take corrective action when it is ` +
+	`safe and appropriate to do so, and report what you found and did clearly and ` +
+	`concisely.`
+
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
 	Agent    AgentSettings    `yaml:"agent"`
@@ -29,6 +38,11 @@ type Settings struct {
 	// Responsibilities is a dynamic list of recurring duties the agent should
 	// carry out, each on its own schedule.
 	Responsibilities []ResponsibilitySettings `yaml:"responsibilities"`
+
+	// ResponsibilitySystemPrompt is the system prompt used for every
+	// responsibility run; the responsibility's Instruction is sent as the
+	// user prompt. Defaults to defaultResponsibilitySystemPrompt when unset.
+	ResponsibilitySystemPrompt string `yaml:"responsibility_system_prompt"`
 }
 
 // ResponsibilitySettings describes one recurring duty assigned to the agent.
@@ -154,6 +168,9 @@ func Load() (*Settings, error) {
 	}
 	if s.Loop.Heartbeat == "" {
 		s.Loop.Heartbeat = "1s"
+	}
+	if s.ResponsibilitySystemPrompt == "" {
+		s.ResponsibilitySystemPrompt = defaultResponsibilitySystemPrompt
 	}
 
 	return &s, nil

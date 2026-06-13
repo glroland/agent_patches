@@ -16,12 +16,20 @@ import (
 
 // Agent drives the tool-use loop against the OpenAI chat completions API.
 type Agent struct {
-	client openai.Client
-	tools  []tool.Tool
-	cfg    *config.Settings
+	client       openai.Client
+	tools        []tool.Tool
+	cfg          *config.Settings
+	systemPrompt string
 }
 
+// New creates an Agent using cfg.Agent.SystemPrompt as the system message.
 func New(tools []tool.Tool, cfg *config.Settings) *Agent {
+	return NewWithSystemPrompt(tools, cfg, cfg.Agent.SystemPrompt)
+}
+
+// NewWithSystemPrompt creates an Agent that uses systemPrompt as the system
+// message instead of cfg.Agent.SystemPrompt.
+func NewWithSystemPrompt(tools []tool.Tool, cfg *config.Settings, systemPrompt string) *Agent {
 	slog.Debug("agent: initialised",
 		"model", cfg.Agent.Model,
 		"max_tokens", cfg.Agent.MaxTokens,
@@ -36,9 +44,10 @@ func New(tools []tool.Tool, cfg *config.Settings) *Agent {
 		opts = append(opts, option.WithBaseURL(cfg.Agent.BaseURL))
 	}
 	return &Agent{
-		client: openai.NewClient(opts...),
-		tools:  tools,
-		cfg:    cfg,
+		client:       openai.NewClient(opts...),
+		tools:        tools,
+		cfg:          cfg,
+		systemPrompt: systemPrompt,
 	}
 }
 
@@ -63,7 +72,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 	}
 
 	messages := []openai.ChatCompletionMessageParamUnion{
-		openai.SystemMessage(a.cfg.Agent.SystemPrompt),
+		openai.SystemMessage(a.systemPrompt),
 		openai.UserMessage(input),
 	}
 
