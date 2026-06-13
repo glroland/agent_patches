@@ -16,18 +16,17 @@ const defaultFile = "config.yaml"
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
-	Agent         AgentSettings         `yaml:"agent"`
-	Logging       LoggingSettings       `yaml:"logging"`
-	Tasks         TasksSettings         `yaml:"tasks"`
-	Storage       StorageSettings       `yaml:"storage"`
-	Server        ServerSettings        `yaml:"server"`
-	Security      SecuritySettings      `yaml:"security"`
-	Notifier      NotifierSettings      `yaml:"notifier"`
-	DailyTasks    DailyTasksSettings    `yaml:"daily_tasks"`
-	NetworkUpload NetworkUploadSettings `yaml:"network_upload_monitor"`
-	Memory        MemorySettings        `yaml:"memory"`
-	AISysAdmin    AISysAdminSettings    `yaml:"ai_sysadmin"`
-	Loop          LoopSettings          `yaml:"loop"`
+	Agent      AgentSettings      `yaml:"agent"`
+	Logging    LoggingSettings    `yaml:"logging"`
+	Tasks      TasksSettings      `yaml:"tasks"`
+	Storage    StorageSettings    `yaml:"storage"`
+	Server     ServerSettings     `yaml:"server"`
+	Security   SecuritySettings   `yaml:"security"`
+	Notifier   NotifierSettings   `yaml:"notifier"`
+	DailyTasks DailyTasksSettings `yaml:"daily_tasks"`
+	Memory     MemorySettings     `yaml:"memory"`
+	AISysAdmin AISysAdminSettings `yaml:"ai_sysadmin"`
+	Loop       LoopSettings       `yaml:"loop"`
 }
 
 // LoopSettings controls the generic background wake-up loop.
@@ -89,14 +88,6 @@ type DailyTasksSettings struct {
 // PatchCheckSettings controls the scheduled patch-availability check.
 type PatchCheckSettings struct {
 	Enabled bool `yaml:"enabled"`
-}
-
-// NetworkUploadSettings controls the upload-rate monitor.
-type NetworkUploadSettings struct {
-	Enabled       bool    `yaml:"enabled"`
-	ThresholdMBps float64 `yaml:"threshold_mbps"`
-	// Interval is a Go duration string (e.g. "1m", "30s") for how often to sample.
-	Interval string `yaml:"interval"`
 }
 
 // NotifierSettings groups all event-sink configuration.
@@ -162,9 +153,6 @@ func Load() (*Settings, error) {
 	}
 	if s.DailyTasks.WakeTime == "" {
 		s.DailyTasks.WakeTime = "00:00"
-	}
-	if s.NetworkUpload.Interval == "" {
-		s.NetworkUpload.Interval = "1m"
 	}
 	if s.Memory.Root == "" {
 		s.Memory.Root = "./agent_memory"

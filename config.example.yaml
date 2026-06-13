@@ -30,13 +30,6 @@ security:
   scheme: bearer
   token: change-me
 
-# network_upload_monitor alerts when the outbound (upload) rate exceeds the threshold.
-# Measures aggregate throughput across all physical interfaces; threshold is in MB/s.
-network_upload_monitor:
-  enabled: false
-  threshold_mbps: 100  # alert when upload rate reaches or exceeds this MB/s
-  interval: "1m"       # sampling interval; any Go duration string (default: 1m)
-
 # daily_tasks controls the background maintenance loop.
 # The loop goroutine always starts; individual tasks are gated by their own enabled flag.
 daily_tasks:
