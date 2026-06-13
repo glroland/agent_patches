@@ -30,13 +30,6 @@ security:
   scheme: bearer
   token: change-me
 
-# daily_tasks controls the background maintenance loop.
-# The loop goroutine always starts; individual tasks are gated by their own enabled flag.
-daily_tasks:
-  wake_time: "00:00"     # local wall-clock time (HH:MM) to run all enabled tasks (default: midnight)
-  patch_check:
-    enabled: true        # check for OS updates and notify when found
-
 # ai_sysadmin runs a background AI agent that wakes up every interval, reads
 # all memory-domain snapshots, analyses trends and anomalies, plans remediation,
 # and executes corrective actions via shell commands. A notification email is

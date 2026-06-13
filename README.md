@@ -68,14 +68,7 @@ security:
   scheme: bearer
   token: change-me
 
-# daily_tasks — background loop that wakes once per day.
-# The goroutine always starts; each task is gated by its own enabled flag.
-daily_tasks:
-  wake_time: "00:00"       # HH:MM in local time (default: midnight)
-  patch_check:
-    enabled: true          # check for OS updates and notify when found
-
-# notifier — event sinks for patch lifecycle and daily-check alerts.
+# notifier — event sinks for patch lifecycle and responsibility alerts.
 notifier:
   email:
     enabled: false
@@ -107,21 +100,18 @@ The notifier fires on the following events:
 | Patch starting | `[hostname] Patch Starting` |
 | Patch completed | `[hostname] Patch Complete` |
 | Patch failed | `[hostname] Patch Failed` |
-| Daily check found updates | `[hostname] Updates Available` |
 
 Notifications are **not** sent when no updates are available.
 
-## Daily task loop
+## Responsibilities loop
 
-The background goroutine starts with the server and wakes at the time
-specified by `daily_tasks.wake_time` (local timezone). On each wake it:
-
-1. Runs `checkPatches` (if `patch_check.enabled: true`) — calls the OS
-   package manager in dry-run mode to list pending updates, then sends a
-   notification if any are found.
-
-Additional daily tasks will be added here as the agent gains new capabilities.
-The goroutine runs regardless of whether any tasks are enabled.
+The background loop starts with the server and, on each heartbeat, checks
+every entry under `responsibilities` in the config to see if it's due — either
+on a recurring `frequency` or at a once-daily `time`. When a responsibility is
+due, the agent runs its `instruction` (with any listed `tools` available) in
+its own goroutine. If a previous run of that responsibility is still in
+flight when it comes due again, the run is skipped and an error is logged.
+See `config.example.yaml` for examples and the `when_to_notify` options.
 
 ## OS support
 

@@ -23,7 +23,6 @@ type Settings struct {
 	Server     ServerSettings     `yaml:"server"`
 	Security   SecuritySettings   `yaml:"security"`
 	Notifier   NotifierSettings   `yaml:"notifier"`
-	DailyTasks DailyTasksSettings `yaml:"daily_tasks"`
 	Memory     MemorySettings     `yaml:"memory"`
 	AISysAdmin AISysAdminSettings `yaml:"ai_sysadmin"`
 	Loop       LoopSettings       `yaml:"loop"`
@@ -99,19 +98,6 @@ type SecuritySettings struct {
 	Token  string `yaml:"token"`
 }
 
-// DailyTasksSettings controls the background maintenance loop.
-type DailyTasksSettings struct {
-	// WakeTime is the local wall-clock time (HH:MM) at which the loop fires
-	// each day. Defaults to "00:00" (midnight) when unset.
-	WakeTime   string             `yaml:"wake_time"`
-	PatchCheck PatchCheckSettings `yaml:"patch_check"`
-}
-
-// PatchCheckSettings controls the scheduled patch-availability check.
-type PatchCheckSettings struct {
-	Enabled bool `yaml:"enabled"`
-}
-
 // NotifierSettings groups all event-sink configuration.
 type NotifierSettings struct {
 	Email EmailNotifierSettings `yaml:"email"`
@@ -172,9 +158,6 @@ func Load() (*Settings, error) {
 	}
 	if s.Security.Scheme == "" {
 		s.Security.Scheme = "none"
-	}
-	if s.DailyTasks.WakeTime == "" {
-		s.DailyTasks.WakeTime = "00:00"
 	}
 	if s.Memory.Root == "" {
 		s.Memory.Root = "./agent_memory"

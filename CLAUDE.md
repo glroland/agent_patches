@@ -13,8 +13,6 @@ make run-cli ARGS="<message>"  # build + send one task via the CLI
 make deploy         # cross-compile + deploy to all Ansible inventory hosts (prompts for sudo password)
 
 # build or test a single package
-go build ./endpoint-server/scheduler/
-go test ./endpoint-server/scheduler/ -run TestNextWake
 go test ./tests/ -run TestPatcher_Debian
 ```
 
@@ -46,10 +44,6 @@ HTTP JSON-RPC → a2asrv.Handler → executor.Executor → agent.Agent (Claude t
 
 The tool receives a `context.Context` and its typed input; return a `BetaToolResultBlockParamContentUnion` via the `textResult` helper.
 
-### Adding a new daily task
-
-Add a method on `scheduler.Scheduler` and call it from `scheduler.run`.  Add a corresponding `Enabled bool` field under `DailyTasksSettings` in `endpoint-server/config/config.go` and gate the method on that flag.
-
 ### Patching pipeline
 
 `patching.Patcher` has two public methods called in sequence by `tasks.NewPatchTool`:
@@ -63,14 +57,6 @@ The `Commander` interface abstracts `exec.Cmd`; inject a `mockCmdr` in tests via
 
 `notifier.New(&cfg.Notifier)` returns a `*Notifier` that fans out to all enabled sinks.  Currently only `emailSink` is implemented (three TLS modes: `starttls`, `tls`, `none`).  A nil `*Notifier` is safe to call — `Notify` is a no-op.  New sinks implement the `Sink` interface (`Send(ctx, subject, body) error`) and are enabled in `notifier.New`.
 
-### Daily task scheduler
-
-`scheduler.New(&cfg.DailyTasks, notify).Start(ctx)` launches a goroutine that:
-- runs all enabled tasks immediately on startup
-- then sleeps until the next wall-clock occurrence of `wake_time` (HH:MM local time), recalculating on every loop iteration to handle DST correctly
-
-The `nextWakeFunc` field is overridable in tests to inject a short duration instead of a real 24 h wait.
-
 ### Config defaults (applied in `config.Load`)
 
 | Field | Default |
@@ -79,5 +65,4 @@ The `nextWakeFunc` field is overridable in tests to inject a short duration inst
 | `server.port` | `8080` |
 | `server.public_url` | `http://<os.Hostname()>:<port>` (dynamic) |
 | `security.scheme` | `none` |
-| `daily_tasks.wake_time` | `00:00` |
 | `logging.file` | _(stderr)_ |
