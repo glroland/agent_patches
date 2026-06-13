@@ -59,6 +59,28 @@ memory:
 loop:
   heartbeat: "1s"   # how often the loop wakes up; any Go duration string (default: 1s)
 
+# responsibilities is a dynamic list of recurring duties for the agent.
+# Each entry must set exactly one of "frequency" (a Go duration string for
+# recurring runs, e.g. "1h") or "time" (a local HH:MM wall-clock time for a
+# once-daily run). "tools" optionally names the skills/tools to make available
+# while carrying out the instruction. "when_to_notify" describes when the
+# agent should alert its manager (e.g. "on error", "always", "never").
+responsibilities:
+  - name: disk-space-check
+    frequency: "1h"
+    instruction: |
+      Check disk usage on all mounted filesystems. If any filesystem is above
+      90% capacity, identify the largest contributors and report them.
+    tools:
+      - disk
+    when_to_notify: "on error"
+  - name: daily-summary
+    time: "07:00"
+    instruction: |
+      Summarize overnight system activity, including any errors, restarts,
+      or completed patch runs, and produce a short report.
+    when_to_notify: "always"
+
 # Notifier sends event messages to configured sinks before and after patching.
 notifier:
   email:

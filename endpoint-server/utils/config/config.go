@@ -27,6 +27,28 @@ type Settings struct {
 	Memory     MemorySettings     `yaml:"memory"`
 	AISysAdmin AISysAdminSettings `yaml:"ai_sysadmin"`
 	Loop       LoopSettings       `yaml:"loop"`
+
+	// Responsibilities is a dynamic list of recurring duties the agent should
+	// carry out, each on its own schedule.
+	Responsibilities []ResponsibilitySettings `yaml:"responsibilities"`
+}
+
+// ResponsibilitySettings describes one recurring duty assigned to the agent.
+// Exactly one of Frequency or Time should be set to control scheduling:
+//   - Frequency is a Go duration string (e.g. "1h", "30m") for recurring runs.
+//   - Time is a local wall-clock time (HH:MM) for a once-daily run.
+//
+// Instruction is passed to the agent verbatim as the task prompt. Tools, when
+// set, names the skills/tools the agent should have available while carrying
+// out the instruction. WhenToNotify describes the conditions under which the
+// agent should alert its manager (e.g. "on error", "always", "never").
+type ResponsibilitySettings struct {
+	Name         string   `yaml:"name"`
+	Frequency    string   `yaml:"frequency,omitempty"`
+	Time         string   `yaml:"time,omitempty"`
+	Instruction  string   `yaml:"instruction"`
+	Tools        []string `yaml:"tools,omitempty"`
+	WhenToNotify string   `yaml:"when_to_notify"`
 }
 
 // LoopSettings controls the generic background wake-up loop.

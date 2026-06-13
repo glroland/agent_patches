@@ -25,6 +25,18 @@ tasks:
 
 storage:
   tasks_file: /tmp/test_tasks.jsonl
+
+responsibilities:
+  - name: disk-space-check
+    frequency: "1h"
+    instruction: Check disk usage and report anything above 90%.
+    tools:
+      - disk
+    when_to_notify: "on error"
+  - name: daily-summary
+    time: "07:00"
+    instruction: Summarize overnight activity.
+    when_to_notify: "always"
 `
 
 func writeTempConfig(t *testing.T, content string) string {
@@ -70,6 +82,21 @@ func TestLoad_ValidFile(t *testing.T) {
 	}
 	if s.Storage.TasksFile != "/tmp/test_tasks.jsonl" {
 		t.Errorf("Storage.TasksFile = %q, want %q", s.Storage.TasksFile, "/tmp/test_tasks.jsonl")
+	}
+
+	if len(s.Responsibilities) != 2 {
+		t.Fatalf("Responsibilities len = %d, want 2", len(s.Responsibilities))
+	}
+	r0 := s.Responsibilities[0]
+	if r0.Name != "disk-space-check" || r0.Frequency != "1h" || r0.WhenToNotify != "on error" {
+		t.Errorf("Responsibilities[0] = %+v, unexpected values", r0)
+	}
+	if len(r0.Tools) != 1 || r0.Tools[0] != "disk" {
+		t.Errorf("Responsibilities[0].Tools = %v, want [disk]", r0.Tools)
+	}
+	r1 := s.Responsibilities[1]
+	if r1.Name != "daily-summary" || r1.Time != "07:00" || r1.WhenToNotify != "always" {
+		t.Errorf("Responsibilities[1] = %+v, unexpected values", r1)
 	}
 }
 
