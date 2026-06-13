@@ -30,38 +30,12 @@ security:
   scheme: bearer
   token: change-me
 
-# login_monitor listens for interactive user logins via systemd-logind (D-Bus).
-# Requires the server to run on a Linux host with systemd.
-login_monitor:
-  enabled: true
-
 # network_upload_monitor alerts when the outbound (upload) rate exceeds the threshold.
-# network_download_monitor alerts when the inbound (download) rate exceeds the threshold.
-# Both measure aggregate throughput across all physical interfaces; thresholds are in MB/s.
+# Measures aggregate throughput across all physical interfaces; threshold is in MB/s.
 network_upload_monitor:
   enabled: false
   threshold_mbps: 100  # alert when upload rate reaches or exceeds this MB/s
   interval: "1m"       # sampling interval; any Go duration string (default: 1m)
-
-network_download_monitor:
-  enabled: false
-  threshold_mbps: 100  # alert when download rate reaches or exceeds this MB/s
-  interval: "1m"
-
-# memory_monitor periodically checks RAM and swap usage and notifies when either
-# exceeds the configured threshold. Works on Linux, macOS, and Windows.
-memory_monitor:
-  enabled: true
-  threshold_percent: 90       # alert when RAM used % reaches or exceeds this (default: 90)
-  swap_threshold_percent: 80  # alert when swap used % reaches or exceeds this; 0 = disabled (default: 80)
-  interval: "5m"              # how often to check; any Go duration string (default: 5m)
-
-# disk_monitor periodically checks all local disks and notifies when any exceeds
-# the usage threshold. Works on Linux, macOS, and Windows.
-disk_monitor:
-  enabled: true
-  threshold_percent: 85   # alert when used % reaches or exceeds this value (default: 85)
-  interval: "1h"          # how often to check; any Go duration string (default: 1h)
 
 # daily_tasks controls the background maintenance loop.
 # The loop goroutine always starts; individual tasks are gated by their own enabled flag.

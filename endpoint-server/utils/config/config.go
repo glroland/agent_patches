@@ -16,22 +16,18 @@ const defaultFile = "config.yaml"
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
-	Agent           AgentSettings           `yaml:"agent"`
-	Logging         LoggingSettings         `yaml:"logging"`
-	Tasks           TasksSettings           `yaml:"tasks"`
-	Storage         StorageSettings         `yaml:"storage"`
-	Server          ServerSettings          `yaml:"server"`
-	Security        SecuritySettings        `yaml:"security"`
-	Notifier        NotifierSettings        `yaml:"notifier"`
-	DailyTasks      DailyTasksSettings      `yaml:"daily_tasks"`
-	LoginMonitor    LoginMonitorSettings    `yaml:"login_monitor"`
-	DiskMonitor     DiskMonitorSettings     `yaml:"disk_monitor"`
-	MemoryMonitor   MemoryMonitorSettings   `yaml:"memory_monitor"`
-	NetworkUpload   NetworkUploadSettings   `yaml:"network_upload_monitor"`
-	NetworkDownload NetworkDownloadSettings `yaml:"network_download_monitor"`
-	Memory          MemorySettings          `yaml:"memory"`
-	AISysAdmin      AISysAdminSettings      `yaml:"ai_sysadmin"`
-	Loop            LoopSettings            `yaml:"loop"`
+	Agent         AgentSettings         `yaml:"agent"`
+	Logging       LoggingSettings       `yaml:"logging"`
+	Tasks         TasksSettings         `yaml:"tasks"`
+	Storage       StorageSettings       `yaml:"storage"`
+	Server        ServerSettings        `yaml:"server"`
+	Security      SecuritySettings      `yaml:"security"`
+	Notifier      NotifierSettings      `yaml:"notifier"`
+	DailyTasks    DailyTasksSettings    `yaml:"daily_tasks"`
+	NetworkUpload NetworkUploadSettings `yaml:"network_upload_monitor"`
+	Memory        MemorySettings        `yaml:"memory"`
+	AISysAdmin    AISysAdminSettings    `yaml:"ai_sysadmin"`
+	Loop          LoopSettings          `yaml:"loop"`
 }
 
 // LoopSettings controls the generic background wake-up loop.
@@ -95,40 +91,11 @@ type PatchCheckSettings struct {
 	Enabled bool `yaml:"enabled"`
 }
 
-// LoginMonitorSettings controls the systemd-logind login monitor.
-type LoginMonitorSettings struct {
-	Enabled bool `yaml:"enabled"`
-}
-
 // NetworkUploadSettings controls the upload-rate monitor.
 type NetworkUploadSettings struct {
 	Enabled       bool    `yaml:"enabled"`
 	ThresholdMBps float64 `yaml:"threshold_mbps"`
 	// Interval is a Go duration string (e.g. "1m", "30s") for how often to sample.
-	Interval string `yaml:"interval"`
-}
-
-// NetworkDownloadSettings controls the download-rate monitor.
-type NetworkDownloadSettings struct {
-	Enabled       bool    `yaml:"enabled"`
-	ThresholdMBps float64 `yaml:"threshold_mbps"`
-	Interval      string  `yaml:"interval"`
-}
-
-// MemoryMonitorSettings controls the periodic memory usage monitor.
-type MemoryMonitorSettings struct {
-	Enabled              bool    `yaml:"enabled"`
-	ThresholdPercent     float64 `yaml:"threshold_percent"`
-	SwapThresholdPercent float64 `yaml:"swap_threshold_percent"`
-	// Interval is a Go duration string (e.g. "5m", "1h") for how often to check.
-	Interval string `yaml:"interval"`
-}
-
-// DiskMonitorSettings controls the periodic disk space monitor.
-type DiskMonitorSettings struct {
-	Enabled          bool    `yaml:"enabled"`
-	ThresholdPercent float64 `yaml:"threshold_percent"`
-	// Interval is a Go duration string (e.g. "1h", "30m") for how often to check.
 	Interval string `yaml:"interval"`
 }
 
@@ -196,26 +163,8 @@ func Load() (*Settings, error) {
 	if s.DailyTasks.WakeTime == "" {
 		s.DailyTasks.WakeTime = "00:00"
 	}
-	if s.DiskMonitor.ThresholdPercent == 0 {
-		s.DiskMonitor.ThresholdPercent = 85
-	}
-	if s.DiskMonitor.Interval == "" {
-		s.DiskMonitor.Interval = "1h"
-	}
 	if s.NetworkUpload.Interval == "" {
 		s.NetworkUpload.Interval = "1m"
-	}
-	if s.NetworkDownload.Interval == "" {
-		s.NetworkDownload.Interval = "1m"
-	}
-	if s.MemoryMonitor.ThresholdPercent == 0 {
-		s.MemoryMonitor.ThresholdPercent = 90
-	}
-	if s.MemoryMonitor.SwapThresholdPercent == 0 {
-		s.MemoryMonitor.SwapThresholdPercent = 80
-	}
-	if s.MemoryMonitor.Interval == "" {
-		s.MemoryMonitor.Interval = "5m"
 	}
 	if s.Memory.Root == "" {
 		s.Memory.Root = "./agent_memory"
