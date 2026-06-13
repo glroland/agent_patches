@@ -119,7 +119,7 @@ func main() {
 	if report, err := systemInfoTool.Execute(context.Background(), json.RawMessage("{}")); err != nil {
 		slog.Error("system_info: failed to gather host metadata", "error", err)
 	} else {
-		slog.Info("system_info: gathered host metadata for responsibility system prompt")
+		slog.Info("system_info: gathered host metadata for responsibility system prompt", "report", report)
 		cfg.ResponsibilitySystemPrompt = cfg.ResponsibilitySystemPrompt + "\n\nHost metadata:\n" + report
 	}
 
