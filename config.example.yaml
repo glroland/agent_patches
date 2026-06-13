@@ -87,6 +87,14 @@ responsibilities:
       Summarize overnight system activity, including any errors, restarts,
       or completed patch runs, and produce a short report.
     when_to_notify: "always"
+  - name: keep-system-up-to-date
+    time: "03:00"
+    instruction: |
+      Ensure the system is up to date. Use the patch tool to check for and
+      apply any available OS updates, rebooting if required.
+    tools:
+      - patch
+    when_to_notify: "always"
 
 # Notifier sends event messages to configured sinks before and after patching.
 notifier:
