@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/endpoint-server/skills/networkusage"
+	"agent_patches/endpoint-server/skills/analyze_network_utilization"
 )
 
 func TestNetworkUsage_BuildReport_ContainsEssentialFields(t *testing.T) {
-	report := networkusage.BuildReport(200.0, 150.5)
+	report := analyze_network_utilization.BuildReport(200.0, 150.5)
 	for _, want := range []string{"Download:", "Upload:", "200.00 MB/s", "150.50 MB/s"} {
 		if !strings.Contains(report, want) {
 			t.Errorf("BuildReport missing %q\nfull:\n%s", want, report)
@@ -19,26 +19,26 @@ func TestNetworkUsage_BuildReport_ContainsEssentialFields(t *testing.T) {
 }
 
 func TestNetworkUsage_BuildReport_GbpsFormatting(t *testing.T) {
-	report := networkusage.BuildReport(1200, 500)
+	report := analyze_network_utilization.BuildReport(1200, 500)
 	if !strings.Contains(report, "GB/s") {
 		t.Errorf("expected GB/s for 1200 MB/s, got:\n%s", report)
 	}
 }
 
 func TestNetworkUsage_BuildReport_KbpsFormatting(t *testing.T) {
-	report := networkusage.BuildReport(0.5, 1)
+	report := analyze_network_utilization.BuildReport(0.5, 1)
 	if !strings.Contains(report, "KB/s") {
 		t.Errorf("expected KB/s for 0.5 MB/s, got:\n%s", report)
 	}
 }
 
 func TestNewNetworkUsageTool_NameAndDescription(t *testing.T) {
-	tl, err := networkusage.NewNetworkUsageTool()
+	tl, err := analyze_network_utilization.NewNetworkUsageTool()
 	if err != nil {
 		t.Fatalf("NewNetworkUsageTool() unexpected error: %v", err)
 	}
-	if got := tl.Name(); got != "network_usage" {
-		t.Errorf("Name() = %q, want %q", got, "network_usage")
+	if got := tl.Name(); got != "analyze_network_utilization" {
+		t.Errorf("Name() = %q, want %q", got, "analyze_network_utilization")
 	}
 	if tl.Description() == "" {
 		t.Error("Description() returned empty string")
@@ -46,7 +46,7 @@ func TestNewNetworkUsageTool_NameAndDescription(t *testing.T) {
 }
 
 func TestNetworkUsageTool_Execute_ReturnsReport(t *testing.T) {
-	tl, err := networkusage.NewNetworkUsageTool()
+	tl, err := analyze_network_utilization.NewNetworkUsageTool()
 	if err != nil {
 		t.Fatalf("NewNetworkUsageTool() unexpected error: %v", err)
 	}

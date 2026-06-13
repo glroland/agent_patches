@@ -1,6 +1,6 @@
 //go:build linux
 
-package sysinfo
+package capture_system_info
 
 import (
 	"bufio"

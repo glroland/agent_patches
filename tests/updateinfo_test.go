@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/endpoint-server/skills/patch/patching"
+	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
 )
 
 // failTransport is an http.RoundTripper that always returns an error,

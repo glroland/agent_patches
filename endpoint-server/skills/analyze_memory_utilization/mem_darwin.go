@@ -1,6 +1,6 @@
 //go:build darwin
 
-package memoryusage
+package analyze_memory_utilization
 
 import (
 	"encoding/binary"

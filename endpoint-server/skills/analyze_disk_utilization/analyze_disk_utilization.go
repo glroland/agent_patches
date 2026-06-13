@@ -1,4 +1,4 @@
-package diskusage
+package analyze_disk_utilization
 
 import (
 	"context"
@@ -36,7 +36,7 @@ type diskUsageInput struct{}
 // for all local disks on the host.
 func NewDiskUsageTool() (tool.Tool, error) {
 	return tool.New(
-		"disk_usage",
+		"analyze_disk_utilization",
 		"Reports current disk space usage for all local disks on the host, "+
 			"including total, used, and free space per mount point, along with "+
 			"the top largest directories and files on each disk.",

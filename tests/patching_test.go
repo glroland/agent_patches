@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/endpoint-server/skills/patch"
-	"agent_patches/endpoint-server/skills/patch/patching"
+	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
+	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
 )
 
 // ---- mock Commander ---------------------------------------------------------
@@ -542,12 +542,12 @@ func TestUpdatesAvailable_UnknownOS_ReturnsError(t *testing.T) {
 // ---- NewPatchTool -----------------------------------------------------------
 
 func TestNewPatchTool_NameAndDescription(t *testing.T) {
-	tool, err := patch.NewPatchTool(nil)
+	tool, err := check_for_pending_system_patches.NewPatchTool(nil)
 	if err != nil {
 		t.Fatalf("NewPatchTool() error: %v", err)
 	}
-	if tool.Name() != "patch" {
-		t.Errorf("Name() = %q, want %q", tool.Name(), "patch")
+	if tool.Name() != "check_for_pending_system_patches" {
+		t.Errorf("Name() = %q, want %q", tool.Name(), "check_for_pending_system_patches")
 	}
 	if tool.Description() == "" {
 		t.Error("Description() should not be empty")

@@ -1,4 +1,4 @@
-package loginsessions
+package check_interactive_logins
 
 import (
 	"context"
@@ -42,7 +42,7 @@ type loginSessionsInput struct{}
 // session enumeration is unavailable.
 func NewLoginSessionsTool() (tool.Tool, error) {
 	return tool.New(
-		"login_sessions",
+		"check_interactive_logins",
 		"Lists currently active login sessions on the host, including the "+
 			"user, session type, and whether the session originated remotely. "+
 			"Requires systemd-logind; unavailable on macOS and Windows.",

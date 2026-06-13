@@ -2,7 +2,7 @@
 // distribution, version, kernel, CPU, memory, physical disks, and network
 // interfaces. The data is static for the lifetime of the process, so it is
 // gathered once and reused.
-package sysinfo
+package capture_system_info
 
 import (
 	"context"
@@ -47,7 +47,7 @@ type systemInfoInput struct{}
 // and network interfaces.
 func NewSystemInfoTool() (tool.Tool, error) {
 	return tool.New(
-		"system_info",
+		"capture_system_info",
 		"Reports static metadata about the host, including operating system, "+
 			"distribution, version, kernel, CPU model and core count, total memory, "+
 			"physical disks (device, size, model), and network interfaces "+

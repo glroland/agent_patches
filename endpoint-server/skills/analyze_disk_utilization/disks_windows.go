@@ -1,6 +1,6 @@
 //go:build windows
 
-package diskusage
+package analyze_disk_utilization
 
 import (
 	"golang.org/x/sys/windows"

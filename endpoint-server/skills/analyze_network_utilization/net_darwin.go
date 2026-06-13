@@ -1,6 +1,6 @@
 //go:build darwin
 
-package networkusage
+package analyze_network_utilization
 
 import (
 	"encoding/binary"

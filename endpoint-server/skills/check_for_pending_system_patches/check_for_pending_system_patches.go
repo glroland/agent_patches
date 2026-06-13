@@ -1,4 +1,4 @@
-package patch
+package check_for_pending_system_patches
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
-	"agent_patches/endpoint-server/skills/patch/patching"
+	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
 	"agent_patches/endpoint-server/utils/notifier"
 )
 
@@ -20,7 +20,7 @@ type patchInput struct{}
 // n may be nil, in which case notifications are silently skipped.
 func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 	return tool.New(
-		"patch",
+		"check_for_pending_system_patches",
 		"Patches the current system. Detects the OS (Windows, Debian-based Linux, "+
 			"or Fedora-based Linux), runs the appropriate update commands, checks "+
 			"whether a reboot is required, and reboots the system if so.",

@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"agent_patches/endpoint-server/skills/loginsessions"
+	"agent_patches/endpoint-server/skills/check_interactive_logins"
 )
 
 func TestLoginSessions_BuildReport_LocalSession(t *testing.T) {
-	sessions := []loginsessions.SessionInfo{
+	sessions := []check_interactive_logins.SessionInfo{
 		{
 			ID:          "1",
 			Username:    "alice",
@@ -22,7 +22,7 @@ func TestLoginSessions_BuildReport_LocalSession(t *testing.T) {
 			Timestamp:   time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 		},
 	}
-	report := loginsessions.BuildReport(sessions)
+	report := check_interactive_logins.BuildReport(sessions)
 
 	for _, want := range []string{"alice", "tty1", "local console", "1234"} {
 		if !strings.Contains(report, want) {
@@ -32,7 +32,7 @@ func TestLoginSessions_BuildReport_LocalSession(t *testing.T) {
 }
 
 func TestLoginSessions_BuildReport_RemoteSession(t *testing.T) {
-	sessions := []loginsessions.SessionInfo{
+	sessions := []check_interactive_logins.SessionInfo{
 		{
 			ID:          "2",
 			Username:    "bob",
@@ -42,7 +42,7 @@ func TestLoginSessions_BuildReport_RemoteSession(t *testing.T) {
 			RemoteUser:  "bob",
 		},
 	}
-	report := loginsessions.BuildReport(sessions)
+	report := check_interactive_logins.BuildReport(sessions)
 
 	for _, want := range []string{"bob", "remote", "10.0.0.5"} {
 		if !strings.Contains(report, want) {
@@ -52,12 +52,12 @@ func TestLoginSessions_BuildReport_RemoteSession(t *testing.T) {
 }
 
 func TestNewLoginSessionsTool_NameAndDescription(t *testing.T) {
-	tl, err := loginsessions.NewLoginSessionsTool()
+	tl, err := check_interactive_logins.NewLoginSessionsTool()
 	if err != nil {
 		t.Fatalf("NewLoginSessionsTool() unexpected error: %v", err)
 	}
-	if got := tl.Name(); got != "login_sessions" {
-		t.Errorf("Name() = %q, want %q", got, "login_sessions")
+	if got := tl.Name(); got != "check_interactive_logins" {
+		t.Errorf("Name() = %q, want %q", got, "check_interactive_logins")
 	}
 	if tl.Description() == "" {
 		t.Error("Description() returned empty string")
@@ -65,7 +65,7 @@ func TestNewLoginSessionsTool_NameAndDescription(t *testing.T) {
 }
 
 func TestLoginSessionsTool_Execute_DoesNotError(t *testing.T) {
-	tl, err := loginsessions.NewLoginSessionsTool()
+	tl, err := check_interactive_logins.NewLoginSessionsTool()
 	if err != nil {
 		t.Fatalf("NewLoginSessionsTool() unexpected error: %v", err)
 	}

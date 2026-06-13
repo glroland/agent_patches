@@ -6,52 +6,52 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/endpoint-server/skills/memoryusage"
+	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
 )
 
 func TestMemStat_UsedPct_Normal(t *testing.T) {
-	s := memoryusage.MemStat{Total: 16 << 30, Available: 4 << 30}
+	s := analyze_memory_utilization.MemStat{Total: 16 << 30, Available: 4 << 30}
 	if got := s.UsedPct(); got != 75.0 {
 		t.Errorf("UsedPct() = %.2f, want 75.00", got)
 	}
 }
 
 func TestMemStat_UsedPct_ZeroTotal(t *testing.T) {
-	s := memoryusage.MemStat{}
+	s := analyze_memory_utilization.MemStat{}
 	if got := s.UsedPct(); got != 0 {
 		t.Errorf("UsedPct() with zero total = %.2f, want 0", got)
 	}
 }
 
 func TestMemStat_Used_Underflow(t *testing.T) {
-	s := memoryusage.MemStat{Total: 100, Available: 200}
+	s := analyze_memory_utilization.MemStat{Total: 100, Available: 200}
 	if got := s.Used(); got != 0 {
 		t.Errorf("Used() with Available>Total = %d, want 0", got)
 	}
 }
 
 func TestMemStat_SwapUsedPct_Normal(t *testing.T) {
-	s := memoryusage.MemStat{SwapTotal: 8 << 30, SwapFree: 2 << 30}
+	s := analyze_memory_utilization.MemStat{SwapTotal: 8 << 30, SwapFree: 2 << 30}
 	if got := s.SwapUsedPct(); got != 75.0 {
 		t.Errorf("SwapUsedPct() = %.2f, want 75.00", got)
 	}
 }
 
 func TestMemStat_SwapUsedPct_NoSwap(t *testing.T) {
-	s := memoryusage.MemStat{SwapTotal: 0}
+	s := analyze_memory_utilization.MemStat{SwapTotal: 0}
 	if got := s.SwapUsedPct(); got != 0 {
 		t.Errorf("SwapUsedPct() with no swap = %.2f, want 0", got)
 	}
 }
 
 func TestMemoryUsage_BuildReport_ContainsEssentialFields(t *testing.T) {
-	stat := memoryusage.MemStat{
+	stat := analyze_memory_utilization.MemStat{
 		Total:     16 << 30,
 		Available: 2 << 30,
 		SwapTotal: 8 << 30,
 		SwapFree:  1 << 30,
 	}
-	report := memoryusage.BuildReport(stat)
+	report := analyze_memory_utilization.BuildReport(stat)
 
 	for _, want := range []string{"RAM", "Swap", "16.00 GB", "87.5%", "8.00 GB"} {
 		if !strings.Contains(report, want) {
@@ -61,8 +61,8 @@ func TestMemoryUsage_BuildReport_ContainsEssentialFields(t *testing.T) {
 }
 
 func TestMemoryUsage_BuildReport_NoSwap(t *testing.T) {
-	stat := memoryusage.MemStat{Total: 8 << 30, Available: 1 << 30}
-	report := memoryusage.BuildReport(stat)
+	stat := analyze_memory_utilization.MemStat{Total: 8 << 30, Available: 1 << 30}
+	report := analyze_memory_utilization.BuildReport(stat)
 
 	if strings.Contains(report, "Swap") {
 		t.Errorf("BuildReport should omit Swap section when SwapTotal=0:\n%s", report)
@@ -70,12 +70,12 @@ func TestMemoryUsage_BuildReport_NoSwap(t *testing.T) {
 }
 
 func TestNewMemoryUsageTool_NameAndDescription(t *testing.T) {
-	tl, err := memoryusage.NewMemoryUsageTool()
+	tl, err := analyze_memory_utilization.NewMemoryUsageTool()
 	if err != nil {
 		t.Fatalf("NewMemoryUsageTool() unexpected error: %v", err)
 	}
-	if got := tl.Name(); got != "memory_usage" {
-		t.Errorf("Name() = %q, want %q", got, "memory_usage")
+	if got := tl.Name(); got != "analyze_memory_utilization" {
+		t.Errorf("Name() = %q, want %q", got, "analyze_memory_utilization")
 	}
 	if tl.Description() == "" {
 		t.Error("Description() returned empty string")
@@ -83,7 +83,7 @@ func TestNewMemoryUsageTool_NameAndDescription(t *testing.T) {
 }
 
 func TestMemoryUsageTool_Execute_ReturnsReport(t *testing.T) {
-	tl, err := memoryusage.NewMemoryUsageTool()
+	tl, err := analyze_memory_utilization.NewMemoryUsageTool()
 	if err != nil {
 		t.Fatalf("NewMemoryUsageTool() unexpected error: %v", err)
 	}

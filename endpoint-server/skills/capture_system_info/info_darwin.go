@@ -1,6 +1,6 @@
 //go:build darwin
 
-package sysinfo
+package capture_system_info
 
 import (
 	"net"

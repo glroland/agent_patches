@@ -1,4 +1,4 @@
-package memoryusage
+package analyze_memory_utilization
 
 import (
 	"context"
@@ -50,7 +50,7 @@ type memoryUsageInput struct{}
 // usage for the host.
 func NewMemoryUsageTool() (tool.Tool, error) {
 	return tool.New(
-		"memory_usage",
+		"analyze_memory_utilization",
 		"Reports current RAM and swap usage for the host, including total, "+
 			"used, and available memory.",
 		func(_ context.Context, _ memoryUsageInput) (string, error) {

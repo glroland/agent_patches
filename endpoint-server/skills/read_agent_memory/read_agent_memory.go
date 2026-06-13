@@ -1,4 +1,4 @@
-package readmemory
+package read_agent_memory
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"agent_patches/endpoint-server/memory"
 )
 
-// readMemoryInput is the typed input for the read_memory tool.
+// readMemoryInput is the typed input for the read_agent_memory tool.
 type readMemoryInput struct {
 	Domain  string `json:"domain"  jsonschema_description:"Memory domain to read, e.g. disk, memory, net_upload, net_download, logins."`
 	History bool   `json:"history" jsonschema_description:"If true, return all retained snapshots (up to 60 min of history). If false, return only the most recent snapshot."`
@@ -20,7 +20,7 @@ type readMemoryInput struct {
 // full history from a named domain of the file-backed memory store.
 func NewReadMemoryTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
-		"read_memory",
+		"read_agent_memory",
 		"Read the current snapshot or full history from a named memory domain. "+
 			"Set history=true to get all retained snapshots (one per 5-minute bucket "+
 			"over the last 60 minutes); otherwise the most recent snapshot is returned.",

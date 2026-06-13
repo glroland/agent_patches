@@ -1,6 +1,6 @@
 //go:build windows
 
-package memoryusage
+package analyze_memory_utilization
 
 import (
 	"fmt"

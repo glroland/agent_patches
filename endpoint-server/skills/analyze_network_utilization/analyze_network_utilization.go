@@ -1,4 +1,4 @@
-package networkusage
+package analyze_network_utilization
 
 import (
 	"context"
@@ -23,7 +23,7 @@ type networkUsageInput struct {
 // short interval.
 func NewNetworkUsageTool() (tool.Tool, error) {
 	return tool.New(
-		"network_usage",
+		"analyze_network_utilization",
 		"Reports current network upload and download rates (in MB/s) for the "+
 			"host, summed across all non-loopback interfaces. Takes a brief "+
 			"sample over the requested duration to compute the rate.",

@@ -1,6 +1,6 @@
 //go:build linux
 
-package diskusage
+package analyze_disk_utilization
 
 import (
 	"bufio"

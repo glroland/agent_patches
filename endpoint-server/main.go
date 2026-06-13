@@ -21,14 +21,14 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
-	"agent_patches/endpoint-server/skills/diskusage"
-	"agent_patches/endpoint-server/skills/loginsessions"
-	"agent_patches/endpoint-server/skills/memoryusage"
-	"agent_patches/endpoint-server/skills/networkusage"
-	"agent_patches/endpoint-server/skills/patch"
+	"agent_patches/endpoint-server/skills/analyze_disk_utilization"
+	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
+	"agent_patches/endpoint-server/skills/analyze_network_utilization"
+	"agent_patches/endpoint-server/skills/capture_system_info"
+	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
+	"agent_patches/endpoint-server/skills/check_interactive_logins"
 	"agent_patches/endpoint-server/skills/ping"
-	"agent_patches/endpoint-server/skills/readmemory"
-	"agent_patches/endpoint-server/skills/sysinfo"
+	"agent_patches/endpoint-server/skills/read_agent_memory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
 	"agent_patches/endpoint-server/utils/notifier"
@@ -65,61 +65,61 @@ func main() {
 	}
 	registry.Register(pingTool)
 
-	patchTool, err := patch.NewPatchTool(notify)
+	patchTool, err := check_for_pending_system_patches.NewPatchTool(notify)
 	if err != nil {
-		slog.Error("failed to create patch tool", "error", err)
+		slog.Error("failed to create check_for_pending_system_patches tool", "error", err)
 		return
 	}
 	registry.Register(patchTool)
 
-	diskUsageTool, err := diskusage.NewDiskUsageTool()
+	diskUsageTool, err := analyze_disk_utilization.NewDiskUsageTool()
 	if err != nil {
-		slog.Error("failed to create disk_usage tool", "error", err)
+		slog.Error("failed to create analyze_disk_utilization tool", "error", err)
 		return
 	}
 	registry.Register(diskUsageTool)
 
-	memoryUsageTool, err := memoryusage.NewMemoryUsageTool()
+	memoryUsageTool, err := analyze_memory_utilization.NewMemoryUsageTool()
 	if err != nil {
-		slog.Error("failed to create memory_usage tool", "error", err)
+		slog.Error("failed to create analyze_memory_utilization tool", "error", err)
 		return
 	}
 	registry.Register(memoryUsageTool)
 
-	networkUsageTool, err := networkusage.NewNetworkUsageTool()
+	networkUsageTool, err := analyze_network_utilization.NewNetworkUsageTool()
 	if err != nil {
-		slog.Error("failed to create network_usage tool", "error", err)
+		slog.Error("failed to create analyze_network_utilization tool", "error", err)
 		return
 	}
 	registry.Register(networkUsageTool)
 
-	loginSessionsTool, err := loginsessions.NewLoginSessionsTool()
+	loginSessionsTool, err := check_interactive_logins.NewLoginSessionsTool()
 	if err != nil {
-		slog.Error("failed to create login_sessions tool", "error", err)
+		slog.Error("failed to create check_interactive_logins tool", "error", err)
 		return
 	}
 	registry.Register(loginSessionsTool)
 
 	mem := memory.New(&cfg.Memory)
 
-	readMemoryTool, err := readmemory.NewReadMemoryTool(mem)
+	readMemoryTool, err := read_agent_memory.NewReadMemoryTool(mem)
 	if err != nil {
-		slog.Error("failed to create read_memory tool", "error", err)
+		slog.Error("failed to create read_agent_memory tool", "error", err)
 		return
 	}
 	registry.Register(readMemoryTool)
 
-	systemInfoTool, err := sysinfo.NewSystemInfoTool()
+	systemInfoTool, err := capture_system_info.NewSystemInfoTool()
 	if err != nil {
-		slog.Error("failed to create system_info tool", "error", err)
+		slog.Error("failed to create capture_system_info tool", "error", err)
 		return
 	}
 	registry.Register(systemInfoTool)
 
 	if report, err := systemInfoTool.Execute(context.Background(), json.RawMessage("{}")); err != nil {
-		slog.Error("system_info: failed to gather host metadata", "error", err)
+		slog.Error("capture_system_info: failed to gather host metadata", "error", err)
 	} else {
-		slog.Info("system_info: gathered host metadata for responsibility system prompt", "report", report)
+		slog.Info("capture_system_info: gathered host metadata for responsibility system prompt", "report", report)
 		cfg.ResponsibilitySystemPrompt = cfg.ResponsibilitySystemPrompt + "\n\nHost metadata:\n" + report
 	}
 

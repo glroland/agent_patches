@@ -1,6 +1,6 @@
 //go:build linux
 
-package networkusage
+package analyze_network_utilization
 
 import (
 	"bufio"

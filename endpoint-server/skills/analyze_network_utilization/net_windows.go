@@ -1,6 +1,6 @@
 //go:build windows
 
-package networkusage
+package analyze_network_utilization
 
 import (
 	"fmt"

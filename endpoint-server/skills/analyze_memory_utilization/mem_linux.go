@@ -1,6 +1,6 @@
 //go:build linux
 
-package memoryusage
+package analyze_memory_utilization
 
 import (
 	"bufio"
