@@ -145,7 +145,7 @@ func main() {
 
 	aisysadmin.New(&cfg.AISysAdmin, &cfg.Agent, mem, notify).Start(ctx)
 
-	loop.New(&cfg.Loop).Start(ctx)
+	loop.New(cfg, registry, notify).Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)

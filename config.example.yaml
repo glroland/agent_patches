@@ -59,12 +59,19 @@ memory:
 loop:
   heartbeat: "1s"   # how often the loop wakes up; any Go duration string (default: 1s)
 
-# responsibilities is a dynamic list of recurring duties for the agent.
+# responsibilities is a dynamic list of recurring duties for the agent. Each
+# is run on its own schedule, in its own goroutine; if a previous run of a
+# responsibility is still in flight when it comes due again, that run is
+# skipped and an error is logged.
+#
 # Each entry must set exactly one of "frequency" (a Go duration string for
 # recurring runs, e.g. "1h") or "time" (a local HH:MM wall-clock time for a
 # once-daily run). "tools" optionally names the skills/tools to make available
-# while carrying out the instruction. "when_to_notify" describes when the
-# agent should alert its manager (e.g. "on error", "always", "never").
+# while carrying out the instruction.
+#
+# "when_to_notify" controls when the manager is emailed about the run's
+# outcome: "always" (every run), "on_error"/"on error" (failures only,
+# the default), or "never".
 responsibilities:
   - name: disk-space-check
     frequency: "1h"
