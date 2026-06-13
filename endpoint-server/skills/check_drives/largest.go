@@ -1,6 +1,7 @@
 package check_drives
 
 import (
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sort"
@@ -52,8 +53,10 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 
 		entries, rerr := os.ReadDir(cur.path)
 		if rerr != nil {
+			slog.Debug("check_drives: skipping inaccessible directory", "path", cur.path, "error", rerr)
 			continue // inaccessible directory, skip it
 		}
+		slog.Debug("check_drives: exploring directory", "path", cur.path, "running_total", cur.total, "explored", explored)
 
 		for _, e := range entries {
 			path := filepath.Join(cur.path, e.Name())
@@ -74,6 +77,8 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 
 	dirs = topNDirs(candidates, topN)
 	files = topNFiles(fileEntries, topN)
+	slog.Debug("check_drives: scan finished", "root", root, "directories_explored", explored,
+		"candidates", len(candidates), "files_seen", len(fileEntries))
 	return dirs, files, nil
 }
 

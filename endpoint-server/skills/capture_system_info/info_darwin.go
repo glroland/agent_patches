@@ -3,6 +3,7 @@
 package capture_system_info
 
 import (
+	"log/slog"
 	"net"
 	"os"
 	"os/exec"
@@ -52,10 +53,13 @@ var (
 // diskutilDisks shells out to `diskutil info -all` and extracts whole,
 // non-virtual physical disks.
 func diskutilDisks() []Disk {
+	slog.Info("capture_system_info: running command", "command", "diskutil info -all")
 	out, err := exec.Command("diskutil", "info", "-all").Output()
 	if err != nil {
+		slog.Info("capture_system_info: command failed", "command", "diskutil info -all", "error", err)
 		return nil
 	}
+	slog.Info("capture_system_info: command finished", "command", "diskutil info -all", "output_len", len(out))
 
 	var disks []Disk
 	for _, block := range strings.Split(string(out), "**********") {
@@ -106,10 +110,14 @@ func darwinNetInterfaces() []NetInterface {
 		}
 
 		speed := 0
+		slog.Info("capture_system_info: running command", "command", "ifconfig "+ifi.Name)
 		if data, err := exec.Command("ifconfig", ifi.Name).Output(); err == nil {
+			slog.Info("capture_system_info: command finished", "command", "ifconfig "+ifi.Name, "output_len", len(data))
 			if m := ifconfigSpeedRe.FindStringSubmatch(string(data)); len(m) == 2 {
 				speed, _ = strconv.Atoi(m[1])
 			}
+		} else {
+			slog.Info("capture_system_info: command failed", "command", "ifconfig "+ifi.Name, "error", err)
 		}
 
 		out = append(out, NetInterface{

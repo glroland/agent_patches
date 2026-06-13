@@ -2,6 +2,7 @@ package ping
 
 import (
 	"context"
+	"log/slog"
 
 	"agent_patches/endpoint-server/a2a/tool"
 )
@@ -14,6 +15,8 @@ func NewPingTool() (tool.Tool, error) {
 		"ping",
 		"Returns 'pong' as a response to any request.",
 		func(_ context.Context, _ pingInput) (string, error) {
+			slog.Info("ping: starting")
+			slog.Info("ping: completed", "output", "pong")
 			return "pong", nil
 		},
 	)

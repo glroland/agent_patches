@@ -3,6 +3,7 @@ package analyze_memory_utilization
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"agent_patches/endpoint-server/a2a/tool"
@@ -54,11 +55,19 @@ func NewMemoryUsageTool() (tool.Tool, error) {
 		"Reports current RAM and swap usage for the host, including total, "+
 			"used, and available memory.",
 		func(_ context.Context, _ memoryUsageInput) (string, error) {
+			slog.Info("analyze_memory_utilization: starting")
 			stat, err := localMemory()
 			if err != nil {
+				slog.Info("analyze_memory_utilization: failed", "error", err)
 				return "", fmt.Errorf("memory_usage: %w", err)
 			}
-			return BuildReport(stat), nil
+			slog.Debug("analyze_memory_utilization: read stats",
+				"total", stat.Total, "available", stat.Available,
+				"swap_total", stat.SwapTotal, "swap_free", stat.SwapFree)
+			report := BuildReport(stat)
+			slog.Info("analyze_memory_utilization: completed",
+				"used_pct", fmt.Sprintf("%.1f", stat.UsedPct()), "output_len", len(report))
+			return report, nil
 		},
 	)
 }

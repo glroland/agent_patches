@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
 // OSType identifies the OS family.
@@ -130,6 +131,7 @@ func (p *Patcher) Run(ctx context.Context) (string, error) {
 // without applying them. It returns true when at least one update is pending,
 // along with a human-readable summary of what was found.
 func (p *Patcher) UpdatesAvailable(ctx context.Context) (bool, string, error) {
+	slog.Debug("patching: checking for updates", "os", p.os)
 	switch p.os {
 	case OSDebian:
 		return p.checkDebianUpdates(ctx)
@@ -157,9 +159,11 @@ func (p *Patcher) checkDebianUpdates(ctx context.Context) (bool, string, error) 
 	}
 	for _, line := range strings.Split(out, "\n") {
 		if strings.HasPrefix(strings.TrimSpace(line), "0 upgraded, 0 newly installed, 0 to remove") {
+			slog.Debug("patching: apt-get reports nothing to do")
 			return false, out, nil
 		}
 	}
+	slog.Debug("patching: apt-get reports updates pending")
 	return true, out, nil
 }
 
@@ -168,19 +172,23 @@ func (p *Patcher) checkDebianUpdates(ctx context.Context) (bool, string, error) 
 func (p *Patcher) checkFedoraUpdates(ctx context.Context) (bool, string, error) {
 	out, err := p.commander.Run(ctx, "dnf", "check-update")
 	if err == nil {
+		slog.Debug("patching: dnf check-update reports nothing to do")
 		return false, out, nil // exit 0 = nothing to update
 	}
 	var ec *ExitCodeError
 	if errors.As(err, &ec) && ec.ExitCode() == 100 {
+		slog.Debug("patching: dnf check-update reports updates pending")
 		return true, out, nil // exit 100 = updates are available
 	}
 	slog.Warn("patching: dnf check-update failed, trying yum", "error", err)
 
 	out2, err2 := p.commander.Run(ctx, "yum", "check-update")
 	if err2 == nil {
+		slog.Debug("patching: yum check-update reports nothing to do")
 		return false, out2, nil
 	}
 	if errors.As(err2, &ec) && ec.ExitCode() == 100 {
+		slog.Debug("patching: yum check-update reports updates pending")
 		return true, out2, nil
 	}
 	return false, out + out2, fmt.Errorf("dnf check-update: %w; yum check-update: %v", err, err2)
@@ -205,6 +213,7 @@ func (p *Patcher) checkWindowsUpdates(ctx context.Context) (bool, string, error)
 
 // applyUpdates dispatches to the OS-specific update method.
 func (p *Patcher) applyUpdates(ctx context.Context) (string, error) {
+	slog.Debug("patching: applying updates", "os", p.os)
 	switch p.os {
 	case OSDebian:
 		return p.patchDebian(ctx)
@@ -298,11 +307,13 @@ func (p *Patcher) patchDarwin(ctx context.Context) (string, error) {
 
 // needsReboot returns true when the OS signals that a reboot is required.
 func (p *Patcher) needsReboot(ctx context.Context) (bool, error) {
+	slog.Debug("patching: checking whether a reboot is required", "os", p.os)
 	switch p.os {
 	case OSDebian:
 		// Debian/Ubuntu write this sentinel file when a reboot is needed.
 		_, err := os.Stat("/var/run/reboot-required")
 		if err == nil {
+			slog.Debug("patching: reboot-required sentinel present")
 			return true, nil
 		}
 		if errors.Is(err, os.ErrNotExist) {
@@ -432,15 +443,25 @@ func tokenise(values ...string) []string {
 type realCommander struct{}
 
 func (r *realCommander) Run(ctx context.Context, name string, args ...string) (string, error) {
+	slog.Info("patching: running command", "command", name, "args", args)
+	start := time.Now()
+
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
 	output := string(out)
+	elapsed := time.Since(start)
+
 	if err != nil {
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
+			slog.Info("patching: command finished", "command", name, "args", args,
+				"exit_code", exitErr.ExitCode(), "duration", elapsed, "output_len", len(output))
 			return output, &ExitCodeError{Code: exitErr.ExitCode(), Stderr: output}
 		}
+		slog.Info("patching: command failed", "command", name, "args", args, "duration", elapsed, "error", err)
 		return output, err
 	}
+	slog.Info("patching: command finished", "command", name, "args", args,
+		"exit_code", 0, "duration", elapsed, "output_len", len(output))
 	return output, nil
 }

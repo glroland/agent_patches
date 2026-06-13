@@ -3,6 +3,7 @@
 package capture_system_info
 
 import (
+	"log/slog"
 	"os"
 	"os/exec"
 	"strconv"
@@ -41,20 +42,26 @@ func gather() (Info, error) {
 
 // psValue runs a PowerShell expression and returns its trimmed output.
 func psValue(expr string) string {
+	slog.Info("capture_system_info: running command", "command", "powershell", "script", expr)
 	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", expr).Output()
 	if err != nil {
+		slog.Info("capture_system_info: command failed", "command", "powershell", "script", expr, "error", err)
 		return ""
 	}
+	slog.Info("capture_system_info: command finished", "command", "powershell", "script", expr, "output_len", len(out))
 	return strings.TrimSpace(string(out))
 }
 
 // psLines runs a PowerShell expression and returns its output split into
 // non-empty, trimmed lines.
 func psLines(expr string) []string {
+	slog.Info("capture_system_info: running command", "command", "powershell", "script", expr)
 	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", expr).Output()
 	if err != nil {
+		slog.Info("capture_system_info: command failed", "command", "powershell", "script", expr, "error", err)
 		return nil
 	}
+	slog.Info("capture_system_info: command finished", "command", "powershell", "script", expr, "output_len", len(out))
 	var lines []string
 	for _, l := range strings.Split(string(out), "\n") {
 		l = strings.TrimSpace(l)

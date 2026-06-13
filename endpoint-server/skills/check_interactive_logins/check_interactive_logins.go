@@ -3,6 +3,7 @@ package check_interactive_logins
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -47,14 +48,19 @@ func NewLoginSessionsTool() (tool.Tool, error) {
 			"user, session type, and whether the session originated remotely. "+
 			"Requires systemd-logind; unavailable on macOS and Windows.",
 		func(_ context.Context, _ loginSessionsInput) (string, error) {
+			slog.Info("check_interactive_logins: starting")
 			sessions, err := listSessions()
 			if err != nil {
+				slog.Info("check_interactive_logins: completed", "result", "unavailable", "error", err)
 				return fmt.Sprintf("Login session enumeration unavailable: %v", err), nil
 			}
 			if len(sessions) == 0 {
+				slog.Info("check_interactive_logins: completed", "sessions", 0)
 				return "No active login sessions.", nil
 			}
-			return BuildReport(sessions), nil
+			report := BuildReport(sessions)
+			slog.Info("check_interactive_logins: completed", "sessions", len(sessions), "output_len", len(report))
+			return report, nil
 		},
 	)
 }
@@ -62,6 +68,7 @@ func NewLoginSessionsTool() (tool.Tool, error) {
 // listSessions connects to the system D-Bus, enumerates all sessions known
 // to logind, and fetches their properties.
 func listSessions() ([]SessionInfo, error) {
+	slog.Debug("check_interactive_logins: connecting to system D-Bus")
 	conn, err := dbus.ConnectSystemBus()
 	if err != nil {
 		return nil, fmt.Errorf("connect to system bus: %w", err)
@@ -77,14 +84,17 @@ func listSessions() ([]SessionInfo, error) {
 		Seat string
 		Path dbus.ObjectPath
 	}
+	slog.Debug("check_interactive_logins: calling ListSessions")
 	if err := obj.Call(logindIface+".ListSessions", 0).Store(&rawSessions); err != nil {
 		return nil, fmt.Errorf("ListSessions: %w", err)
 	}
+	slog.Debug("check_interactive_logins: ListSessions returned", "count", len(rawSessions))
 
 	sessions := make([]SessionInfo, 0, len(rawSessions))
 	for _, rs := range rawSessions {
 		info, err := fetchSessionInfo(conn, rs.Path)
 		if err != nil {
+			slog.Debug("check_interactive_logins: skipping session", "id", rs.ID, "error", err)
 			continue
 		}
 		info.ID = rs.ID

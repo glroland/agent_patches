@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
@@ -25,13 +26,16 @@ func NewReadMemoryTool(mem *memory.Store) (tool.Tool, error) {
 			"Set history=true to get all retained snapshots (one per 5-minute bucket "+
 			"over the last 60 minutes); otherwise the most recent snapshot is returned.",
 		func(_ context.Context, in readMemoryInput) (string, error) {
+			slog.Info("read_agent_memory: starting", "domain", in.Domain, "history", in.History)
 			d := mem.Domain(in.Domain)
 			if in.History {
 				snaps, err := d.ReadHistory()
 				if err != nil {
+					slog.Info("read_agent_memory: failed", "domain", in.Domain, "error", err)
 					return "", fmt.Errorf("read history %q: %w", in.Domain, err)
 				}
 				if len(snaps) == 0 {
+					slog.Info("read_agent_memory: completed", "domain", in.Domain, "snapshots", 0)
 					return fmt.Sprintf(`{"domain":%q,"snapshots":[]}`, in.Domain), nil
 				}
 				type entry struct {
@@ -43,13 +47,16 @@ func NewReadMemoryTool(mem *memory.Store) (tool.Tool, error) {
 					out[i] = entry{Timestamp: s.Timestamp, Data: s.Data}
 				}
 				b, _ := json.Marshal(out)
+				slog.Info("read_agent_memory: completed", "domain", in.Domain, "snapshots", len(out), "output_len", len(b))
 				return string(b), nil
 			}
 
 			var raw json.RawMessage
 			if err := d.ReadCurrent(&raw); err != nil {
+				slog.Info("read_agent_memory: completed", "domain", in.Domain, "result", "no_snapshot")
 				return fmt.Sprintf(`{"domain":%q,"error":"no snapshot available"}`, in.Domain), nil
 			}
+			slog.Info("read_agent_memory: completed", "domain", in.Domain, "output_len", len(raw))
 			return string(raw), nil
 		},
 	)

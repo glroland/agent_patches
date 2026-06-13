@@ -3,6 +3,7 @@ package analyze_network_utilization
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
@@ -28,6 +29,8 @@ func NewNetworkUsageTool() (tool.Tool, error) {
 			"host, summed across all non-loopback interfaces. Takes a brief "+
 			"sample over the requested duration to compute the rate.",
 		func(ctx context.Context, in networkUsageInput) (string, error) {
+			slog.Info("analyze_network_utilization: starting", "requested_duration_seconds", in.DurationSeconds)
+
 			d := in.DurationSeconds
 			if d <= 0 {
 				d = defaultSampleSeconds
@@ -38,22 +41,28 @@ func NewNetworkUsageTool() (tool.Tool, error) {
 			if d > maxSampleSeconds {
 				d = maxSampleSeconds
 			}
+			slog.Debug("analyze_network_utilization: sample duration clamped", "duration_seconds", d)
 
 			inBytes1, outBytes1, err := snapshot()
 			if err != nil {
+				slog.Info("analyze_network_utilization: failed", "error", err)
 				return "", fmt.Errorf("network_usage: %w", err)
 			}
+			slog.Debug("analyze_network_utilization: initial snapshot", "in_bytes", inBytes1, "out_bytes", outBytes1)
 
 			select {
 			case <-ctx.Done():
+				slog.Info("analyze_network_utilization: cancelled", "error", ctx.Err())
 				return "", ctx.Err()
 			case <-time.After(time.Duration(d * float64(time.Second))):
 			}
 
 			inBytes2, outBytes2, err := snapshot()
 			if err != nil {
+				slog.Info("analyze_network_utilization: failed", "error", err)
 				return "", fmt.Errorf("network_usage: %w", err)
 			}
+			slog.Debug("analyze_network_utilization: final snapshot", "in_bytes", inBytes2, "out_bytes", outBytes2)
 
 			var downRate, upRate float64
 			if inBytes2 >= inBytes1 {
@@ -63,7 +72,10 @@ func NewNetworkUsageTool() (tool.Tool, error) {
 				upRate = float64(outBytes2-outBytes1) / d / (1024 * 1024)
 			}
 
-			return BuildReport(downRate, upRate), nil
+			report := BuildReport(downRate, upRate)
+			slog.Info("analyze_network_utilization: completed",
+				"download_mbps", fmt.Sprintf("%.2f", downRate), "upload_mbps", fmt.Sprintf("%.2f", upRate))
+			return report, nil
 		},
 	)
 }

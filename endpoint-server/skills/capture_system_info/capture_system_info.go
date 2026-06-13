@@ -7,6 +7,7 @@ package capture_system_info
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"agent_patches/endpoint-server/a2a/tool"
@@ -53,11 +54,18 @@ func NewSystemInfoTool() (tool.Tool, error) {
 			"physical disks (device, size, model), and network interfaces "+
 			"(name, MAC address, link speed).",
 		func(_ context.Context, _ systemInfoInput) (string, error) {
+			slog.Info("capture_system_info: starting")
 			info, err := gather()
 			if err != nil {
+				slog.Info("capture_system_info: failed", "error", err)
 				return "", fmt.Errorf("system_info: %w", err)
 			}
-			return BuildReport(info), nil
+			slog.Debug("capture_system_info: gathered host metadata",
+				"os", info.OS, "distribution", info.Distribution, "version", info.Version,
+				"cpu_cores", info.CPUCores, "disks", len(info.Disks), "net_interfaces", len(info.NetInterfaces))
+			report := BuildReport(info)
+			slog.Info("capture_system_info: completed", "output_len", len(report))
+			return report, nil
 		},
 	)
 }

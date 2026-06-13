@@ -3,6 +3,7 @@ package check_drives
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 
 	"agent_patches/endpoint-server/a2a/tool"
@@ -41,14 +42,20 @@ func NewDiskUsageTool() (tool.Tool, error) {
 			"including total, used, and free space per mount point, along with "+
 			"the top largest directories and files on each disk.",
 		func(_ context.Context, _ diskUsageInput) (string, error) {
+			slog.Info("check_drives: starting")
 			disks, err := localDisks()
 			if err != nil {
+				slog.Info("check_drives: failed", "error", err)
 				return "", fmt.Errorf("disk_usage: %w", err)
 			}
+			slog.Debug("check_drives: found local disks", "count", len(disks))
 			if len(disks) == 0 {
+				slog.Info("check_drives: completed", "disks", 0)
 				return "No local disks found.", nil
 			}
-			return BuildReport(disks), nil
+			report := BuildReport(disks)
+			slog.Info("check_drives: completed", "disks", len(disks), "output_len", len(report))
+			return report, nil
 		},
 	)
 }
@@ -69,8 +76,12 @@ func BuildReport(disks []DiskStat) string {
 		fmt.Fprintf(&sb, "Used:       %s (%.1f%%)\n", formatBytes(d.Used()), d.UsedPct())
 		fmt.Fprintf(&sb, "Free:       %s\n", formatBytes(d.Free))
 
+		slog.Debug("check_drives: scanning for largest entries", "mount", d.Mount)
 		dirs, files, err := TopLargest(d.Mount, topLargestCount)
-		if err == nil {
+		if err != nil {
+			slog.Debug("check_drives: scan failed", "mount", d.Mount, "error", err)
+		} else {
+			slog.Debug("check_drives: scan complete", "mount", d.Mount, "top_dirs", len(dirs), "top_files", len(files))
 			if len(dirs) > 0 {
 				fmt.Fprintf(&sb, "Top directories:\n")
 				for _, dir := range dirs {

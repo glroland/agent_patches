@@ -26,20 +26,25 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 			"whether a reboot is required, and reboots the system if so.",
 		func(ctx context.Context, _ patchInput) (string, error) {
 			host, _ := os.Hostname()
+			slog.Info("check_for_pending_system_patches: starting", "host", host)
 
 			p, err := patching.New()
 			if err != nil {
 				msg := fmt.Sprintf("OS detection failed: %v", err)
+				slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "os_detection_failed")
 				n.Notify(ctx, fmt.Sprintf("[%s] Patch Failed", host), msg)
 				return msg, nil
 			}
+			slog.Debug("check_for_pending_system_patches: detected OS", "os", p.OS())
 
 			available, checkOut, err := p.UpdatesAvailable(ctx)
 			if err != nil {
 				slog.Warn("patch: update check failed, proceeding anyway", "error", err)
 			} else if !available {
+				slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "up_to_date")
 				return "No updates available. System is up to date.\n\n" + checkOut, nil
 			}
+			slog.Debug("check_for_pending_system_patches: updates available, gathering details")
 
 			// Fetch per-package CVE details. Use a bounded timeout so a slow API
 			// does not delay the actual patching indefinitely.
@@ -62,6 +67,7 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 
 			log, err := p.Run(ctx)
 			if err != nil {
+				slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "error", "error", err)
 				n.Notify(ctx,
 					fmt.Sprintf("[%s] Patch Failed", host),
 					fmt.Sprintf("Patch run on host %q encountered an error.\n\nError: %v\n\nOutput:\n%s", host, err, log),
@@ -69,6 +75,7 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 				return fmt.Sprintf("%serror: %v", log, err), nil
 			}
 
+			slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "patched", "output_len", len(log))
 			n.Notify(ctx,
 				fmt.Sprintf("[%s] Patch Complete", host),
 				fmt.Sprintf("System patch completed successfully on host %q.\n\nOutput:\n%s", host, log),

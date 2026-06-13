@@ -70,7 +70,7 @@ func (l *Loop) run(ctx context.Context, heartbeat time.Duration) {
 
 // tick runs on every wake-up.
 func (l *Loop) tick(ctx context.Context) {
-	slog.Debug("loop: tick")
+	// slog.Debug("loop: tick")
 
 	now := time.Now()
 	for _, r := range l.responsibilities {

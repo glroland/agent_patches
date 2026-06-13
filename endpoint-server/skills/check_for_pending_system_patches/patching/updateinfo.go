@@ -58,6 +58,7 @@ var cveIDRe = regexp.MustCompile(`CVE-\d{4}-\d{4,}`)
 // Network failures during CVE enrichment are logged but do not abort the list;
 // partial results (packages without CVE data) are returned on failure.
 func (p *Patcher) ListUpdates(ctx context.Context) ([]PackageUpdate, error) {
+	slog.Debug("updateinfo: listing updates", "os", p.os)
 	switch p.os {
 	case OSDebian:
 		return p.listDebianUpdates(ctx)
@@ -654,6 +655,7 @@ func cachedNVDCVSS(ctx context.Context, client *http.Client, cveID string) (scor
 	nvdState.mu.Lock()
 	if e, ok := nvdState.cache[cveID]; ok && time.Now().Before(e.expiry) {
 		nvdState.mu.Unlock()
+		slog.Debug("updateinfo: NVD cache hit", "cve", cveID)
 		return e.score, e.severity, e.err
 	}
 	// Rate limit: enforce minimum interval between actual API calls.
