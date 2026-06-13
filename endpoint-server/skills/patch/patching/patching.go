@@ -39,8 +39,8 @@ type ExitCodeError struct {
 	Stderr string
 }
 
-func (e *ExitCodeError) Error() string  { return fmt.Sprintf("exit status %d", e.Code) }
-func (e *ExitCodeError) ExitCode() int  { return e.Code }
+func (e *ExitCodeError) Error() string { return fmt.Sprintf("exit status %d", e.Code) }
+func (e *ExitCodeError) ExitCode() int { return e.Code }
 
 // Patcher detects the OS and applies system patches.
 type Patcher struct {

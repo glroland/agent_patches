@@ -1,6 +1,6 @@
 //go:build linux
 
-package memmon
+package memoryusage
 
 import (
 	"bufio"

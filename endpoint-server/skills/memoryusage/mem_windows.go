@@ -1,6 +1,6 @@
 //go:build windows
 
-package memmon
+package memoryusage
 
 import (
 	"fmt"

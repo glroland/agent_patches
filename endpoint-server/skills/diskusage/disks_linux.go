@@ -1,6 +1,6 @@
 //go:build linux
 
-package diskmon
+package diskusage
 
 import (
 	"bufio"

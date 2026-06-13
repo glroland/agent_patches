@@ -1,6 +1,6 @@
 //go:build windows
 
-package diskmon
+package diskusage
 
 import (
 	"golang.org/x/sys/windows"

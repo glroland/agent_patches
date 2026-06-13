@@ -1,6 +1,6 @@
 //go:build linux
 
-package netmon
+package networkusage
 
 import (
 	"bufio"

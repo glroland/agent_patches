@@ -1,0 +1,88 @@
+package networkusage
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"agent_patches/endpoint-server/a2a/tool"
+)
+
+const (
+	defaultSampleSeconds = 1.0
+	minSampleSeconds     = 0.1
+	maxSampleSeconds     = 10.0
+)
+
+type networkUsageInput struct {
+	DurationSeconds float64 `json:"duration_seconds,omitempty" jsonschema_description:"How long to sample network counters for, in seconds, used to compute the current rate. Defaults to 1; clamped between 0.1 and 10."`
+}
+
+// NewNetworkUsageTool returns a task tool that reports current upload and
+// download rates for the host by sampling network counters twice over a
+// short interval.
+func NewNetworkUsageTool() (tool.Tool, error) {
+	return tool.New(
+		"network_usage",
+		"Reports current network upload and download rates (in MB/s) for the "+
+			"host, summed across all non-loopback interfaces. Takes a brief "+
+			"sample over the requested duration to compute the rate.",
+		func(ctx context.Context, in networkUsageInput) (string, error) {
+			d := in.DurationSeconds
+			if d <= 0 {
+				d = defaultSampleSeconds
+			}
+			if d < minSampleSeconds {
+				d = minSampleSeconds
+			}
+			if d > maxSampleSeconds {
+				d = maxSampleSeconds
+			}
+
+			inBytes1, outBytes1, err := snapshot()
+			if err != nil {
+				return "", fmt.Errorf("network_usage: %w", err)
+			}
+
+			select {
+			case <-ctx.Done():
+				return "", ctx.Err()
+			case <-time.After(time.Duration(d * float64(time.Second))):
+			}
+
+			inBytes2, outBytes2, err := snapshot()
+			if err != nil {
+				return "", fmt.Errorf("network_usage: %w", err)
+			}
+
+			var downRate, upRate float64
+			if inBytes2 >= inBytes1 {
+				downRate = float64(inBytes2-inBytes1) / d / (1024 * 1024)
+			}
+			if outBytes2 >= outBytes1 {
+				upRate = float64(outBytes2-outBytes1) / d / (1024 * 1024)
+			}
+
+			return BuildReport(downRate, upRate), nil
+		},
+	)
+}
+
+// BuildReport composes a human-readable summary of network throughput.
+func BuildReport(downRateMBps, upRateMBps float64) string {
+	return fmt.Sprintf(
+		"Download: %s\nUpload:   %s\n",
+		formatBandwidth(downRateMBps), formatBandwidth(upRateMBps),
+	)
+}
+
+func formatBandwidth(mbps float64) string {
+	switch {
+	case mbps >= 1024:
+		return fmt.Sprintf("%.2f GB/s", mbps/1024)
+	case mbps >= 1:
+		return fmt.Sprintf("%.2f MB/s", mbps)
+	default:
+		return fmt.Sprintf("%.2f KB/s", mbps*1024)
+	}
+}

@@ -1,6 +1,6 @@
 //go:build windows
 
-package netmon
+package networkusage
 
 import (
 	"fmt"

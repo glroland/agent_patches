@@ -1,6 +1,6 @@
 //go:build darwin
 
-package memmon
+package memoryusage
 
 import (
 	"encoding/binary"

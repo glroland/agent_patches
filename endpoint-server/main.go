@@ -21,6 +21,10 @@ import (
 	"agent_patches/endpoint-server/aisysadmin"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skills/diskusage"
+	"agent_patches/endpoint-server/skills/loginsessions"
+	"agent_patches/endpoint-server/skills/memoryusage"
+	"agent_patches/endpoint-server/skills/networkusage"
 	"agent_patches/endpoint-server/skills/patch"
 	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/utils/config"
@@ -65,6 +69,34 @@ func main() {
 		return
 	}
 	registry.Register(patchTool)
+
+	diskUsageTool, err := diskusage.NewDiskUsageTool()
+	if err != nil {
+		slog.Error("failed to create disk_usage tool", "error", err)
+		return
+	}
+	registry.Register(diskUsageTool)
+
+	memoryUsageTool, err := memoryusage.NewMemoryUsageTool()
+	if err != nil {
+		slog.Error("failed to create memory_usage tool", "error", err)
+		return
+	}
+	registry.Register(memoryUsageTool)
+
+	networkUsageTool, err := networkusage.NewNetworkUsageTool()
+	if err != nil {
+		slog.Error("failed to create network_usage tool", "error", err)
+		return
+	}
+	registry.Register(networkUsageTool)
+
+	loginSessionsTool, err := loginsessions.NewLoginSessionsTool()
+	if err != nil {
+		slog.Error("failed to create login_sessions tool", "error", err)
+		return
+	}
+	registry.Register(loginSessionsTool)
 
 	a := agent.New(storage.WrapAll(registry.Tools(), store), cfg)
 	exec := executor.New(a)

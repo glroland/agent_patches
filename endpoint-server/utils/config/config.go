@@ -16,22 +16,22 @@ const defaultFile = "config.yaml"
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
-	Agent        AgentSettings        `yaml:"agent"`
-	Logging      LoggingSettings      `yaml:"logging"`
-	Tasks        TasksSettings        `yaml:"tasks"`
-	Storage      StorageSettings      `yaml:"storage"`
-	Server       ServerSettings       `yaml:"server"`
-	Security     SecuritySettings     `yaml:"security"`
-	Notifier     NotifierSettings     `yaml:"notifier"`
-	DailyTasks       DailyTasksSettings       `yaml:"daily_tasks"`
-	LoginMonitor     LoginMonitorSettings     `yaml:"login_monitor"`
-	DiskMonitor      DiskMonitorSettings      `yaml:"disk_monitor"`
-	MemoryMonitor    MemoryMonitorSettings    `yaml:"memory_monitor"`
-	NetworkUpload    NetworkUploadSettings    `yaml:"network_upload_monitor"`
-	NetworkDownload  NetworkDownloadSettings  `yaml:"network_download_monitor"`
-	Memory           MemorySettings           `yaml:"memory"`
-	AISysAdmin       AISysAdminSettings       `yaml:"ai_sysadmin"`
-	Loop             LoopSettings             `yaml:"loop"`
+	Agent           AgentSettings           `yaml:"agent"`
+	Logging         LoggingSettings         `yaml:"logging"`
+	Tasks           TasksSettings           `yaml:"tasks"`
+	Storage         StorageSettings         `yaml:"storage"`
+	Server          ServerSettings          `yaml:"server"`
+	Security        SecuritySettings        `yaml:"security"`
+	Notifier        NotifierSettings        `yaml:"notifier"`
+	DailyTasks      DailyTasksSettings      `yaml:"daily_tasks"`
+	LoginMonitor    LoginMonitorSettings    `yaml:"login_monitor"`
+	DiskMonitor     DiskMonitorSettings     `yaml:"disk_monitor"`
+	MemoryMonitor   MemoryMonitorSettings   `yaml:"memory_monitor"`
+	NetworkUpload   NetworkUploadSettings   `yaml:"network_upload_monitor"`
+	NetworkDownload NetworkDownloadSettings `yaml:"network_download_monitor"`
+	Memory          MemorySettings          `yaml:"memory"`
+	AISysAdmin      AISysAdminSettings      `yaml:"ai_sysadmin"`
+	Loop            LoopSettings            `yaml:"loop"`
 }
 
 // LoopSettings controls the generic background wake-up loop.
@@ -139,7 +139,7 @@ type NotifierSettings struct {
 
 // AISysAdminSettings controls the background AI sysadmin agent.
 type AISysAdminSettings struct {
-	Enabled  bool   `yaml:"enabled"`
+	Enabled bool `yaml:"enabled"`
 	// Interval is a Go duration string for how often the analysis cycle runs.
 	Interval string `yaml:"interval"`
 	// Model overrides agent.model for the sysadmin cycle when set.

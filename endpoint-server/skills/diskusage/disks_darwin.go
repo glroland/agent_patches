@@ -1,6 +1,6 @@
 //go:build darwin
 
-package diskmon
+package diskusage
 
 import (
 	"fmt"

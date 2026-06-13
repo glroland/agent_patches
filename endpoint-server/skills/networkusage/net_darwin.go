@@ -1,6 +1,6 @@
 //go:build darwin
 
-package netmon
+package networkusage
 
 import (
 	"encoding/binary"
