@@ -21,10 +21,10 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
-	"agent_patches/endpoint-server/skills/analyze_disk_utilization"
 	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
 	"agent_patches/endpoint-server/skills/analyze_network_utilization"
 	"agent_patches/endpoint-server/skills/capture_system_info"
+	"agent_patches/endpoint-server/skills/check_drives"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
 	"agent_patches/endpoint-server/skills/ping"
@@ -72,9 +72,9 @@ func main() {
 	}
 	registry.Register(patchTool)
 
-	diskUsageTool, err := analyze_disk_utilization.NewDiskUsageTool()
+	diskUsageTool, err := check_drives.NewDiskUsageTool()
 	if err != nil {
-		slog.Error("failed to create analyze_disk_utilization tool", "error", err)
+		slog.Error("failed to create check_drives tool", "error", err)
 		return
 	}
 	registry.Register(diskUsageTool)

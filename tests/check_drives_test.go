@@ -6,35 +6,35 @@ import (
 	"strings"
 	"testing"
 
-	"agent_patches/endpoint-server/skills/analyze_disk_utilization"
+	"agent_patches/endpoint-server/skills/check_drives"
 )
 
 func TestDiskStat_UsedPct_Normal(t *testing.T) {
-	d := analyze_disk_utilization.DiskStat{Total: 100, Free: 20}
+	d := check_drives.DiskStat{Total: 100, Free: 20}
 	if got := d.UsedPct(); got != 80.0 {
 		t.Errorf("UsedPct() = %.2f, want 80.00", got)
 	}
 }
 
 func TestDiskStat_UsedPct_ZeroTotal(t *testing.T) {
-	d := analyze_disk_utilization.DiskStat{Total: 0, Free: 0}
+	d := check_drives.DiskStat{Total: 0, Free: 0}
 	if got := d.UsedPct(); got != 0 {
 		t.Errorf("UsedPct() with zero total = %.2f, want 0", got)
 	}
 }
 
 func TestDiskStat_Used_Underflow(t *testing.T) {
-	d := analyze_disk_utilization.DiskStat{Total: 10, Free: 20}
+	d := check_drives.DiskStat{Total: 10, Free: 20}
 	if got := d.Used(); got != 0 {
 		t.Errorf("Used() with Free>Total = %d, want 0", got)
 	}
 }
 
 func TestDiskUsage_BuildReport_ContainsEssentialFields(t *testing.T) {
-	disks := []analyze_disk_utilization.DiskStat{
+	disks := []check_drives.DiskStat{
 		{Mount: "/data", Total: 100 << 30, Free: 5 << 30, FSType: "ext4"},
 	}
-	report := analyze_disk_utilization.BuildReport(disks)
+	report := check_drives.BuildReport(disks)
 
 	for _, want := range []string{"/data", "ext4", "95.0%", "100.00 GB", "5.00 GB"} {
 		if !strings.Contains(report, want) {
@@ -44,10 +44,10 @@ func TestDiskUsage_BuildReport_ContainsEssentialFields(t *testing.T) {
 }
 
 func TestDiskUsage_BuildReport_NoFSType(t *testing.T) {
-	disks := []analyze_disk_utilization.DiskStat{
+	disks := []check_drives.DiskStat{
 		{Mount: `C:\`, Total: 500 << 30, Free: 10 << 30},
 	}
-	report := analyze_disk_utilization.BuildReport(disks)
+	report := check_drives.BuildReport(disks)
 
 	if !strings.Contains(report, `C:\`) {
 		t.Errorf("BuildReport should contain drive letter:\n%s", report)
@@ -58,12 +58,12 @@ func TestDiskUsage_BuildReport_NoFSType(t *testing.T) {
 }
 
 func TestNewDiskUsageTool_NameAndDescription(t *testing.T) {
-	tl, err := analyze_disk_utilization.NewDiskUsageTool()
+	tl, err := check_drives.NewDiskUsageTool()
 	if err != nil {
 		t.Fatalf("NewDiskUsageTool() unexpected error: %v", err)
 	}
-	if got := tl.Name(); got != "analyze_disk_utilization" {
-		t.Errorf("Name() = %q, want %q", got, "analyze_disk_utilization")
+	if got := tl.Name(); got != "check_drives" {
+		t.Errorf("Name() = %q, want %q", got, "check_drives")
 	}
 	if tl.Description() == "" {
 		t.Error("Description() returned empty string")
@@ -71,7 +71,7 @@ func TestNewDiskUsageTool_NameAndDescription(t *testing.T) {
 }
 
 func TestDiskUsageTool_Execute_ReturnsReport(t *testing.T) {
-	tl, err := analyze_disk_utilization.NewDiskUsageTool()
+	tl, err := check_drives.NewDiskUsageTool()
 	if err != nil {
 		t.Fatalf("NewDiskUsageTool() unexpected error: %v", err)
 	}

@@ -1,4 +1,4 @@
-package analyze_disk_utilization
+package check_drives
 
 import (
 	"os"

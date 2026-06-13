@@ -1,6 +1,6 @@
 //go:build windows
 
-package analyze_disk_utilization
+package check_drives
 
 import (
 	"golang.org/x/sys/windows"

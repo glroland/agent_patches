@@ -1,6 +1,6 @@
 //go:build darwin
 
-package analyze_disk_utilization
+package check_drives
 
 import (
 	"fmt"
