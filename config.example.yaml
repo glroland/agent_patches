@@ -52,7 +52,7 @@ loop:
 # recurring runs, e.g. "1h") or "time" (a local HH:MM wall-clock time for a
 # once-daily run). "tools" optionally names the skills/tools to make available
 # while carrying out the instruction, e.g. disk_usage, memory_usage,
-# network_usage, login_sessions, patch, read_memory.
+# network_usage, login_sessions, patch, read_memory, system_info.
 #
 # "when_to_notify" controls when the manager is emailed about the run's
 # outcome: "always" (every run), "on_error"/"on error" (failures only,
@@ -60,6 +60,9 @@ loop:
 #
 # Every responsibility run uses responsibility_system_prompt (below) as the
 # system prompt; the responsibility's "instruction" is sent as the user prompt.
+# On startup, the server runs the system_info skill once and appends a report
+# of the host's static metadata (OS, CPU, memory, disks, network interfaces)
+# to responsibility_system_prompt, so every responsibility has that context.
 # responsibility_system_prompt: |
 #   You are agent_patches, an AI system administrator. You are responsible for
 #   the health, security, and upkeep of this system. You will be given one

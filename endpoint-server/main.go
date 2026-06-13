@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -27,6 +28,7 @@ import (
 	"agent_patches/endpoint-server/skills/patch"
 	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/skills/readmemory"
+	"agent_patches/endpoint-server/skills/sysinfo"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
 	"agent_patches/endpoint-server/utils/notifier"
@@ -106,6 +108,20 @@ func main() {
 		return
 	}
 	registry.Register(readMemoryTool)
+
+	systemInfoTool, err := sysinfo.NewSystemInfoTool()
+	if err != nil {
+		slog.Error("failed to create system_info tool", "error", err)
+		return
+	}
+	registry.Register(systemInfoTool)
+
+	if report, err := systemInfoTool.Execute(context.Background(), json.RawMessage("{}")); err != nil {
+		slog.Error("system_info: failed to gather host metadata", "error", err)
+	} else {
+		slog.Info("system_info: gathered host metadata for responsibility system prompt")
+		cfg.ResponsibilitySystemPrompt = cfg.ResponsibilitySystemPrompt + "\n\nHost metadata:\n" + report
+	}
 
 	a := agent.New(storage.WrapAll(registry.Tools(), store), cfg)
 	exec := executor.New(a)
