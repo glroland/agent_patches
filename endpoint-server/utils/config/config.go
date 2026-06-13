@@ -36,9 +36,9 @@ type Settings struct {
 
 // LoopSettings controls the generic background wake-up loop.
 type LoopSettings struct {
-	// Interval is a Go duration string (e.g. "30s", "5m") for how often the
-	// loop wakes up. Defaults to "60s" when unset.
-	Interval string `yaml:"interval"`
+	// Heartbeat is a Go duration string (e.g. "30s", "5m") for how often the
+	// loop wakes up. Defaults to "1s" when unset.
+	Heartbeat string `yaml:"heartbeat"`
 }
 
 // AgentSettings controls OpenAI API behaviour.
@@ -223,8 +223,8 @@ func Load() (*Settings, error) {
 	if s.AISysAdmin.Interval == "" {
 		s.AISysAdmin.Interval = "5m"
 	}
-	if s.Loop.Interval == "" {
-		s.Loop.Interval = "60s"
+	if s.Loop.Heartbeat == "" {
+		s.Loop.Heartbeat = "1s"
 	}
 
 	return &s, nil

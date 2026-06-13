@@ -10,7 +10,7 @@ import (
 	"agent_patches/endpoint-server/utils/config"
 )
 
-const defaultInterval = 60 * time.Second
+const defaultHeartbeat = time.Second
 
 // Loop wakes up on a configurable interval and runs a tick handler.
 type Loop struct {
@@ -25,17 +25,17 @@ func New(cfg *config.LoopSettings) *Loop {
 // Start launches the background loop. It returns immediately; the goroutine
 // exits when ctx is cancelled.
 func (l *Loop) Start(ctx context.Context) {
-	interval, err := time.ParseDuration(l.cfg.Interval)
-	if err != nil || interval <= 0 {
-		slog.Error("loop: invalid interval, defaulting", "interval", l.cfg.Interval, "default", defaultInterval, "error", err)
-		interval = defaultInterval
+	heartbeat, err := time.ParseDuration(l.cfg.Heartbeat)
+	if err != nil || heartbeat <= 0 {
+		slog.Error("loop: invalid heartbeat, defaulting", "heartbeat", l.cfg.Heartbeat, "default", defaultHeartbeat, "error", err)
+		heartbeat = defaultHeartbeat
 	}
-	slog.Info("loop: starting", "interval", interval)
-	go l.run(ctx, interval)
+	slog.Info("loop: starting", "heartbeat", heartbeat)
+	go l.run(ctx, heartbeat)
 }
 
-func (l *Loop) run(ctx context.Context, interval time.Duration) {
-	ticker := time.NewTicker(interval)
+func (l *Loop) run(ctx context.Context, heartbeat time.Duration) {
+	ticker := time.NewTicker(heartbeat)
 	defer ticker.Stop()
 	for {
 		select {

@@ -90,7 +90,7 @@ memory:
 # lifetime of the server. It always starts automatically; the interval is
 # the only configurable setting.
 loop:
-  interval: "60s"   # how often the loop wakes up; any Go duration string (default: 60s)
+  heartbeat: "1s"   # how often the loop wakes up; any Go duration string (default: 1s)
 
 # Notifier sends event messages to configured sinks before and after patching.
 notifier:
