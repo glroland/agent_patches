@@ -16,16 +16,15 @@ const defaultFile = "config.yaml"
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
-	Agent      AgentSettings      `yaml:"agent"`
-	Logging    LoggingSettings    `yaml:"logging"`
-	Tasks      TasksSettings      `yaml:"tasks"`
-	Storage    StorageSettings    `yaml:"storage"`
-	Server     ServerSettings     `yaml:"server"`
-	Security   SecuritySettings   `yaml:"security"`
-	Notifier   NotifierSettings   `yaml:"notifier"`
-	Memory     MemorySettings     `yaml:"memory"`
-	AISysAdmin AISysAdminSettings `yaml:"ai_sysadmin"`
-	Loop       LoopSettings       `yaml:"loop"`
+	Agent    AgentSettings    `yaml:"agent"`
+	Logging  LoggingSettings  `yaml:"logging"`
+	Tasks    TasksSettings    `yaml:"tasks"`
+	Storage  StorageSettings  `yaml:"storage"`
+	Server   ServerSettings   `yaml:"server"`
+	Security SecuritySettings `yaml:"security"`
+	Notifier NotifierSettings `yaml:"notifier"`
+	Memory   MemorySettings   `yaml:"memory"`
+	Loop     LoopSettings     `yaml:"loop"`
 
 	// Responsibilities is a dynamic list of recurring duties the agent should
 	// carry out, each on its own schedule.
@@ -103,15 +102,6 @@ type NotifierSettings struct {
 	Email EmailNotifierSettings `yaml:"email"`
 }
 
-// AISysAdminSettings controls the background AI sysadmin agent.
-type AISysAdminSettings struct {
-	Enabled bool `yaml:"enabled"`
-	// Interval is a Go duration string for how often the analysis cycle runs.
-	Interval string `yaml:"interval"`
-	// Model overrides agent.model for the sysadmin cycle when set.
-	Model string `yaml:"model"`
-}
-
 // MemorySettings configures the file-backed agent memory store.
 type MemorySettings struct {
 	// Root is the directory under which domain subdirs and attrs.json are stored.
@@ -161,9 +151,6 @@ func Load() (*Settings, error) {
 	}
 	if s.Memory.Root == "" {
 		s.Memory.Root = "./agent_memory"
-	}
-	if s.AISysAdmin.Interval == "" {
-		s.AISysAdmin.Interval = "5m"
 	}
 	if s.Loop.Heartbeat == "" {
 		s.Loop.Heartbeat = "1s"

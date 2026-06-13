@@ -18,7 +18,6 @@ import (
 	"agent_patches/endpoint-server/a2a/agent"
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
-	"agent_patches/endpoint-server/aisysadmin"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/diskusage"
@@ -27,6 +26,7 @@ import (
 	"agent_patches/endpoint-server/skills/networkusage"
 	"agent_patches/endpoint-server/skills/patch"
 	"agent_patches/endpoint-server/skills/ping"
+	"agent_patches/endpoint-server/skills/readmemory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
 	"agent_patches/endpoint-server/utils/notifier"
@@ -98,6 +98,15 @@ func main() {
 	}
 	registry.Register(loginSessionsTool)
 
+	mem := memory.New(&cfg.Memory)
+
+	readMemoryTool, err := readmemory.NewReadMemoryTool(mem)
+	if err != nil {
+		slog.Error("failed to create read_memory tool", "error", err)
+		return
+	}
+	registry.Register(readMemoryTool)
+
 	a := agent.New(storage.WrapAll(registry.Tools(), store), cfg)
 	exec := executor.New(a)
 
@@ -140,10 +149,6 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
-
-	mem := memory.New(&cfg.Memory)
-
-	aisysadmin.New(&cfg.AISysAdmin, &cfg.Agent, mem, notify).Start(ctx)
 
 	loop.New(cfg, registry, notify).Start(ctx)
 
