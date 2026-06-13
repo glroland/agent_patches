@@ -38,7 +38,8 @@ func NewDiskUsageTool() (tool.Tool, error) {
 	return tool.New(
 		"disk_usage",
 		"Reports current disk space usage for all local disks on the host, "+
-			"including total, used, and free space per mount point.",
+			"including total, used, and free space per mount point, along with "+
+			"the top largest directories and files on each disk.",
 		func(_ context.Context, _ diskUsageInput) (string, error) {
 			disks, err := localDisks()
 			if err != nil {
@@ -52,6 +53,10 @@ func NewDiskUsageTool() (tool.Tool, error) {
 	)
 }
 
+// topLargestCount is the number of largest directories and files reported
+// per disk.
+const topLargestCount = 3
+
 // BuildReport composes a human-readable summary of disk usage.
 func BuildReport(disks []DiskStat) string {
 	var sb strings.Builder
@@ -63,6 +68,23 @@ func BuildReport(disks []DiskStat) string {
 		fmt.Fprintf(&sb, "Total:      %s\n", formatBytes(d.Total))
 		fmt.Fprintf(&sb, "Used:       %s (%.1f%%)\n", formatBytes(d.Used()), d.UsedPct())
 		fmt.Fprintf(&sb, "Free:       %s\n", formatBytes(d.Free))
+
+		dirs, files, err := TopLargest(d.Mount, topLargestCount)
+		if err == nil {
+			if len(dirs) > 0 {
+				fmt.Fprintf(&sb, "Top directories:\n")
+				for _, dir := range dirs {
+					fmt.Fprintf(&sb, "  %s (%s)\n", dir.Path, formatBytes(dir.Size))
+				}
+			}
+			if len(files) > 0 {
+				fmt.Fprintf(&sb, "Top files:\n")
+				for _, f := range files {
+					fmt.Fprintf(&sb, "  %s (%s)\n", f.Path, formatBytes(f.Size))
+				}
+			}
+		}
+
 		if i < len(disks)-1 {
 			fmt.Fprintf(&sb, "\n")
 		}
