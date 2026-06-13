@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"agent_patches/endpoint-server/tasks/patch/patching"
 	"agent_patches/endpoint-server/tool"
@@ -35,16 +36,28 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 
 			available, checkOut, err := p.UpdatesAvailable(ctx)
 			if err != nil {
-				// Log the check failure but do not abort — let the update run
-				// and surface any real error itself.
 				slog.Warn("patch: update check failed, proceeding anyway", "error", err)
 			} else if !available {
 				return "No updates available. System is up to date.\n\n" + checkOut, nil
 			}
 
+			// Fetch per-package CVE details. Use a bounded timeout so a slow API
+			// does not delay the actual patching indefinitely.
+			updateReport := checkOut
+			listCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+			defer cancel()
+			updates, err := p.ListUpdates(listCtx)
+			if err != nil {
+				slog.Warn("patch: CVE detail lookup failed", "error", err)
+			} else {
+				logPatchUpdates(updates)
+				updateReport = patching.FormatUpdateReport(updates)
+			}
+
 			n.Notify(ctx,
 				fmt.Sprintf("[%s] Patch Starting", host),
-				fmt.Sprintf("Updates available on host %q (OS: %s). Beginning system patch.\n\nUpdate check:\n%s", host, p.OS(), checkOut),
+				fmt.Sprintf("Updates available on host %q (OS: %s). Beginning system patch.\n\nUpdate details:\n%s",
+					host, p.OS(), updateReport),
 			)
 
 			log, err := p.Run(ctx)
@@ -63,4 +76,23 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 			return log, nil
 		},
 	)
+}
+
+func logPatchUpdates(updates []patching.PackageUpdate) {
+	for _, u := range updates {
+		slog.Info("patch: update",
+			"package", u.Name,
+			"version", u.NewVersion,
+			"description", u.Description,
+			"cve_count", len(u.CVEs),
+		)
+		for _, c := range u.CVEs {
+			slog.Info("patch: cve",
+				"cve", c.ID,
+				"severity", c.Severity,
+				"cvss_score", c.CVSSScore,
+				"url", c.URL,
+			)
+		}
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"os/exec"
 	"runtime"
@@ -45,6 +46,9 @@ func (e *ExitCodeError) ExitCode() int  { return e.Code }
 type Patcher struct {
 	os        OSType
 	commander Commander
+	// HTTPClient is used for vendor and NVD API calls in ListUpdates.
+	// When nil, updateinfo.go uses defaultHTTPClient. Tests may inject a mock client.
+	HTTPClient *http.Client
 	// darwinRebootRequired is set by patchDarwin when the softwareupdate output
 	// indicates a restart is needed; read back by needsReboot.
 	darwinRebootRequired bool

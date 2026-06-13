@@ -83,8 +83,13 @@ func (s *Scheduler) run(ctx context.Context) {
 	s.CheckPatches(ctx)
 }
 
-// CheckPatches queries the OS package manager for pending updates and notifies
-// when any are found. Skipped entirely when PatchCheck.Enabled is false.
+// UpdateDetailer is an optional extension of UpdateChecker that returns
+// per-package update details including CVE information.
+// *patching.Patcher satisfies this interface automatically via ListUpdates.
+type UpdateDetailer interface {
+	ListUpdates(ctx context.Context) ([]patching.PackageUpdate, error)
+}
+
 func (s *Scheduler) CheckPatches(ctx context.Context) {
 	if !s.cfg.PatchCheck.Enabled {
 		slog.Debug("daily_tasks: patch check disabled")
@@ -99,9 +104,9 @@ func (s *Scheduler) CheckPatches(ctx context.Context) {
 		return
 	}
 
-	available, details, err := p.UpdatesAvailable(ctx)
+	available, rawDetails, err := p.UpdatesAvailable(ctx)
 	if err != nil {
-		slog.Warn("daily_tasks: patch check failed", "error", err, "output", details)
+		slog.Warn("daily_tasks: patch check failed", "error", err, "output", rawDetails)
 		return
 	}
 
@@ -111,13 +116,45 @@ func (s *Scheduler) CheckPatches(ctx context.Context) {
 	}
 
 	host, _ := os.Hostname()
-	slog.Info("daily_tasks: updates available, sending notification", "host", host, "os", p.OS())
+	slog.Info("daily_tasks: updates available, fetching CVE details", "host", host, "os", p.OS())
+
+	emailBody := rawDetails
+	if detailer, ok := p.(UpdateDetailer); ok {
+		updates, err := detailer.ListUpdates(ctx)
+		if err != nil {
+			slog.Warn("daily_tasks: CVE detail lookup failed", "error", err)
+		} else {
+			logUpdateDetails(updates)
+			emailBody = patching.FormatUpdateReport(updates)
+		}
+	}
 
 	s.notifier.Notify(ctx,
 		fmt.Sprintf("[%s] Updates Available", host),
 		fmt.Sprintf("System updates are available on host %q (OS: %s).\n\nDetails:\n%s",
-			host, p.OS(), details),
+			host, p.OS(), emailBody),
 	)
+}
+
+func logUpdateDetails(updates []patching.PackageUpdate) {
+	for _, u := range updates {
+		args := []any{"package", u.Name, "cve_count", len(u.CVEs)}
+		if u.NewVersion != "" {
+			args = append(args, "version", u.NewVersion)
+		}
+		if u.Description != "" {
+			args = append(args, "description", u.Description)
+		}
+		slog.Info("daily_tasks: update", args...)
+		for _, c := range u.CVEs {
+			slog.Info("daily_tasks: cve",
+				"cve", c.ID,
+				"severity", c.Severity,
+				"cvss_score", c.CVSSScore,
+				"url", c.URL,
+			)
+		}
+	}
 }
 
 // NextWake returns the duration until the next occurrence of wakeTime (HH:MM)
