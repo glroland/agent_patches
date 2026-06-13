@@ -20,10 +20,6 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/aisysadmin"
 	"agent_patches/endpoint-server/memory"
-	"agent_patches/endpoint-server/observers/diskmon"
-	"agent_patches/endpoint-server/observers/loginmon"
-	"agent_patches/endpoint-server/observers/memmon"
-	"agent_patches/endpoint-server/observers/netmon"
 	"agent_patches/endpoint-server/scheduler"
 	"agent_patches/endpoint-server/tasks/hello"
 	"agent_patches/endpoint-server/tasks/patch"
@@ -117,26 +113,6 @@ func main() {
 	mem := memory.New(&cfg.Memory)
 
 	sched.Start(ctx)
-
-	lm := loginmon.New(&cfg.LoginMonitor, notify)
-	lm.Mem = mem.Domain("logins")
-	lm.Start(ctx)
-
-	dm := diskmon.New(&cfg.DiskMonitor, notify)
-	dm.Mem = mem.Domain("disk")
-	dm.Start(ctx)
-
-	mm := memmon.New(&cfg.MemoryMonitor, notify)
-	mm.Mem = mem.Domain("memory")
-	mm.Start(ctx)
-
-	um := netmon.NewUploadMonitor(&cfg.NetworkUpload, notify)
-	um.Mem = mem.Domain("net_upload")
-	um.Start(ctx)
-
-	dlm := netmon.NewDownloadMonitor(&cfg.NetworkDownload, notify)
-	dlm.Mem = mem.Domain("net_download")
-	dlm.Start(ctx)
 
 	aisysadmin.New(&cfg.AISysAdmin, &cfg.Agent, mem, notify).Start(ctx)
 
