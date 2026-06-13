@@ -77,7 +77,7 @@ responsibilities:
       Check disk usage on all mounted filesystems. If any filesystem is above
       90% capacity, identify the largest contributors and report them.
     tools:
-      - disk_usage
+      - check_drives
     when_to_notify: "on error"
   - name: daily-summary
     time: "07:00"
@@ -85,7 +85,7 @@ responsibilities:
       Summarize overnight system activity, including any errors, restarts,
       or completed patch runs, and produce a short report.
     tools:
-      - read_memory
+      - read_agent_memory
     when_to_notify: "always"
   - name: keep-system-up-to-date
     time: "03:00"
@@ -93,7 +93,7 @@ responsibilities:
       Ensure the system is up to date. Use the patch tool to check for and
       apply any available OS updates, rebooting if required.
     tools:
-      - patch
+      - check_for_pending_system_patches
     when_to_notify: "always"
 
 # Notifier sends event messages to configured sinks before and after patching.
