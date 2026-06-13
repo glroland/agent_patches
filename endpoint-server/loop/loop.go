@@ -25,14 +25,14 @@ type Loop struct {
 	cfg              *config.Settings
 	registry         *tasks.Registry
 	notify           *notifier.Notifier
-	responsibilities []*responsibility
+	responsibilities []*Responsibility
 }
 
 // New creates a Loop. Call Start to launch the background goroutine.
 func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifier) *Loop {
-	resp := make([]*responsibility, 0, len(cfg.Responsibilities))
+	resp := make([]*Responsibility, 0, len(cfg.Responsibilities))
 	for _, rc := range cfg.Responsibilities {
-		r, err := newResponsibility(rc)
+		r, err := NewResponsibility(rc)
 		if err != nil {
 			slog.Error("loop: invalid responsibility, skipping", "name", rc.Name, "error", err)
 			continue
@@ -74,12 +74,12 @@ func (l *Loop) tick(ctx context.Context) {
 
 	now := time.Now()
 	for _, r := range l.responsibilities {
-		if !r.due(now) {
+		if !r.Due(now) {
 			continue
 		}
-		r.schedule(now)
+		r.Schedule(now)
 
-		if !r.running.CompareAndSwap(false, true) {
+		if !r.Running.CompareAndSwap(false, true) {
 			slog.Error("loop: responsibility still in flight, skipping this run", "name", r.cfg.Name)
 			continue
 		}
@@ -89,8 +89,8 @@ func (l *Loop) tick(ctx context.Context) {
 
 // execute runs a single responsibility's instruction through the agent and
 // notifies the manager if configured to do so.
-func (l *Loop) execute(ctx context.Context, r *responsibility) {
-	defer r.running.Store(false)
+func (l *Loop) execute(ctx context.Context, r *Responsibility) {
+	defer r.Running.Store(false)
 
 	log := slog.With("responsibility", r.cfg.Name)
 	log.Info("loop: responsibility started")
@@ -135,7 +135,7 @@ func (l *Loop) filterTools(names []string) []tool.Tool {
 // its WhenToNotify setting: "always" notifies on every run, "on_error" (or
 // "on error", the default) notifies only when the run failed, and "never"
 // suppresses notifications entirely.
-func (l *Loop) maybeNotify(ctx context.Context, r *responsibility, result string, err error) {
+func (l *Loop) maybeNotify(ctx context.Context, r *Responsibility, result string, err error) {
 	mode := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(r.cfg.WhenToNotify), " ", "_"))
 
 	if err != nil {
