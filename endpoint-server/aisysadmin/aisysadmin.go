@@ -13,8 +13,8 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 
+	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
-	"agent_patches/endpoint-server/tool"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )

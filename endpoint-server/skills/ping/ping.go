@@ -3,7 +3,7 @@ package ping
 import (
 	"context"
 
-	"agent_patches/endpoint-server/tool"
+	"agent_patches/endpoint-server/a2a/tool"
 )
 
 type pingInput struct{}

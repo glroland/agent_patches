@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
-	"agent_patches/endpoint-server/tool"
 )
 
 // readMemoryInput is the typed input for the read_memory tool.

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/skills/ping"
-	"agent_patches/endpoint-server/tool"
 	"agent_patches/endpoint-server/utils/storage"
 )
 
