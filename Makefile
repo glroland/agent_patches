@@ -22,12 +22,15 @@ PLATFORM_DIR := $(TARGET_DIR)/$(UNAME_OS)-$(UNAME_ARCH)
 # Override with: make run CONFIG=/path/to/config.yaml
 CONFIG ?= $(CURDIR)/config.yaml
 
+# Directory for the central-ui React app.
+CENTRAL_UI_DIR := $(CURDIR)/central-ui
+
 # Ansible inventory used by `make deploy`.
 INVENTORY := $(CURDIR)/../home-utils/admin/agent_patches/inventory.yaml
 PLAYBOOK  := $(CURDIR)/deploy/linux/playbook.yml
 
 .PHONY: install build build-server build-cli release release-server release-cli \
-        test run run-cli deploy clean fmt lint vet help
+        test run run-cli run-central-ui deploy clean fmt lint vet help
 
 ## install: download and tidy all module dependencies
 install:
@@ -79,6 +82,11 @@ run: release-server
 ## run-cli: build and run the CLI client (pass ARGS="<message>" to send a task)
 run-cli: build-cli
 	./$(TARGET_DIR)/$(CLI_BINARY) $(ARGS)
+
+## run-central-ui: install dependencies (if needed) and start the central-ui React dev server
+run-central-ui:
+	cd $(CENTRAL_UI_DIR) && [ -d node_modules ] || npm install
+	cd $(CENTRAL_UI_DIR) && npm run dev
 
 ## deploy: release and deploy to all hosts in the Ansible inventory
 deploy:
