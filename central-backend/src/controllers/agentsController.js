@@ -49,5 +49,22 @@ export async function getAgent(req, res, next) {
 // GET /api/agents/:id/activity
 export const getAgentActivity = notImplemented;
 
-// POST /api/agents/:id/messages — relay an operator message/task to the agent
-export const sendAgentMessage = notImplemented;
+// POST /api/agents/:id/messages — relay an operator chat message to the
+// agent and return its reply.
+export async function sendAgentMessage(req, res, next) {
+  try {
+    const { message } = req.body ?? {};
+    if (typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'invalid_request', message: '"message" is required' });
+    }
+
+    const reply = await fleet.sendAgentMessage(req.params.id, message);
+    if (reply === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+
+    res.json({ reply });
+  } catch (err) {
+    res.status(502).json({ error: 'agent_unreachable', message: err.message });
+  }
+}

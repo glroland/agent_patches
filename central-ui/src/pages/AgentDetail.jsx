@@ -5,7 +5,7 @@ import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon } from '../components/icons';
-import { fetchAgent } from '../api/client';
+import { fetchAgent, sendAgentMessage } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { relativeTime } from '../utils/time';
 
@@ -183,19 +183,26 @@ function InteractTab({ agent }) {
     { role: 'agent', text: `Hi, I'm the agent for ${agent.hostname}. Ask me about what I've seen, what I'm doing, or why I've made a recommendation.` },
   ]);
   const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
 
-  const send = (text) => {
-    const value = text ?? input;
-    if (!value.trim()) return;
+  const send = async (text) => {
+    const value = (text ?? input).trim();
+    if (!value || sending) return;
     setMessages((prev) => [...prev, { role: 'user', text: value }]);
     setInput('');
-    setTimeout(() => {
-      setMessages((prev) => [...prev, { role: 'agent', text: mockReply(value, agent) }]);
-    }, 500);
+    setSending(true);
+    try {
+      const { reply } = await sendAgentMessage(agent.id, value);
+      setMessages((prev) => [...prev, { role: 'agent', text: reply || '(no response)' }]);
+    } catch (err) {
+      setMessages((prev) => [...prev, { role: 'agent', text: `Couldn't reach the agent: ${err.message}` }]);
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
-    <Card title={`Talk to the ${agent.hostname} agent`} subtitle="Sends a task via the A2A JSON-RPC API (mocked)">
+    <Card title={`Talk to the ${agent.hostname} agent`} subtitle="Sends a message via the A2A JSON-RPC API">
       <div className="flex h-96 flex-col">
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
           {messages.map((m, i) => (
@@ -209,6 +216,13 @@ function InteractTab({ agent }) {
               </div>
             </div>
           ))}
+          {sending && (
+            <div className="flex justify-start">
+              <div className="max-w-[80%] rounded-xl bg-slate-800 px-3.5 py-2.5 text-sm text-slate-400">
+                Thinking...
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
@@ -216,7 +230,8 @@ function InteractTab({ agent }) {
             <button
               key={s}
               onClick={() => send(s)}
-              className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400 hover:border-indigo-500/50 hover:text-indigo-300"
+              disabled={sending}
+              className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400 hover:border-indigo-500/50 hover:text-indigo-300 disabled:opacity-50"
             >
               {s}
             </button>
@@ -232,34 +247,18 @@ function InteractTab({ agent }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask this agent something..."
-            className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none"
+            disabled={sending}
+            className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
           />
-          <button type="submit" className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400">
+          <button
+            type="submit"
+            disabled={sending}
+            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400 disabled:opacity-50"
+          >
             Send
           </button>
         </form>
       </div>
     </Card>
   );
-}
-
-function mockReply(message, agent) {
-  const lower = message.toLowerCase();
-  if (lower.includes('working on') || lower.includes('doing')) {
-    return agent.currentTask ?? "Nothing at the moment — I'm idle and everything looks healthy.";
-  }
-  if (lower.includes('summar') || lower.includes('seen')) {
-    const latest = agent.timeline.slice(0, 3).map((e) => `- ${e.title}`).join('\n');
-    return `Here's what I've noted most recently:\n${latest}`;
-  }
-  if (lower.includes('why')) {
-    const approval = agent.timeline.find((t) => t.type === 'approval');
-    return approval
-      ? `${approval.detail} I'd rather a human confirm before I proceed, since this is a ${approval.risk}-risk change.`
-      : "I don't currently have anything pending approval.";
-  }
-  if (lower.includes('re-check') || lower.includes('recheck')) {
-    return "Sure — I'll run my checks again now and report anything new on my next update.";
-  }
-  return `Got it: "${message}" (mock response — no live agent connection in this build).`;
 }

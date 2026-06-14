@@ -16,6 +16,9 @@ export const config = {
     pollIntervalSeconds: Number(process.env.AGENT_POLL_INTERVAL_SECONDS) || 60,
     // Path to the CSV file listing enrolled agents (display name, fqdn, port, os flavor).
     inventoryFile: process.env.AGENT_INVENTORY_FILE,
+    // Bearer token sent to every endpoint-server agent, when set. Must match
+    // each agent's security.token (security.scheme: bearer in config.yaml).
+    authToken: process.env.AGENT_AUTH_TOKEN,
   },
   logging: {
     level: process.env.LOG_LEVEL || 'info',

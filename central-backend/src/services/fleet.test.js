@@ -1,10 +1,11 @@
-import { test, describe, before, after, beforeEach } from 'node:test';
+import { test, describe, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
 let listFleet;
+let sendAgentMessage;
 let AgentClient;
 let _clearStatusCacheForTests;
 let inventoryPath;
@@ -19,7 +20,7 @@ before(async () => {
   );
   process.env.AGENT_INVENTORY_FILE = inventoryPath;
 
-  ({ listFleet, _clearStatusCacheForTests } = await import('./fleet.js'));
+  ({ listFleet, sendAgentMessage, _clearStatusCacheForTests } = await import('./fleet.js'));
   ({ AgentClient } = await import('./agentClient.js'));
 });
 
@@ -99,5 +100,33 @@ describe('fleet.listFleet', () => {
     // Two agents in inventory; each should only be fetched once across both
     // listFleet() calls thanks to the short-TTL cache.
     assert.equal(calls, 2);
+  });
+});
+
+describe('fleet.sendAgentMessage', () => {
+  let originalSendMessage;
+
+  beforeEach(() => {
+    originalSendMessage = AgentClient.prototype.sendMessage;
+  });
+
+  afterEach(() => {
+    AgentClient.prototype.sendMessage = originalSendMessage;
+  });
+
+  test('relays the message to the agent and returns its reply', async () => {
+    AgentClient.prototype.sendMessage = async function (text) {
+      assert.equal(this.baseUrl, 'http://web01.prod.internal:8080');
+      assert.equal(text, 'what are you doing?');
+      return 'Currently idle.';
+    };
+
+    const reply = await sendAgentMessage('web01', 'what are you doing?');
+    assert.equal(reply, 'Currently idle.');
+  });
+
+  test('returns undefined for an unknown agent id', async () => {
+    const reply = await sendAgentMessage('does-not-exist', 'hi');
+    assert.equal(reply, undefined);
   });
 });

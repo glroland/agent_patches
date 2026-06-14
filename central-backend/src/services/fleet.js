@@ -3,6 +3,7 @@
 
 import * as inventory from './inventory.js';
 import { AgentClient } from './agentClient.js';
+import { config } from '../config/index.js';
 
 const STATUS_META = {
   active: { label: 'Active', description: 'Currently working on a task' },
@@ -73,4 +74,21 @@ export async function listFleet() {
 export async function getFleetAgent(id) {
   const agents = await listFleet();
   return agents.find((agent) => agent.id === id);
+}
+
+// Sends a chat message to the agent identified by id and returns its text
+// reply. Throws if no agent with that id is in the inventory, or if the
+// agent is unreachable/errors.
+export async function sendAgentMessage(id, text) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
+  if (!inventoryAgent) {
+    return undefined;
+  }
+
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+  });
+  return client.sendMessage(text);
 }

@@ -8,6 +8,19 @@ async function getJSON(path) {
   return response.json();
 }
 
+async function postJSON(path, body) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.message || `${path} returned ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
 // Fleet-wide counts for the navigation shell.
 export function fetchSummary() {
   return getJSON('/summary');
@@ -37,4 +50,9 @@ export function fetchApprovals() {
 // Aggregated issues/concerns plus per-severity counts.
 export function fetchIssues() {
   return getJSON('/issues');
+}
+
+// Sends a chat message to an agent and returns its reply.
+export function sendAgentMessage(id, message) {
+  return postJSON(`/agents/${id}/messages`, { message });
 }
