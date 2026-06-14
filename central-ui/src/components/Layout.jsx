@@ -1,18 +1,24 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { DashboardIcon, ServerIcon, AlertIcon } from './icons';
-import { endpoints } from '../data/endpoints';
-import { computeIssues } from '../data/issues';
+import { DashboardIcon, ServerIcon, AlertIcon, HandIcon } from './icons';
+import { agents, pendingApprovals, concerns } from '../data/agents';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon, exact: true },
-  { to: '/endpoints', label: 'Endpoints', icon: ServerIcon },
+  { to: '/agents', label: 'Agents', icon: ServerIcon },
+  { to: '/approvals', label: 'Approvals', icon: HandIcon },
   { to: '/issues', label: 'Issues & Concerns', icon: AlertIcon },
 ];
 
 export default function Layout() {
-  const offlineCount = endpoints.filter((e) => e.status !== 'online').length;
-  const issues = computeIssues();
-  const criticalCount = issues.filter((i) => i.severity === 'critical').length;
+  const attentionCount = agents.filter((a) => a.status === 'attention' || a.status === 'offline').length;
+  const approvalCount = pendingApprovals().length;
+  const criticalConcerns = concerns().filter((c) => c.severity === 'critical').length;
+
+  const badgeFor = {
+    '/agents': attentionCount,
+    '/approvals': approvalCount,
+    '/issues': criticalConcerns,
+  };
 
   return (
     <div className="flex min-h-screen bg-slate-950">
@@ -28,41 +34,39 @@ export default function Layout() {
         </div>
 
         <nav className="flex flex-col gap-1">
-          {navItems.map(({ to, label, icon: Icon, exact }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={exact}
-              className={({ isActive }) =>
-                `flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-                  isActive
-                    ? 'bg-indigo-500/15 text-indigo-300'
-                    : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
-                }`
-              }
-            >
-              <span className="flex items-center gap-3">
-                <Icon className="h-4.5 w-4.5" />
-                {label}
-              </span>
-              {to === '/endpoints' && offlineCount > 0 && (
-                <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-300">
-                  {offlineCount}
+          {navItems.map(({ to, label, icon: Icon, exact }) => {
+            const badge = badgeFor[to];
+            return (
+              <NavLink
+                key={to}
+                to={to}
+                end={exact}
+                className={({ isActive }) =>
+                  `flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                    isActive
+                      ? 'bg-indigo-500/15 text-indigo-300'
+                      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
+                  }`
+                }
+              >
+                <span className="flex items-center gap-3">
+                  <Icon className="h-4.5 w-4.5" />
+                  {label}
                 </span>
-              )}
-              {to === '/issues' && criticalCount > 0 && (
-                <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-300">
-                  {criticalCount}
-                </span>
-              )}
-            </NavLink>
-          ))}
+                {!!badge && (
+                  <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-300">
+                    {badge}
+                  </span>
+                )}
+              </NavLink>
+            );
+          })}
         </nav>
 
         <div className="mt-auto rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-          <p className="text-xs font-medium text-slate-300">{endpoints.length} agents enrolled</p>
+          <p className="text-xs font-medium text-slate-300">{agents.length} agents enrolled</p>
           <p className="mt-1 text-xs text-slate-500">
-            {endpoints.length - offlineCount} online &middot; {offlineCount} need attention
+            {agents.length - attentionCount} healthy &middot; {attentionCount} need attention
           </p>
         </div>
       </aside>
@@ -70,7 +74,7 @@ export default function Layout() {
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/30 px-8 py-4">
           <div>
-            <p className="text-xs text-slate-500">Last refreshed</p>
+            <p className="text-xs text-slate-500">Last polled</p>
             <p className="text-sm font-medium text-slate-200">just now (mock data)</p>
           </div>
           <div className="flex items-center gap-3">

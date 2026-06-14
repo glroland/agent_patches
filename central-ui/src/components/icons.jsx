@@ -84,3 +84,47 @@ export const RefreshIcon = (props) => (
     <path d="M4.6 15a8 8 0 0 0 13.8 2.5M19.4 9A8 8 0 0 0 5.6 6.5" strokeLinecap="round" />
   </svg>
 );
+
+export const EyeIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={base} {...props}>
+    <path d="M2 12c2-4 6-6.5 10-6.5S20 8 22 12c-2 4-6 6.5-10 6.5S4 16 2 12Z" strokeLinejoin="round" />
+    <circle cx="12" cy="12" r="2.6" />
+  </svg>
+);
+
+export const BoltIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={base} {...props}>
+    <path d="M13 2 4 14h6l-1 8 9-12h-6l1-8Z" strokeLinejoin="round" strokeLinecap="round" />
+  </svg>
+);
+
+export const LightbulbIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={base} {...props}>
+    <path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c0.6 0.6 1 1.4 1 2.5h6c0-1.1 0.4-1.9 1-2.5A6 6 0 0 0 12 3Z" strokeLinejoin="round" strokeLinecap="round" />
+  </svg>
+);
+
+export const HandIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={base} {...props}>
+    <path d="M8 13V5.5a1.5 1.5 0 0 1 3 0V12M11 12V4a1.5 1.5 0 0 1 3 0v8M14 12V5.5a1.5 1.5 0 0 1 3 0V13M17 8.5a1.5 1.5 0 0 1 3 0V14a7 7 0 0 1-7 7h-1a7 7 0 0 1-6.1-3.6L4 14" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+export const CheckIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={base} {...props}>
+    <path d="m5 13 4 4 10-10" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+export const XIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={base} {...props}>
+    <path d="M6 6l12 12M18 6 6 18" strokeLinecap="round" />
+  </svg>
+);
+
+export const ClockIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={base} {...props}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3.5 2" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);

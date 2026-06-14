@@ -1,4 +1,7 @@
 const VARIANTS = {
+  active: 'bg-indigo-500/15 text-indigo-300 ring-indigo-500/30',
+  idle: 'bg-slate-500/15 text-slate-300 ring-slate-500/30',
+  attention: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',
   online: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30',
   degraded: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',
   offline: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',
@@ -8,6 +11,12 @@ const VARIANTS = {
   neutral: 'bg-slate-500/15 text-slate-300 ring-slate-500/30',
   passed: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30',
   failed: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',
+  high: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',
+  medium: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',
+  low: 'bg-sky-500/15 text-sky-400 ring-sky-500/30',
+  approved: 'bg-emerald-500/15 text-emerald-400 ring-emerald-500/30',
+  rejected: 'bg-rose-500/15 text-rose-400 ring-rose-500/30',
+  pending: 'bg-amber-500/15 text-amber-400 ring-amber-500/30',
 };
 
 export default function Badge({ variant = 'neutral', children, className = '' }) {
