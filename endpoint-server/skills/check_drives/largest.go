@@ -76,6 +76,8 @@ type dirNode struct {
 	path   string
 	total  uint64
 	parent *dirNode
+	dev    uint64
+	devOK  bool
 }
 
 // TopLargest finds the top N largest files and top N largest directories
@@ -89,7 +91,8 @@ type dirNode struct {
 // descendants are discovered, refining the directory totals. The scan stops
 // once maxDirsExplored directories have been opened.
 func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, err error) {
-	queue := []*dirNode{{path: root}}
+	rootDev, rootDevOK := deviceID(root)
+	queue := []*dirNode{{path: root, dev: rootDev, devOK: rootDevOK}}
 	var candidates []*dirNode
 	var fileEntries []SizedEntry
 	explored := 0
@@ -123,7 +126,12 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 					slog.Debug("check_drives: skipping pseudo filesystem", "path", path)
 					continue
 				}
-				children = append(children, &dirNode{path: path, total: dirSelfSize(path), parent: cur})
+				childDev, childDevOK := deviceID(path)
+				if cur.devOK && childDevOK && childDev != cur.dev {
+					slog.Debug("check_drives: skipping mounted filesystem", "path", path)
+					continue
+				}
+				children = append(children, &dirNode{path: path, total: dirSelfSize(path), parent: cur, dev: childDev, devOK: childDevOK})
 				continue
 			}
 			info, ierr := e.Info()
