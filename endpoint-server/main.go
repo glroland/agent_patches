@@ -166,7 +166,11 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
-	mux.Handle("/status", statusSvc.Handler())
+	var statusHandler http.Handler = statusSvc.Handler()
+	if cfg.Security.Scheme == "bearer" {
+		statusHandler = requireBearer(cfg.Security.Token, statusHandler)
+	}
+	mux.Handle("/status", statusHandler)
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(reqHandler))
 
 	srv := &http.Server{
@@ -232,6 +236,23 @@ func buildAgentCard(url string, cfg *config.Settings, registry *tasks.Registry) 
 	}
 
 	return card
+}
+
+// requireBearer wraps an http.Handler so requests must carry a matching
+// "Authorization: Bearer <token>" header, returning 401 otherwise. Used to
+// protect plain HTTP endpoints (e.g. /status) outside the JSON-RPC handler,
+// which authenticates via bearerInterceptor instead.
+func requireBearer(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		got, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if !ok || got != token {
+			slog.Warn("auth: missing or invalid bearer token", "path", r.URL.Path)
+			w.Header().Set("WWW-Authenticate", "Bearer")
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // bearerInterceptor validates Bearer tokens on every JSON-RPC request.
