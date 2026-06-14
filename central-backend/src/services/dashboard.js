@@ -9,8 +9,8 @@ const ATTENTION_STATUSES = ['attention', 'offline'];
 const ACTIVITY_LIMIT = 8;
 const APPROVAL_LIMIT = 4;
 
-export function getDashboard() {
-  const agents = listFleet();
+export async function getDashboard() {
+  const agents = await listFleet();
   const attention = agents.filter((a) => ATTENTION_STATUSES.includes(a.status));
   const approvals = pendingApprovals(agents);
   const activity = recentActivity(agents, ACTIVITY_LIMIT);

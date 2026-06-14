@@ -34,7 +34,9 @@ export function concerns(agents) {
         agentId: agent.id,
         hostname: agent.hostname,
         title: 'Agent is offline',
-        detail: `Last heard from at ${new Date(agent.lastPoll).toLocaleString()}.`,
+        detail: agent.lastPoll
+          ? `Last heard from at ${new Date(agent.lastPoll).toLocaleString()}.`
+          : 'Not responding to status polls.',
         time: agent.lastPoll,
       });
     }

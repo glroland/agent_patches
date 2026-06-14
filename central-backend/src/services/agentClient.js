@@ -1,22 +1,27 @@
-// Client for talking to an individual endpoint-server's A2A JSON-RPC API
-// (see endpoint-server/a2a). This will be used by the poller to pull status
-// from each agent and to relay operator messages/tasks to a specific agent.
-//
-// Not yet implemented — method signatures are sketched out for the routes
-// and poller that will eventually call them.
+// Client for talking to an individual endpoint-server's HTTP API.
+
+const DEFAULT_TIMEOUT_MS = 3000;
 
 export class AgentClient {
-  constructor(/* { baseUrl, authToken } */) {
-    throw new Error('AgentClient: not implemented');
+  constructor({ fqdn, port, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+    this.baseUrl = `http://${fqdn}:${port}`;
+    this.timeoutMs = timeoutMs;
   }
 
-  // Fetches the agent card from /.well-known/agent.json.
-  async getAgentCard() {
-    throw new Error('getAgentCard: not implemented');
-  }
-
-  // Sends a natural-language task/message to the agent and returns its reply.
-  async sendTask(/* message */) {
-    throw new Error('sendTask: not implemented');
+  // Fetches GET /status. Returns null if the agent is unreachable, responds
+  // with a non-2xx status, or returns invalid JSON — callers should treat
+  // null as "offline".
+  async getStatus() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const res = await fetch(`${this.baseUrl}/status`, { signal: controller.signal });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
   }
 }

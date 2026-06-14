@@ -24,6 +24,14 @@ server:
   port: 8080
   # public_url: http://server.home.example.com:8080  # URL embedded in the agent card; set this when clients connect remotely
 
+# host_metadata describes this host for the GET /status endpoint, consumed by
+# central-backend to build the fleet view. Both fields are optional.
+host_metadata:
+  role: "Frontend web server"
+  tags:
+    - production
+    - frontend
+
 # security.scheme: "none" | "bearer"
 # When scheme is "bearer", callers must supply: Authorization: Bearer <token>
 security:
@@ -52,7 +60,10 @@ loop:
 # recurring runs, e.g. "1h") or "time" (a local HH:MM wall-clock time for a
 # once-daily run). "tools" optionally names the skills/tools to make available
 # while carrying out the instruction, e.g. disk_usage, memory_usage,
-# network_usage, login_sessions, patch, read_memory, system_info.
+# network_usage, login_sessions, patch, read_memory, system_info,
+# report_findings. Include report_findings to let the agent record
+# observations, actions, recommendations, or approval requests that are
+# surfaced via GET /status.
 #
 # "when_to_notify" controls when the manager is emailed about the run's
 # outcome: "always" (every run), "on_error"/"on error" (failures only,

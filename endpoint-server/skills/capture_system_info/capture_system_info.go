@@ -41,6 +41,13 @@ type Info struct {
 	NetInterfaces []NetInterface
 }
 
+// Gather collects static host metadata, exported so callers (main, the
+// status handler) can obtain the Info struct directly without going through
+// the tool interface.
+func Gather() (Info, error) {
+	return gather()
+}
+
 type systemInfoInput struct{}
 
 // NewSystemInfoTool returns a task tool that reports static metadata about

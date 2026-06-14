@@ -4,9 +4,9 @@ import { pendingApprovals } from '../services/activity.js';
 
 // GET /api/approvals — pending approval requests across the fleet, sorted by
 // risk then age.
-export function listApprovals(req, res, next) {
+export async function listApprovals(req, res, next) {
   try {
-    res.json(pendingApprovals(fleet.listFleet()));
+    res.json(pendingApprovals(await fleet.listFleet()));
   } catch (err) {
     next(err);
   }

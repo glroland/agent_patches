@@ -92,6 +92,20 @@ func TestResponsibility_DueTime(t *testing.T) {
 	}
 }
 
+func TestLoop_CurrentTask(t *testing.T) {
+	cfg := &config.Settings{
+		Responsibilities: []config.ResponsibilitySettings{
+			{Name: "disk-space-check", Frequency: "1h"},
+			{Name: "daily-summary", Time: "07:00"},
+		},
+	}
+	l := loop.New(cfg, nil, nil)
+
+	if got := l.CurrentTask(); got != "" {
+		t.Errorf("CurrentTask() = %q, want empty when nothing running", got)
+	}
+}
+
 func TestResponsibility_RunningGate(t *testing.T) {
 	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "freq", Frequency: "1h"})
 	if err != nil {

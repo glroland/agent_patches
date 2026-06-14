@@ -55,6 +55,9 @@ func NewResponsibility(cfg config.ResponsibilitySettings) (*Responsibility, erro
 	return r, nil
 }
 
+// Name returns the responsibility's configured name.
+func (r *Responsibility) Name() string { return r.cfg.Name }
+
 // Due reports whether the responsibility should fire at now.
 func (r *Responsibility) Due(now time.Time) bool {
 	if r.Freq > 0 {

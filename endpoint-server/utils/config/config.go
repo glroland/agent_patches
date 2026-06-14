@@ -21,7 +21,9 @@ const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system a
 	`You will be given one specific responsibility to carry out using the tools ` +
 	`available to you. Investigate thoroughly, take corrective action when it is ` +
 	`safe and appropriate to do so, and report what you found and did clearly and ` +
-	`concisely.`
+	`concisely. If report_findings is available to you, call it whenever you ` +
+	`observe something noteworthy, take an action, have a recommendation, or ` +
+	`need operator approval before proceeding.`
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
@@ -34,6 +36,10 @@ type Settings struct {
 	Notifier NotifierSettings `yaml:"notifier"`
 	Memory   MemorySettings   `yaml:"memory"`
 	Loop     LoopSettings     `yaml:"loop"`
+
+	// HostMetadata describes operator-assigned metadata for this host,
+	// surfaced via GET /status.
+	HostMetadata HostMetadataSettings `yaml:"host_metadata"`
 
 	// Responsibilities is a dynamic list of recurring duties the agent should
 	// carry out, each on its own schedule.
@@ -120,6 +126,14 @@ type NotifierSettings struct {
 type MemorySettings struct {
 	// Root is the directory under which domain subdirs and attrs.json are stored.
 	Root string `yaml:"root"`
+}
+
+// HostMetadataSettings describes operator-assigned metadata for this host,
+// surfaced via GET /status. Both fields are optional; the status handler
+// falls back to defaults when they are empty.
+type HostMetadataSettings struct {
+	Role string   `yaml:"role"`
+	Tags []string `yaml:"tags"`
 }
 
 // EmailNotifierSettings configures the SMTP email sink.

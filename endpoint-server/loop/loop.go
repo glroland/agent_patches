@@ -42,6 +42,18 @@ func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifi
 	return &Loop{cfg: cfg, registry: registry, notify: notify, responsibilities: resp}
 }
 
+// CurrentTask returns the name of the responsibility currently in flight, or
+// "" if none is running. If multiple are running concurrently, the first one
+// found is returned.
+func (l *Loop) CurrentTask() string {
+	for _, r := range l.responsibilities {
+		if r.Running.Load() {
+			return r.Name()
+		}
+	}
+	return ""
+}
+
 // Start launches the background loop. It returns immediately; the goroutine
 // exits when ctx is cancelled.
 func (l *Loop) Start(ctx context.Context) {

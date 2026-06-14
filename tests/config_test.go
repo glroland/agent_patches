@@ -104,6 +104,45 @@ func TestLoad_ValidFile(t *testing.T) {
 	}
 }
 
+func TestLoad_HostMetadata(t *testing.T) {
+	const yamlContent = validYAML + `
+host_metadata:
+  role: "Frontend web server"
+  tags:
+    - production
+    - frontend
+`
+	path := writeTempConfig(t, yamlContent)
+	t.Setenv(config.EnvKey, path)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.HostMetadata.Role != "Frontend web server" {
+		t.Errorf("HostMetadata.Role = %q, want %q", s.HostMetadata.Role, "Frontend web server")
+	}
+	if len(s.HostMetadata.Tags) != 2 || s.HostMetadata.Tags[0] != "production" || s.HostMetadata.Tags[1] != "frontend" {
+		t.Errorf("HostMetadata.Tags = %v, want [production frontend]", s.HostMetadata.Tags)
+	}
+}
+
+func TestLoad_HostMetadata_DefaultsEmpty(t *testing.T) {
+	path := writeTempConfig(t, validYAML)
+	t.Setenv(config.EnvKey, path)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.HostMetadata.Role != "" {
+		t.Errorf("HostMetadata.Role = %q, want empty", s.HostMetadata.Role)
+	}
+	if s.HostMetadata.Tags != nil {
+		t.Errorf("HostMetadata.Tags = %v, want nil", s.HostMetadata.Tags)
+	}
+}
+
 func TestLoad_ResponsibilitySystemPromptOverride(t *testing.T) {
 	const yamlContent = validYAML + `
 responsibility_system_prompt: "custom sysadmin prompt"

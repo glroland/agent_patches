@@ -4,9 +4,9 @@ import { pendingApprovals } from '../services/activity.js';
 
 // GET /api/agents — the Agents screen's fleet list: one row per agent with
 // enough detail to render its card without a follow-up request.
-export function listAgents(req, res, next) {
+export async function listAgents(req, res, next) {
   try {
-    const agents = fleet.listFleet();
+    const agents = await fleet.listFleet();
     res.json(
       agents.map((agent) => {
         const latest = agent.timeline[0];
@@ -34,9 +34,9 @@ export function listAgents(req, res, next) {
 
 // GET /api/agents/:id — the AgentDetail screen: full agent profile plus its
 // complete activity timeline.
-export function getAgent(req, res, next) {
+export async function getAgent(req, res, next) {
   try {
-    const agent = fleet.getFleetAgent(req.params.id);
+    const agent = await fleet.getFleetAgent(req.params.id);
     if (!agent) {
       return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
     }

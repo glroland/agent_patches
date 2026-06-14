@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -29,6 +28,8 @@ import (
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
 	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/skills/read_agent_memory"
+	"agent_patches/endpoint-server/skills/report_findings"
+	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
 	"agent_patches/endpoint-server/utils/notifier"
@@ -116,9 +117,18 @@ func main() {
 	}
 	registry.Register(systemInfoTool)
 
-	if report, err := systemInfoTool.Execute(context.Background(), json.RawMessage("{}")); err != nil {
+	reportFindingsTool, err := report_findings.NewReportFindingsTool(mem)
+	if err != nil {
+		slog.Error("failed to create report_findings tool", "error", err)
+		return
+	}
+	registry.Register(reportFindingsTool)
+
+	hostInfo, err := capture_system_info.Gather()
+	if err != nil {
 		slog.Error("capture_system_info: failed to gather host metadata", "error", err)
 	} else {
+		report := capture_system_info.BuildReport(hostInfo)
 		slog.Info("capture_system_info: gathered host metadata for responsibility system prompt", "report", report)
 		cfg.ResponsibilitySystemPrompt = cfg.ResponsibilitySystemPrompt + "\n\nHost metadata:\n" + report
 	}
@@ -151,8 +161,12 @@ func main() {
 
 	card := buildAgentCard(cardURL, cfg, registry)
 
+	lp := loop.New(cfg, registry, notify)
+	statusSvc := status.New(cfg, hostInfo, mem, lp)
+
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
+	mux.Handle("/status", statusSvc.Handler())
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(reqHandler))
 
 	srv := &http.Server{
@@ -166,7 +180,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	loop.New(cfg, registry, notify).Start(ctx)
+	lp.Start(ctx)
 
 	go func() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)
