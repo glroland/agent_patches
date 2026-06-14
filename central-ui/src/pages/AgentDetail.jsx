@@ -1,16 +1,17 @@
 import { useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useOutletContext } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import { ChatIcon, CheckIcon, XIcon } from '../components/icons';
-import { agents, STATUS_META } from '../data/agents';
+import { STATUS_META } from '../data/agents';
 import { relativeTime } from '../utils/time';
 
 const TABS = ['Activity', 'Recommendations & Approvals', 'Interact'];
 
 export default function AgentDetail() {
   const { id } = useParams();
+  const { agents } = useOutletContext();
   const agent = agents.find((a) => a.id === id);
   const [tab, setTab] = useState('Activity');
   const [approvalState, setApprovalState] = useState({});

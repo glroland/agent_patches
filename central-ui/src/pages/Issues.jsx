@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import StatCard from '../components/StatCard';
@@ -9,7 +9,8 @@ import { relativeTime } from '../utils/time';
 const SEVERITIES = ['all', 'critical', 'warning', 'info'];
 
 export default function Issues() {
-  const all = useMemo(() => concerns(), []);
+  const { agents } = useOutletContext();
+  const all = useMemo(() => concerns(agents), [agents]);
   const [severity, setSeverity] = useState('all');
 
   const filtered = all.filter((c) => severity === 'all' || c.severity === severity);

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import { CheckIcon, XIcon } from '../components/icons';
@@ -7,8 +7,9 @@ import { pendingApprovals } from '../data/agents';
 import { relativeTime } from '../utils/time';
 
 export default function Approvals() {
+  const { agents } = useOutletContext();
   const [decisions, setDecisions] = useState({});
-  const approvals = pendingApprovals();
+  const approvals = pendingApprovals(agents);
 
   const decide = (entryId, decision) => {
     setDecisions((prev) => ({ ...prev, [entryId]: decision }));

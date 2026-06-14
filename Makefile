@@ -94,7 +94,7 @@ run-central-ui:
 ## run-central-backend: install dependencies (if needed) and start the central-backend server
 run-central-backend:
 	cd $(CENTRAL_BACKEND_DIR) && [ -d node_modules ] || npm install
-	cd $(CENTRAL_BACKEND_DIR) && npm start
+	cd $(CENTRAL_BACKEND_DIR) && AGENT_INVENTORY_FILE=$(CURDIR)/inventory.csv npm start
 
 ## deploy: release and deploy to all hosts in the Ansible inventory
 deploy:

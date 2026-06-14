@@ -1,14 +1,15 @@
 import { useState, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import { SearchIcon, HandIcon } from '../components/icons';
-import { agents, STATUS_META } from '../data/agents';
+import { STATUS_META } from '../data/agents';
 import { relativeTime } from '../utils/time';
 
 const STATUS_FILTERS = ['all', 'active', 'idle', 'attention', 'offline'];
 
 export default function Agents() {
+  const { agents } = useOutletContext();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -24,7 +25,7 @@ export default function Agents() {
         a.tags.some((t) => t.toLowerCase().includes(q))
       );
     });
-  }, [query, statusFilter]);
+  }, [agents, query, statusFilter]);
 
   return (
     <div className="space-y-6">

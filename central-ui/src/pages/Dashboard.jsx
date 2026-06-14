@@ -1,15 +1,16 @@
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
 import TimelineEntry from '../components/TimelineEntry';
-import { agents, recentActivity, pendingApprovals, STATUS_META } from '../data/agents';
+import { recentActivity, pendingApprovals, STATUS_META } from '../data/agents';
 import { relativeTime } from '../utils/time';
 
 export default function Dashboard() {
+  const { agents } = useOutletContext();
   const attention = agents.filter((a) => a.status === 'attention' || a.status === 'offline');
-  const approvals = pendingApprovals();
-  const activity = recentActivity(8);
+  const approvals = pendingApprovals(agents);
+  const activity = recentActivity(agents, 8);
   const openRecommendations = agents.flatMap((a) => a.timeline.filter((t) => t.type === 'recommendation')).length;
 
   return (

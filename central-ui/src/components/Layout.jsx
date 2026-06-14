@@ -1,6 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { DashboardIcon, ServerIcon, AlertIcon, HandIcon } from './icons';
-import { agents, pendingApprovals, concerns } from '../data/agents';
+import { pendingApprovals, concerns } from '../data/agents';
+import { useAgents } from '../hooks/useAgents';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon, exact: true },
@@ -10,9 +11,11 @@ const navItems = [
 ];
 
 export default function Layout() {
+  const { agents, loading, error } = useAgents();
+
   const attentionCount = agents.filter((a) => a.status === 'attention' || a.status === 'offline').length;
-  const approvalCount = pendingApprovals().length;
-  const criticalConcerns = concerns().filter((c) => c.severity === 'critical').length;
+  const approvalCount = pendingApprovals(agents).length;
+  const criticalConcerns = concerns(agents).filter((c) => c.severity === 'critical').length;
 
   const badgeFor = {
     '/agents': attentionCount,
@@ -74,15 +77,23 @@ export default function Layout() {
       <div className="flex flex-1 flex-col">
         <header className="flex items-center justify-between border-b border-slate-800 bg-slate-900/30 px-8 py-4">
           <div>
-            <p className="text-xs text-slate-500">Last polled</p>
-            <p className="text-sm font-medium text-slate-200">just now (mock data)</p>
+            <p className="text-xs text-slate-500">Inventory source</p>
+            <p className="text-sm font-medium text-slate-200">central-backend</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 ring-1 ring-slate-700" />
           </div>
         </header>
         <main className="flex-1 px-8 py-6">
-          <Outlet />
+          {loading ? (
+            <p className="text-sm text-slate-500">Loading agent inventory...</p>
+          ) : error ? (
+            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+              Failed to load agent inventory from central-backend: {error.message}
+            </div>
+          ) : (
+            <Outlet context={{ agents }} />
+          )}
         </main>
       </div>
     </div>
