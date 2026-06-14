@@ -1,17 +1,21 @@
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import StatCard from '../components/StatCard';
 import Card from '../components/Card';
 import Badge from '../components/Badge';
 import TimelineEntry from '../components/TimelineEntry';
-import { recentActivity, pendingApprovals, STATUS_META } from '../data/agents';
+import AsyncState from '../components/AsyncState';
+import { fetchDashboard } from '../api/client';
+import { useApi } from '../hooks/useApi';
 import { relativeTime } from '../utils/time';
 
 export default function Dashboard() {
-  const { agents } = useOutletContext();
-  const attention = agents.filter((a) => a.status === 'attention' || a.status === 'offline');
-  const approvals = pendingApprovals(agents);
-  const activity = recentActivity(agents, 8);
-  const openRecommendations = agents.flatMap((a) => a.timeline.filter((t) => t.type === 'recommendation')).length;
+  const { data, loading, error } = useApi(fetchDashboard, []);
+
+  if (loading || error) {
+    return <AsyncState loading={loading} error={error} loadingLabel="Loading fleet activity..." />;
+  }
+
+  const { stats, attention, approvals, activity } = data;
 
   return (
     <div className="space-y-6">
@@ -23,25 +27,25 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Agents healthy"
-          value={`${agents.length - attention.length} / ${agents.length}`}
-          tone={attention.length === 0 ? 'success' : 'default'}
+          value={`${stats.healthyAgents} / ${stats.totalAgents}`}
+          tone={stats.attentionCount === 0 ? 'success' : 'default'}
           hint="Active or idle with nothing flagged"
         />
         <StatCard
           label="Needs attention"
-          value={attention.length}
-          tone={attention.length > 0 ? 'warning' : 'success'}
+          value={stats.attentionCount}
+          tone={stats.attentionCount > 0 ? 'warning' : 'success'}
           hint="Agents reporting an issue or unreachable"
         />
         <StatCard
           label="Approvals waiting on you"
-          value={approvals.length}
-          tone={approvals.length > 0 ? 'danger' : 'success'}
-          hint={approvals.some((a) => a.risk === 'high') ? 'Includes high-risk requests' : 'Review when convenient'}
+          value={stats.pendingApprovalCount}
+          tone={stats.pendingApprovalCount > 0 ? 'danger' : 'success'}
+          hint={stats.hasHighRiskApproval ? 'Includes high-risk requests' : 'Review when convenient'}
         />
         <StatCard
           label="Open recommendations"
-          value={openRecommendations}
+          value={stats.openRecommendations}
           hint="Suggestions from agents, no action taken yet"
         />
       </div>
@@ -69,7 +73,7 @@ export default function Dashboard() {
                   <Link key={agent.id} to={`/agents/${agent.id}`} className="block rounded-lg border border-slate-800 p-3 transition-colors hover:border-amber-500/40">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium text-slate-100">{agent.hostname}</p>
-                      <Badge variant={agent.status}>{STATUS_META[agent.status].label}</Badge>
+                      <Badge variant={agent.status}>{agent.statusLabel}</Badge>
                     </div>
                     <p className="mt-1 text-xs text-slate-500">
                       {agent.currentTask ?? 'Last seen ' + relativeTime(agent.lastPoll)}
@@ -89,7 +93,7 @@ export default function Dashboard() {
               <p className="text-sm text-slate-500">Nothing waiting on you right now.</p>
             ) : (
               <div className="space-y-3">
-                {approvals.slice(0, 4).map((req) => (
+                {approvals.map((req) => (
                   <Link key={req.id} to={`/agents/${req.agentId}`} className="block rounded-lg border border-slate-800 p-3 transition-colors hover:border-indigo-500/40">
                     <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium text-slate-100">{req.hostname}</p>

@@ -4,11 +4,9 @@
 // models that activity stream — the manager cares about what each agent is
 // seeing, doing, and asking for, not dashboards of percentages.
 //
-// This is layered on top of the agent inventory fetched from
-// central-backend (see ../api/client and ../hooks/useAgents). It is keyed
-// by the short hostname (the first label of the FQDN) so it can be merged
-// with inventory rows. Once the backend exposes real agent activity, this
-// file goes away.
+// Keyed by the short hostname (the first label of the FQDN) so it can be
+// merged with inventory rows in services/fleet.js. Once agents report real
+// activity, this file goes away.
 
 export const STATUS_META = {
   active: { label: 'Active', description: 'Currently working on a task' },

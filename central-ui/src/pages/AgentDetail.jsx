@@ -1,28 +1,37 @@
 import { useState } from 'react';
-import { Link, useParams, useOutletContext } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
+import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon } from '../components/icons';
-import { STATUS_META } from '../data/agents';
+import { fetchAgent } from '../api/client';
+import { useApi } from '../hooks/useApi';
 import { relativeTime } from '../utils/time';
 
 const TABS = ['Activity', 'Recommendations & Approvals', 'Interact'];
 
 export default function AgentDetail() {
   const { id } = useParams();
-  const { agents } = useOutletContext();
-  const agent = agents.find((a) => a.id === id);
+  const { data: agent, loading, error } = useApi(() => fetchAgent(id), [id]);
   const [tab, setTab] = useState('Activity');
   const [approvalState, setApprovalState] = useState({});
 
-  if (!agent) {
+  if (loading) {
+    return <AsyncState loading loadingLabel="Loading agent..." />;
+  }
+
+  if (error?.message?.includes('404') || (!loading && !error && !agent)) {
     return (
       <div className="space-y-4">
         <p className="text-sm text-slate-400">Agent not found.</p>
         <Link to="/agents" className="text-sm font-medium text-indigo-400 hover:text-indigo-300">&larr; Back to agents</Link>
       </div>
     );
+  }
+
+  if (error) {
+    return <AsyncState error={error} />;
   }
 
   const decide = (entryId, decision) => {
@@ -39,7 +48,7 @@ export default function AgentDetail() {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-semibold text-slate-100">{agent.hostname}</h1>
-              <Badge variant={agent.status}>{STATUS_META[agent.status].label}</Badge>
+              <Badge variant={agent.status}>{agent.statusLabel}</Badge>
             </div>
             <p className="mt-1 text-sm text-slate-500">
               {agent.role} &middot; {agent.os} &middot; last polled {relativeTime(agent.lastPoll)}
@@ -55,7 +64,7 @@ export default function AgentDetail() {
           <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
             {agent.currentTask ? 'Currently working on' : 'Status'}
           </span>
-          <p className="mt-0.5">{agent.currentTask ?? STATUS_META[agent.status].description}</p>
+          <p className="mt-0.5">{agent.currentTask ?? agent.statusDescription}</p>
         </div>
       </div>
 

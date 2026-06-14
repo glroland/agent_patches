@@ -1,12 +1,7 @@
-// Helpers over the live agent list (inventory + mock activity merged by
-// useAgents). Each endpoint is managed by its own AI agent that polls the
-// host, makes observations, takes routine actions on its own, and surfaces
-// recommendations or approval requests for a human operator. These helpers
-// derive activity feeds, pending approvals, and concerns from that list —
-// the manager cares about what each agent is seeing, doing, and asking for,
-// not dashboards of percentages.
-
-export { STATUS_META } from './mockActivity';
+// Derives activity feeds, pending approvals, and concerns from a list of
+// fleet agents (see ./fleet.js). Each endpoint's agent reports observations,
+// actions, recommendations, and approval requests on its timeline; these
+// helpers flatten and sort that activity for the screens that need it.
 
 export function allTimelineEntries(agents) {
   return agents.flatMap((agent) =>

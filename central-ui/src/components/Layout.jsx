@@ -1,7 +1,7 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { DashboardIcon, ServerIcon, AlertIcon, HandIcon } from './icons';
-import { pendingApprovals, concerns } from '../data/agents';
-import { useAgents } from '../hooks/useAgents';
+import { fetchSummary } from '../api/client';
+import { useApi } from '../hooks/useApi';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon, exact: true },
@@ -11,17 +11,15 @@ const navItems = [
 ];
 
 export default function Layout() {
-  const { agents, loading, error } = useAgents();
+  const { data: summary, error } = useApi(fetchSummary, []);
 
-  const attentionCount = agents.filter((a) => a.status === 'attention' || a.status === 'offline').length;
-  const approvalCount = pendingApprovals(agents).length;
-  const criticalConcerns = concerns(agents).filter((c) => c.severity === 'critical').length;
-
-  const badgeFor = {
-    '/agents': attentionCount,
-    '/approvals': approvalCount,
-    '/issues': criticalConcerns,
-  };
+  const badgeFor = summary
+    ? {
+        '/agents': summary.attentionCount,
+        '/approvals': summary.pendingApprovalCount,
+        '/issues': summary.criticalIssueCount,
+      }
+    : {};
 
   return (
     <div className="flex min-h-screen bg-slate-950">
@@ -67,10 +65,16 @@ export default function Layout() {
         </nav>
 
         <div className="mt-auto rounded-lg border border-slate-800 bg-slate-900/60 p-3">
-          <p className="text-xs font-medium text-slate-300">{agents.length} agents enrolled</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {agents.length - attentionCount} healthy &middot; {attentionCount} need attention
-          </p>
+          {summary ? (
+            <>
+              <p className="text-xs font-medium text-slate-300">{summary.totalAgents} agents enrolled</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {summary.totalAgents - summary.attentionCount} healthy &middot; {summary.attentionCount} need attention
+              </p>
+            </>
+          ) : (
+            <p className="text-xs text-slate-500">Loading fleet summary...</p>
+          )}
         </div>
       </aside>
 
@@ -85,15 +89,12 @@ export default function Layout() {
           </div>
         </header>
         <main className="flex-1 px-8 py-6">
-          {loading ? (
-            <p className="text-sm text-slate-500">Loading agent inventory...</p>
-          ) : error ? (
-            <div className="rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-              Failed to load agent inventory from central-backend: {error.message}
+          {error && (
+            <div className="mb-4 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+              Failed to load fleet summary from central-backend: {error.message}
             </div>
-          ) : (
-            <Outlet context={{ agents }} />
           )}
+          <Outlet />
         </main>
       </div>
     </div>

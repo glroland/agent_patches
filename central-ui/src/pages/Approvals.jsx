@@ -1,19 +1,24 @@
 import { useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
+import AsyncState from '../components/AsyncState';
 import { CheckIcon, XIcon } from '../components/icons';
-import { pendingApprovals } from '../data/agents';
+import { fetchApprovals } from '../api/client';
+import { useApi } from '../hooks/useApi';
 import { relativeTime } from '../utils/time';
 
 export default function Approvals() {
-  const { agents } = useOutletContext();
+  const { data: approvals, loading, error } = useApi(fetchApprovals, []);
   const [decisions, setDecisions] = useState({});
-  const approvals = pendingApprovals(agents);
 
   const decide = (entryId, decision) => {
     setDecisions((prev) => ({ ...prev, [entryId]: decision }));
   };
+
+  if (loading || error) {
+    return <AsyncState loading={loading} error={error} loadingLabel="Loading approvals..." />;
+  }
 
   const open = approvals.filter((a) => !decisions[a.id]);
   const resolved = approvals.filter((a) => decisions[a.id]);

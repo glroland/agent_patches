@@ -8,8 +8,33 @@ async function getJSON(path) {
   return response.json();
 }
 
-// Returns the fleet inventory from central-backend:
-// [{ id, displayName, fqdn, port, osFlavor }]
-export function fetchAgentInventory() {
+// Fleet-wide counts for the navigation shell.
+export function fetchSummary() {
+  return getJSON('/summary');
+}
+
+// Everything the Dashboard screen needs: stats, agents needing attention,
+// top pending approvals, and recent activity.
+export function fetchDashboard() {
+  return getJSON('/dashboard');
+}
+
+// The Agents screen's fleet list.
+export function fetchAgents() {
   return getJSON('/agents');
+}
+
+// A single agent's full profile and activity timeline.
+export function fetchAgent(id) {
+  return getJSON(`/agents/${id}`);
+}
+
+// Pending approval requests across the fleet.
+export function fetchApprovals() {
+  return getJSON('/approvals');
+}
+
+// Aggregated issues/concerns plus per-severity counts.
+export function fetchIssues() {
+  return getJSON('/issues');
 }

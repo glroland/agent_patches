@@ -1,23 +1,25 @@
-import { useMemo, useState } from 'react';
-import { Link, useOutletContext } from 'react-router-dom';
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import StatCard from '../components/StatCard';
-import { concerns } from '../data/agents';
+import AsyncState from '../components/AsyncState';
+import { fetchIssues } from '../api/client';
+import { useApi } from '../hooks/useApi';
 import { relativeTime } from '../utils/time';
 
 const SEVERITIES = ['all', 'critical', 'warning', 'info'];
 
 export default function Issues() {
-  const { agents } = useOutletContext();
-  const all = useMemo(() => concerns(agents), [agents]);
+  const { data, loading, error } = useApi(fetchIssues, []);
   const [severity, setSeverity] = useState('all');
 
-  const filtered = all.filter((c) => severity === 'all' || c.severity === severity);
+  if (loading || error) {
+    return <AsyncState loading={loading} error={error} loadingLabel="Loading issues..." />;
+  }
 
-  const critical = all.filter((c) => c.severity === 'critical').length;
-  const warning = all.filter((c) => c.severity === 'warning').length;
-  const info = all.filter((c) => c.severity === 'info').length;
+  const { items, counts } = data;
+  const filtered = items.filter((c) => severity === 'all' || c.severity === severity);
 
   return (
     <div className="space-y-6">
@@ -27,9 +29,9 @@ export default function Issues() {
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard label="Critical" value={critical} tone={critical > 0 ? 'danger' : 'success'} hint="Needs attention soon" />
-        <StatCard label="Warning" value={warning} tone={warning > 0 ? 'warning' : 'success'} hint="Worth a look" />
-        <StatCard label="Informational" value={info} hint="For awareness only" />
+        <StatCard label="Critical" value={counts.critical} tone={counts.critical > 0 ? 'danger' : 'success'} hint="Needs attention soon" />
+        <StatCard label="Warning" value={counts.warning} tone={counts.warning > 0 ? 'warning' : 'success'} hint="Worth a look" />
+        <StatCard label="Informational" value={counts.info} hint="For awareness only" />
       </div>
 
       <div className="flex rounded-lg border border-slate-800 bg-slate-900/60 p-1 text-xs w-fit">
