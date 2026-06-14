@@ -11,9 +11,9 @@ import (
 )
 
 func main() {
-	server  := flag.String("server", "http://localhost:8080", "A2A server URL")
-	token   := flag.String("token", "", "Bearer token for authentication")
-	info    := flag.Bool("info", false, "Print the agent card and exit")
+	server := flag.String("server", "http://localhost:8080", "A2A server URL")
+	token := flag.String("token", "", "Bearer token for authentication")
+	info := flag.Bool("info", false, "Print the agent card and exit")
 	verbose := flag.Bool("v", false, "Print progress messages")
 
 	flag.Usage = func() {

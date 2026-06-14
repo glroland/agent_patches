@@ -76,6 +76,13 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 		openai.UserMessage(input),
 	}
 
+	// Some local models keep re-issuing an identical tool call instead of
+	// producing a final answer once they have the information they asked
+	// for. Track tool-call signatures (name + arguments) so repeats can be
+	// short-circuited instead of burning through MaxIter.
+	toolCallCounts := make(map[string]int)
+	lastToolResult := make(map[string]string)
+
 	for iter := 0; iter < a.cfg.Agent.MaxIter; iter++ {
 		req := openai.ChatCompletionNewParams{
 			Model:     a.cfg.Agent.Model,
@@ -115,6 +122,31 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 				continue
 			}
 
+			sig := tc.Function.Name + ":" + tc.Function.Arguments
+			toolCallCounts[sig]++
+			count := toolCallCounts[sig]
+
+			if count >= 3 {
+				cached := lastToolResult[sig]
+				slog.Warn("agent: tool called repeatedly with identical arguments, returning last result instead of retrying",
+					"tool", tc.Function.Name, "count", count)
+				return fmt.Sprintf(
+					"%s\n\n(Note: the model repeated this tool call %d times without producing a final report; returning the last result.)",
+					cached, count,
+				), nil
+			}
+
+			if count == 2 {
+				slog.Debug("agent: tool called again with identical arguments, nudging model to finish", "tool", tc.Function.Name)
+				messages = append(messages, openai.ToolMessage(
+					lastToolResult[sig]+"\n\n[You already have this result from a previous call. "+
+						"Do not call this tool again with the same arguments — use the information "+
+						"above to write your final report now.]",
+					tc.ID,
+				))
+				continue
+			}
+
 			slog.Debug("agent: executing tool", "tool", tc.Function.Name)
 			result, execErr := t.Execute(ctx, json.RawMessage(tc.Function.Arguments))
 			if execErr != nil {
@@ -122,6 +154,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 				messages = append(messages, openai.ToolMessage(fmt.Sprintf("error: %v", execErr), tc.ID))
 				continue
 			}
+			lastToolResult[sig] = result
 			messages = append(messages, openai.ToolMessage(result, tc.ID))
 		}
 	}

@@ -5,9 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-make build          # compile server (target/patches-endpoint-server) and CLI (target/patches-cli)
+make build          # go fmt ./... && go vet ./..., then compile server (target/patches-endpoint-server) and CLI (target/patches-cli)
 make test           # go test ./tests/... -v
-make lint           # go fmt ./... && go vet ./...
 make run            # cross-compile for all platforms + start the server
 make run-cli ARGS="<message>"  # build + send one task via the CLI
 make deploy         # cross-compile + deploy to all Ansible inventory hosts (prompts for sudo password)

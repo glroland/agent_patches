@@ -33,15 +33,15 @@ INVENTORY := $(CURDIR)/../home-utils/admin/agent_patches/inventory.yaml
 PLAYBOOK  := $(CURDIR)/deploy/linux/playbook.yml
 
 .PHONY: install build build-server build-cli release release-server release-cli \
-        test run run-cli run-central-ui run-central-backend deploy clean fmt lint vet help
+        test run run-cli run-central-ui run-central-backend deploy clean fmt vet help
 
 ## install: download and tidy all module dependencies
 install:
 	$(GO) mod download
 	$(GO) mod tidy
 
-## build: compile both binaries for the current platform into target/
-build: build-server build-cli
+## build: fmt + vet, then compile both binaries for the current platform into target/
+build: fmt vet build-server build-cli
 
 ## build-server: compile the patches-endpoint-server binary for the current platform
 build-server:
@@ -109,9 +109,6 @@ fmt:
 ## vet: run the Go static analyser
 vet:
 	$(GO) vet ./...
-
-## lint: fmt + vet combined
-lint: fmt vet
 
 ## clean: remove the target directory and all build artifacts
 clean:
