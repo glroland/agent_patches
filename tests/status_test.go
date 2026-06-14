@@ -19,7 +19,7 @@ type fakeCurrentTasker struct {
 
 func (f fakeCurrentTasker) CurrentTask() string { return f.task }
 
-func newStatusService(t *testing.T, cfg *config.Settings, task string) (*status.Service, *memory.Store) {
+func newStatusService(t *testing.T, task string) (*status.Service, *memory.Store) {
 	t.Helper()
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
 	info := capture_system_info.Info{
@@ -28,7 +28,7 @@ func newStatusService(t *testing.T, cfg *config.Settings, task string) (*status.
 		Distribution: "Ubuntu",
 		Version:      "22.04",
 	}
-	return status.New(cfg, info, mem, fakeCurrentTasker{task: task}), mem
+	return status.New(info, mem, fakeCurrentTasker{task: task}), mem
 }
 
 func doStatusRequest(t *testing.T, svc *status.Service) status.Response {
@@ -49,10 +49,7 @@ func doStatusRequest(t *testing.T, svc *status.Service) status.Response {
 }
 
 func TestStatusHandler_Idle(t *testing.T) {
-	cfg := &config.Settings{
-		HostMetadata: config.HostMetadataSettings{Role: "Frontend web server", Tags: []string{"production"}},
-	}
-	svc, _ := newStatusService(t, cfg, "")
+	svc, _ := newStatusService(t, "")
 
 	resp := doStatusRequest(t, svc)
 
@@ -65,12 +62,6 @@ func TestStatusHandler_Idle(t *testing.T) {
 	if resp.Agent.OS != "Ubuntu 22.04" {
 		t.Errorf("Agent.OS = %q, want %q", resp.Agent.OS, "Ubuntu 22.04")
 	}
-	if resp.Agent.Role != "Frontend web server" {
-		t.Errorf("Agent.Role = %q, want %q", resp.Agent.Role, "Frontend web server")
-	}
-	if len(resp.Agent.Tags) != 1 || resp.Agent.Tags[0] != "production" {
-		t.Errorf("Agent.Tags = %v, want [production]", resp.Agent.Tags)
-	}
 	if resp.Status.State != "idle" {
 		t.Errorf("Status.State = %q, want %q", resp.Status.State, "idle")
 	}
@@ -82,21 +73,8 @@ func TestStatusHandler_Idle(t *testing.T) {
 	}
 }
 
-func TestStatusHandler_Defaults(t *testing.T) {
-	svc, _ := newStatusService(t, &config.Settings{}, "")
-
-	resp := doStatusRequest(t, svc)
-
-	if resp.Agent.Role != "Endpoint agent" {
-		t.Errorf("Agent.Role = %q, want %q", resp.Agent.Role, "Endpoint agent")
-	}
-	if resp.Agent.Tags == nil || len(resp.Agent.Tags) != 0 {
-		t.Errorf("Agent.Tags = %v, want empty slice", resp.Agent.Tags)
-	}
-}
-
 func TestStatusHandler_Active(t *testing.T) {
-	svc, _ := newStatusService(t, &config.Settings{}, "disk-space-check")
+	svc, _ := newStatusService(t, "disk-space-check")
 
 	resp := doStatusRequest(t, svc)
 
@@ -109,7 +87,7 @@ func TestStatusHandler_Active(t *testing.T) {
 }
 
 func TestStatusHandler_AttentionFromCriticalSeverity(t *testing.T) {
-	svc, mem := newStatusService(t, &config.Settings{}, "")
+	svc, mem := newStatusService(t, "")
 
 	entries := []status.TimelineEntry{
 		{ID: "1", Type: "observation", Title: "disk full", Severity: "critical"},
@@ -129,7 +107,7 @@ func TestStatusHandler_AttentionFromCriticalSeverity(t *testing.T) {
 }
 
 func TestStatusHandler_AttentionFromPendingApproval(t *testing.T) {
-	svc, mem := newStatusService(t, &config.Settings{}, "")
+	svc, mem := newStatusService(t, "")
 
 	pending := "pending"
 	entries := []status.TimelineEntry{
@@ -147,7 +125,7 @@ func TestStatusHandler_AttentionFromPendingApproval(t *testing.T) {
 }
 
 func TestStatusHandler_ActiveTakesPrecedenceOverAttention(t *testing.T) {
-	svc, mem := newStatusService(t, &config.Settings{}, "keep-system-up-to-date")
+	svc, mem := newStatusService(t, "keep-system-up-to-date")
 
 	entries := []status.TimelineEntry{
 		{ID: "1", Type: "observation", Title: "disk full", Severity: "critical"},

@@ -13,9 +13,9 @@ before(async () => {
   inventoryPath = path.join(os.tmpdir(), `fleet-test-inventory-${process.pid}.csv`);
   fs.writeFileSync(
     inventoryPath,
-    'display_name,fqdn,port,os_type\n' +
-      'web01,web01.prod.internal,8080,ubuntu\n' +
-      'build01,build01.ci.internal,8080,fedora\n'
+    'display_name,fqdn,port,os_type,role,tags\n' +
+      'web01,web01.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"\n' +
+      'build01,build01.ci.internal,8080,fedora,,\n'
   );
   process.env.AGENT_INVENTORY_FILE = inventoryPath;
 
@@ -43,7 +43,7 @@ describe('fleet.listFleet', () => {
     AgentClient.prototype.getStatus = async function () {
       if (this.baseUrl === 'http://web01.prod.internal:8080') {
         return {
-          agent: { hostname: 'web01.prod.internal', platform: 'linux', os: 'Ubuntu 24.04', role: 'Frontend web server', tags: ['production'] },
+          agent: { hostname: 'web01.prod.internal', platform: 'linux', os: 'Ubuntu 24.04' },
           status: { state: 'active', lastPoll: '2026-06-14T08:00:00Z', currentTask: 'patching' },
           timeline: [{ id: '1', time: '2026-06-14T08:00:00Z', type: 'observation', title: 'ok', detail: 'ok' }],
         };
@@ -58,7 +58,7 @@ describe('fleet.listFleet', () => {
     assert.equal(web01.statusLabel, 'Active');
     assert.equal(web01.os, 'Ubuntu 24.04');
     assert.equal(web01.role, 'Frontend web server');
-    assert.deepEqual(web01.tags, ['production']);
+    assert.deepEqual(web01.tags, ['production', 'frontend']);
     assert.equal(web01.currentTask, 'patching');
     assert.equal(web01.timeline.length, 1);
   });

@@ -162,7 +162,7 @@ func main() {
 	card := buildAgentCard(cardURL, cfg, registry)
 
 	lp := loop.New(cfg, registry, notify)
-	statusSvc := status.New(cfg, hostInfo, mem, lp)
+	statusSvc := status.New(hostInfo, mem, lp)
 
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))

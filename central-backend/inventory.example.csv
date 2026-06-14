@@ -1,8 +1,8 @@
-display_name,fqdn,port,os_type
-web01,web01.prod.internal,8080,ubuntu
-web02,web02.prod.internal,8080,ubuntu
-db01,db01.prod.internal,8080,ubuntu
-db02-replica,db02-replica.prod.internal,8080,ubuntu
-WIN-DC01,win-dc01.prod.internal,8080,windows
-edge-mac-mini,edge-mac-mini.lab.internal,8080,macos
-build01,build01.ci.internal,8080,fedora
+display_name,fqdn,port,os_type,role,tags
+web01,web01.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
+web02,web02.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
+db01,db01.prod.internal,8080,ubuntu,Primary database,"production,database"
+db02-replica,db02-replica.prod.internal,8080,ubuntu,Database replica,"production,database"
+WIN-DC01,win-dc01.prod.internal,8080,windows,Domain controller,"production,infrastructure"
+edge-mac-mini,edge-mac-mini.lab.internal,8080,macos,Edge build agent,"lab,build"
+build01,build01.ci.internal,8080,fedora,CI build server,"ci,build"

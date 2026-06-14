@@ -24,14 +24,6 @@ server:
   port: 8080
   # public_url: http://server.home.example.com:8080  # URL embedded in the agent card; set this when clients connect remotely
 
-# host_metadata describes this host for the GET /status endpoint, consumed by
-# central-backend to build the fleet view. Both fields are optional.
-host_metadata:
-  role: "Frontend web server"
-  tags:
-    - production
-    - frontend
-
 # security.scheme: "none" | "bearer"
 # When scheme is "bearer", callers must supply: Authorization: Bearer <token>
 security:

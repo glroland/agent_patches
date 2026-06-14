@@ -7,7 +7,6 @@ import (
 
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/capture_system_info"
-	"agent_patches/endpoint-server/utils/config"
 )
 
 // currentTasker reports the name of the responsibility currently in flight,
@@ -16,10 +15,9 @@ type currentTasker interface {
 	CurrentTask() string
 }
 
-// Service builds GET /status responses from this host's configuration,
-// cached system info, memory-backed timeline, and the loop's running state.
+// Service builds GET /status responses from cached system info,
+// memory-backed timeline, and the loop's running state.
 type Service struct {
-	cfg  *config.Settings
 	info capture_system_info.Info
 	mem  *memory.Store
 	loop currentTasker
@@ -27,8 +25,8 @@ type Service struct {
 
 // New creates a status Service. info is captured once at startup via
 // capture_system_info.Gather.
-func New(cfg *config.Settings, info capture_system_info.Info, mem *memory.Store, l currentTasker) *Service {
-	return &Service{cfg: cfg, info: info, mem: mem, loop: l}
+func New(info capture_system_info.Info, mem *memory.Store, l currentTasker) *Service {
+	return &Service{info: info, mem: mem, loop: l}
 }
 
 // Handler returns the http.HandlerFunc for GET /status.
@@ -40,15 +38,6 @@ func (s *Service) Handler() http.HandlerFunc {
 }
 
 func (s *Service) build() Response {
-	role := s.cfg.HostMetadata.Role
-	if role == "" {
-		role = "Endpoint agent"
-	}
-	tags := s.cfg.HostMetadata.Tags
-	if tags == nil {
-		tags = []string{}
-	}
-
 	var timeline []TimelineEntry
 	_ = s.mem.Domain("timeline").ReadCurrent(&timeline)
 	if timeline == nil {
@@ -69,8 +58,6 @@ func (s *Service) build() Response {
 			Hostname: s.info.Hostname,
 			Platform: s.info.OS,
 			OS:       osLabel(s.info),
-			Role:     role,
-			Tags:     tags,
 		},
 		Status: StatusBlock{
 			State:       state,

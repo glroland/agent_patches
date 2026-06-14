@@ -37,10 +37,6 @@ type Settings struct {
 	Memory   MemorySettings   `yaml:"memory"`
 	Loop     LoopSettings     `yaml:"loop"`
 
-	// HostMetadata describes operator-assigned metadata for this host,
-	// surfaced via GET /status.
-	HostMetadata HostMetadataSettings `yaml:"host_metadata"`
-
 	// Responsibilities is a dynamic list of recurring duties the agent should
 	// carry out, each on its own schedule.
 	Responsibilities []ResponsibilitySettings `yaml:"responsibilities"`
@@ -126,14 +122,6 @@ type NotifierSettings struct {
 type MemorySettings struct {
 	// Root is the directory under which domain subdirs and attrs.json are stored.
 	Root string `yaml:"root"`
-}
-
-// HostMetadataSettings describes operator-assigned metadata for this host,
-// surfaced via GET /status. Both fields are optional; the status handler
-// falls back to defaults when they are empty.
-type HostMetadataSettings struct {
-	Role string   `yaml:"role"`
-	Tags []string `yaml:"tags"`
 }
 
 // EmailNotifierSettings configures the SMTP email sink.

@@ -1,6 +1,8 @@
 // Loads the read-only agent inventory from a CSV file referenced by the
 // AGENT_INVENTORY_FILE environment variable. The CSV must have a header row
-// with columns: display_name, fqdn, port, os_type.
+// with columns: display_name, fqdn, port, os_type. The optional columns
+// "role" and "tags" (a comma-separated list within the cell) carry
+// operator-assigned metadata about each host.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +18,10 @@ function toAgent(record) {
     fqdn: record.fqdn,
     port: Number(record.port),
     osType: record.os_type,
+    role: record.role || '',
+    tags: record.tags
+      ? record.tags.split(',').map((tag) => tag.trim()).filter(Boolean)
+      : [],
   };
 }
 
