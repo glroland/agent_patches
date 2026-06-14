@@ -25,12 +25,15 @@ CONFIG ?= $(CURDIR)/config.yaml
 # Directory for the central-ui React app.
 CENTRAL_UI_DIR := $(CURDIR)/central-ui
 
+# Directory for the central-backend Node app.
+CENTRAL_BACKEND_DIR := $(CURDIR)/central-backend
+
 # Ansible inventory used by `make deploy`.
 INVENTORY := $(CURDIR)/../home-utils/admin/agent_patches/inventory.yaml
 PLAYBOOK  := $(CURDIR)/deploy/linux/playbook.yml
 
 .PHONY: install build build-server build-cli release release-server release-cli \
-        test run run-cli run-central-ui deploy clean fmt lint vet help
+        test run run-cli run-central-ui run-central-backend deploy clean fmt lint vet help
 
 ## install: download and tidy all module dependencies
 install:
@@ -87,6 +90,11 @@ run-cli: build-cli
 run-central-ui:
 	cd $(CENTRAL_UI_DIR) && [ -d node_modules ] || npm install
 	cd $(CENTRAL_UI_DIR) && npm run dev
+
+## run-central-backend: install dependencies (if needed) and start the central-backend server
+run-central-backend:
+	cd $(CENTRAL_BACKEND_DIR) && [ -d node_modules ] || npm install
+	cd $(CENTRAL_BACKEND_DIR) && npm start
 
 ## deploy: release and deploy to all hosts in the Ansible inventory
 deploy:
