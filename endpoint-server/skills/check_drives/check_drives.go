@@ -50,6 +50,7 @@ func NewDiskUsageTool() (tool.Tool, error) {
 				slog.Info("check_drives: failed", "error", err)
 				return "", fmt.Errorf("disk_usage: %w", err)
 			}
+			disks = DedupeDisks(disks)
 			slog.Debug("check_drives: found local disks", "count", len(disks))
 			if len(disks) == 0 {
 				slog.Info("check_drives: completed", "disks", 0)
@@ -60,6 +61,74 @@ func NewDiskUsageTool() (tool.Tool, error) {
 			return report, nil
 		},
 	)
+}
+
+// dedupeFreeTolerance is how close two mounts' free space must be, relative
+// to their (equal) total capacity, to be considered the same underlying
+// storage. Filesystems that share space at a level below the mount (e.g.
+// APFS containers on macOS, or btrfs/LVM pools on Linux) report slightly
+// different "free" values per mount due to per-volume accounting, so an
+// exact match is too strict.
+const dedupeFreeTolerance = 0.01 // 1% of total capacity
+
+// DedupeDisks drops pseudo-filesystems and collapses multiple mounts that
+// report the same underlying storage (identical total capacity and free
+// space within dedupeFreeTolerance). Without this, a single near-full disk
+// can be reported under several mount points all "above 90%", which prompts
+// the agent to repeatedly re-investigate the same disk. When mounts collapse,
+// the one matching preferredMounts is kept.
+func DedupeDisks(disks []DiskStat) []DiskStat {
+	out := make([]DiskStat, 0, len(disks))
+	for _, d := range disks {
+		if d.FSType == "devfs" {
+			continue
+		}
+		dupIdx := -1
+		for i, o := range out {
+			if sameStorage(o, d) {
+				dupIdx = i
+				break
+			}
+		}
+		if dupIdx == -1 {
+			out = append(out, d)
+			continue
+		}
+		if isPreferredMount(d.Mount) && !isPreferredMount(out[dupIdx].Mount) {
+			out[dupIdx] = d
+		}
+	}
+	return out
+}
+
+// sameStorage reports whether a and b appear to report usage for the same
+// underlying storage: equal total capacity and free space within
+// dedupeFreeTolerance of that total.
+func sameStorage(a, b DiskStat) bool {
+	if a.Total == 0 || a.Total != b.Total {
+		return false
+	}
+	var diff uint64
+	if a.Free > b.Free {
+		diff = a.Free - b.Free
+	} else {
+		diff = b.Free - a.Free
+	}
+	return float64(diff)/float64(a.Total) < dedupeFreeTolerance
+}
+
+// preferredMounts ranks the mounts most relevant to a sysadmin checking disk
+// space, used to pick one representative mount when several mounts collapse
+// to the same underlying storage.
+var preferredMounts = []string{"/", "/System/Volumes/Data"}
+
+func isPreferredMount(mount string) bool {
+	for _, p := range preferredMounts {
+		if mount == p {
+			return true
+		}
+	}
+	return false
 }
 
 // topLargestCount is the number of largest directories and files reported

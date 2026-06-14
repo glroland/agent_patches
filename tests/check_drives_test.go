@@ -57,6 +57,60 @@ func TestDiskUsage_BuildReport_NoFSType(t *testing.T) {
 	}
 }
 
+func TestDedupeDisks_CollapsesIdenticalTotalsAndDropsDevfs(t *testing.T) {
+	disks := []check_drives.DiskStat{
+		{Mount: "/", Total: 100, Free: 10, FSType: "apfs"},
+		{Mount: "/System/Volumes/Data", Total: 100, Free: 10, FSType: "apfs"},
+		{Mount: "/System/Volumes/VM", Total: 100, Free: 10, FSType: "apfs"},
+		{Mount: "/dev", Total: 1, Free: 0, FSType: "devfs"},
+		{Mount: "/data", Total: 200, Free: 50, FSType: "ext4"},
+	}
+
+	got := check_drives.DedupeDisks(disks)
+
+	if len(got) != 2 {
+		t.Fatalf("DedupeDisks() returned %d disks, want 2: %+v", len(got), got)
+	}
+	if got[0].Mount != "/" || got[1].Mount != "/data" {
+		t.Errorf("DedupeDisks() = %+v, want first two unique mounts preserved in order", got)
+	}
+}
+
+func TestDedupeDisks_CollapsesNearlyIdenticalFreeSpace(t *testing.T) {
+	// Mirrors filesystems that share an underlying storage pool (APFS
+	// containers on macOS, btrfs/LVM pools on Linux): same total capacity,
+	// but free space differs slightly per mount due to per-volume accounting.
+	const total = 494384795648
+	disks := []check_drives.DiskStat{
+		{Mount: "/System/Volumes/VM", Total: total, Free: 46967631872, FSType: "apfs"},
+		{Mount: "/", Total: total, Free: 46980497408, FSType: "apfs"},
+		{Mount: "/System/Volumes/Data", Total: total, Free: 46974603264, FSType: "apfs"},
+	}
+
+	got := check_drives.DedupeDisks(disks)
+
+	if len(got) != 1 {
+		t.Fatalf("DedupeDisks() returned %d disks, want 1: %+v", len(got), got)
+	}
+	if got[0].Mount != "/" {
+		t.Errorf("DedupeDisks() kept mount %q, want the preferred mount %q", got[0].Mount, "/")
+	}
+}
+
+func TestDedupeDisks_KeepsDistinctFilesystems(t *testing.T) {
+	disks := []check_drives.DiskStat{
+		{Mount: "/", Total: 100 << 30, Free: 5 << 30, FSType: "ext4"},
+		{Mount: "/boot/efi", Total: 500 << 20, Free: 400 << 20, FSType: "vfat"},
+		{Mount: "/data", Total: 1 << 40, Free: 900 << 30, FSType: "xfs"},
+	}
+
+	got := check_drives.DedupeDisks(disks)
+
+	if len(got) != len(disks) {
+		t.Fatalf("DedupeDisks() returned %d disks, want %d (no collapsing): %+v", len(got), len(disks), got)
+	}
+}
+
 func TestNewDiskUsageTool_NameAndDescription(t *testing.T) {
 	tl, err := check_drives.NewDiskUsageTool()
 	if err != nil {
