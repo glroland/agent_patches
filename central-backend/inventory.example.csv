@@ -1,0 +1,8 @@
+display_name,fqdn,port,os_flavor
+web01,web01.prod.internal,8080,ubuntu
+web02,web02.prod.internal,8080,ubuntu
+db01,db01.prod.internal,8080,ubuntu
+db02-replica,db02-replica.prod.internal,8080,ubuntu
+WIN-DC01,win-dc01.prod.internal,8080,windows
+edge-mac-mini,edge-mac-mini.lab.internal,8080,macos
+build01,build01.ci.internal,8080,fedora

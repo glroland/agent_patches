@@ -14,6 +14,8 @@ export const config = {
   agents: {
     // Interval the poller will use once implemented.
     pollIntervalSeconds: Number(process.env.AGENT_POLL_INTERVAL_SECONDS) || 60,
+    // Path to the CSV file listing enrolled agents (display name, fqdn, port, os flavor).
+    inventoryFile: process.env.AGENT_INVENTORY_FILE,
   },
   logging: {
     level: process.env.LOG_LEVEL || 'info',

@@ -1,17 +1,13 @@
-// Tracks the fleet of enrolled endpoint agents (hostname, address, status,
-// etc). Will eventually be backed by a database or config file populated by
-// an enrollment process. For now this is an empty in-memory placeholder.
+// Tracks the fleet of enrolled endpoint agents. Currently backed by the
+// read-only CSV inventory (see ./inventory.js). As enrollment/management
+// features are added, this module can grow beyond a thin pass-through.
 
-const agents = new Map();
+import * as inventory from './inventory.js';
 
 export function listAgents() {
-  return Array.from(agents.values());
+  return inventory.listAgents();
 }
 
 export function getAgent(id) {
-  return agents.get(id);
-}
-
-export function registerAgent(/* agent */) {
-  throw new Error('registerAgent: not implemented');
+  return inventory.getAgent(id);
 }
