@@ -54,6 +54,7 @@ func localDisks() ([]DiskStat, error) {
 		bsize := uint64(st.Bsize) //nolint:gosec // block size is always positive
 		disks = append(disks, DiskStat{
 			Mount:  mount,
+			Device: fields[0],
 			Total:  bsize * st.Blocks,
 			Free:   bsize * st.Bfree,
 			FSType: fsType,

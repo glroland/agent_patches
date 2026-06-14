@@ -12,6 +12,7 @@ import (
 // DiskStat holds usage statistics for one local disk.
 type DiskStat struct {
 	Mount  string
+	Device string
 	Total  uint64
 	Free   uint64
 	FSType string
@@ -39,8 +40,9 @@ func NewDiskUsageTool() (tool.Tool, error) {
 	return tool.New(
 		"check_drives",
 		"Reports current disk space usage for all local disks on the host, "+
-			"including total, used, and free space per mount point, along with "+
-			"the top largest directories and files on each disk.",
+			"including total, used, and free space per mount point, the top "+
+			"largest directories and files on each disk, and S.M.A.R.T. health "+
+			"status for the underlying physical disk (when available).",
 		func(_ context.Context, _ diskUsageInput) (string, error) {
 			slog.Info("check_drives: starting")
 			disks, err := localDisks()
@@ -67,6 +69,7 @@ const topLargestCount = 3
 // BuildReport composes a human-readable summary of disk usage.
 func BuildReport(disks []DiskStat) string {
 	var sb strings.Builder
+	smartCache := make(map[string][]SmartReport)
 	for i, d := range disks {
 		fmt.Fprintf(&sb, "Mount:      %s\n", d.Mount)
 		if d.FSType != "" {
@@ -75,6 +78,32 @@ func BuildReport(disks []DiskStat) string {
 		fmt.Fprintf(&sb, "Total:      %s\n", formatBytes(d.Total))
 		fmt.Fprintf(&sb, "Used:       %s (%.1f%%)\n", formatBytes(d.Used()), d.UsedPct())
 		fmt.Fprintf(&sb, "Free:       %s\n", formatBytes(d.Free))
+
+		if d.Device != "" {
+			reports, ok := smartCache[d.Device]
+			if !ok {
+				slog.Debug("check_drives: checking SMART status", "device", d.Device)
+				reports = CheckSmart(d.Device)
+				smartCache[d.Device] = reports
+			}
+			if len(reports) == 0 {
+				slog.Debug("check_drives: SMART status unavailable", "device", d.Device)
+			}
+			for _, sr := range reports {
+				if !sr.Available {
+					slog.Debug("check_drives: SMART status unavailable", "device", sr.Device)
+					continue
+				}
+				status := "PASSED"
+				if !sr.Healthy {
+					status = "FAILED"
+				}
+				fmt.Fprintf(&sb, "SMART:      %s (%s)\n", status, sr.Device)
+				for _, finding := range sr.Findings {
+					fmt.Fprintf(&sb, "  %s\n", finding)
+				}
+			}
+		}
 
 		slog.Debug("check_drives: scanning for largest entries", "mount", d.Mount)
 		dirs, files, err := TopLargest(d.Mount, topLargestCount)

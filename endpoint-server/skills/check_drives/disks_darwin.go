@@ -33,6 +33,7 @@ func localDisks() ([]DiskStat, error) {
 		}
 		disks = append(disks, DiskStat{
 			Mount:  unix.ByteSliceToString(m.Mntonname[:]),
+			Device: unix.ByteSliceToString(m.Mntfromname[:]),
 			Total:  uint64(m.Bsize) * m.Blocks,
 			Free:   uint64(m.Bsize) * m.Bfree,
 			FSType: unix.ByteSliceToString(m.Fstypename[:]),

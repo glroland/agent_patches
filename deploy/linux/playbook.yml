@@ -34,6 +34,11 @@
     sudo_group: "{{ 'sudo' if ansible_os_family == 'Debian' else 'wheel' }}"
 
   tasks:
+    - name: Install smartmontools (for SMART disk health checks)
+      ansible.builtin.package:
+        name: smartmontools
+        state: present
+
     - name: Create agent_patches system user
       ansible.builtin.user:
         name: "{{ service_user }}"
