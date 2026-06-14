@@ -1,13 +1,13 @@
 // Loads the read-only agent inventory from a CSV file referenced by the
 // AGENT_INVENTORY_FILE environment variable. The CSV must have a header row
-// with columns: display_name, fqdn, port, os_flavor.
+// with columns: display_name, fqdn, port, os_type.
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { parse } from 'csv-parse/sync';
 import { config } from '../config/index.js';
 
-const REQUIRED_COLUMNS = ['display_name', 'fqdn', 'port', 'os_flavor'];
+const REQUIRED_COLUMNS = ['display_name', 'fqdn', 'port', 'os_type'];
 
 function toAgent(record) {
   return {
@@ -15,7 +15,7 @@ function toAgent(record) {
     displayName: record.display_name,
     fqdn: record.fqdn,
     port: Number(record.port),
-    osFlavor: record.os_flavor,
+    osType: record.os_type,
   };
 }
 

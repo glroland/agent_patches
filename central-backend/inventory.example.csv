@@ -1,4 +1,4 @@
-display_name,fqdn,port,os_flavor
+display_name,fqdn,port,os_type
 web01,web01.prod.internal,8080,ubuntu
 web02,web02.prod.internal,8080,ubuntu
 db01,db01.prod.internal,8080,ubuntu
