@@ -19,6 +19,26 @@ type SizedEntry struct {
 // making the scan unbounded.
 const maxDirsExplored = 50
 
+// maxChildrenPerDir bounds how many subdirectories of a single directory are
+// queued for further exploration, keeping the top maxChildrenPerDir by their
+// own depth-1 size. Without this, a directory with very high fan-out (e.g.
+// /etc, with hundreds of small config subdirectories) can flood the queue
+// with zero-total entries and exhaust maxDirsExplored before directories
+// with deeply nested large files (e.g. /opt) are ever descended into.
+const maxChildrenPerDir = 20
+
+// promoteThreshold is the depth-1 size above which a directory is explored
+// out of turn (ahead of the breadth-first queue). Without this, a directory
+// whose data is buried several levels deep (e.g. /opt, with 0 bytes at
+// depth 1) would never be explored before sibling directories that merely
+// have a small but non-zero depth-1 size (e.g. hundreds of /etc/*
+// subdirectories each containing a few bytes of config) - size-only sorting
+// always prefers "tiny but positive" over "zero". Below this threshold,
+// directories are explored in breadth-first (discovery) order instead, so
+// every depth-1 directory gets a turn before the queue is consumed by
+// shallow, low-value candidates.
+const promoteThreshold = 50 * 1024 * 1024 // 50 MiB
+
 // pseudoFSDirs lists top-level directory names that host pseudo/virtual
 // filesystems on Unix-like systems (procfs, sysfs, devtmpfs, etc.). Their
 // reported sizes (e.g. /proc/kcore appearing as the size of physical memory)
@@ -28,6 +48,25 @@ var pseudoFSDirs = map[string]bool{
 	"sys":  true,
 	"dev":  true,
 	"run":  true,
+}
+
+// staticSystemDirs lists top-level directory names that hold the OS
+// installation itself (binaries, shared libraries, package data). These
+// directories often have a non-trivial depth-1 size and very high fan-out
+// (e.g. /usr/share has hundreds of subdirectories), but rarely grow large
+// enough to explain a full disk. Their depth-1 size is recorded for ranking,
+// but they are not recursed into, freeing the exploration budget for
+// directories where application data actually accumulates (e.g. /opt, /var,
+// /home).
+var staticSystemDirs = map[string]bool{
+	"usr":    true,
+	"lib":    true,
+	"lib32":  true,
+	"lib64":  true,
+	"libx32": true,
+	"bin":    true,
+	"sbin":   true,
+	"snap":   true,
 }
 
 // dirNode tracks a directory discovered during the scan. total starts as
@@ -56,8 +95,15 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 	explored := 0
 
 	for len(queue) > 0 && explored < maxDirsExplored {
-		// Pick the unexplored directory that currently looks largest.
-		sort.Slice(queue, func(i, j int) bool { return queue[i].total > queue[j].total })
+		// Pick the next directory to explore: directories that already look
+		// substantial (>= promoteThreshold) jump ahead of the queue so large
+		// finds get drilled into immediately. Everything else keeps its
+		// breadth-first discovery order (stable sort), ensuring every
+		// depth-1 directory is explored before the queue is consumed by
+		// shallow candidates with merely non-zero totals.
+		sort.SliceStable(queue, func(i, j int) bool {
+			return queue[i].total >= promoteThreshold && queue[j].total < promoteThreshold
+		})
 		cur := queue[0]
 		queue = queue[1:]
 		explored++
@@ -69,6 +115,7 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 		}
 		slog.Debug("check_drives: exploring directory", "path", cur.path, "running_total", cur.total, "explored", explored)
 
+		var children []*dirNode
 		for _, e := range entries {
 			path := filepath.Join(cur.path, e.Name())
 			if e.IsDir() {
@@ -76,10 +123,7 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 					slog.Debug("check_drives: skipping pseudo filesystem", "path", path)
 					continue
 				}
-				child := &dirNode{path: path, total: dirSelfSize(path), parent: cur}
-				candidates = append(candidates, child)
-				queue = append(queue, child)
-				propagate(cur, child.total)
+				children = append(children, &dirNode{path: path, total: dirSelfSize(path), parent: cur})
 				continue
 			}
 			info, ierr := e.Info()
@@ -87,6 +131,22 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 				continue
 			}
 			fileEntries = append(fileEntries, SizedEntry{Path: path, Size: uint64(info.Size())}) //nolint:gosec
+		}
+
+		if len(children) > maxChildrenPerDir {
+			sort.Slice(children, func(i, j int) bool { return children[i].total > children[j].total })
+			slog.Debug("check_drives: capping high fan-out directory", "path", cur.path,
+				"subdirectories", len(children), "kept", maxChildrenPerDir)
+			children = children[:maxChildrenPerDir]
+		}
+		for _, child := range children {
+			candidates = append(candidates, child)
+			propagate(cur, child.total)
+			if cur.parent == nil && staticSystemDirs[filepath.Base(child.path)] {
+				slog.Debug("check_drives: not recursing into static system directory", "path", child.path)
+				continue
+			}
+			queue = append(queue, child)
 		}
 	}
 
