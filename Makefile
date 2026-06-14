@@ -86,15 +86,17 @@ run: release-server
 run-cli: build-cli
 	./$(TARGET_DIR)/$(CLI_BINARY) $(ARGS)
 
-## run-central-ui: install dependencies (if needed) and start the central-ui React dev server
+## run-central-ui: install dependencies (if needed) and start the central-ui React dev server,
+## loading config from the .env file in the project root (see vite.config.js envDir)
 run-central-ui:
 	cd $(CENTRAL_UI_DIR) && [ -d node_modules ] || npm install
 	cd $(CENTRAL_UI_DIR) && npm run dev
 
-## run-central-backend: install dependencies (if needed) and start the central-backend server
+## run-central-backend: install dependencies (if needed) and start the central-backend server,
+## loading config from the .env file in the project root
 run-central-backend:
 	cd $(CENTRAL_BACKEND_DIR) && [ -d node_modules ] || npm install
-	cd $(CENTRAL_BACKEND_DIR) && AGENT_INVENTORY_FILE=$(CURDIR)/inventory.csv npm start
+	cd $(CENTRAL_BACKEND_DIR) && DOTENV_CONFIG_PATH=$(CURDIR)/.env AGENT_INVENTORY_FILE=$(CURDIR)/inventory.csv npm start
 
 ## deploy: release and deploy to all hosts in the Ansible inventory
 deploy:
