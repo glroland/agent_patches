@@ -31,7 +31,11 @@ async function fetchStatus(inventoryAgent, id) {
   if (cached && Date.now() - cached.fetchedAt < STATUS_CACHE_TTL_MS) {
     return cached.data;
   }
-  const client = new AgentClient({ fqdn: inventoryAgent.fqdn, port: inventoryAgent.port });
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+  });
   const data = await client.getStatus();
   statusCache.set(id, { data, fetchedAt: Date.now() });
   return data;

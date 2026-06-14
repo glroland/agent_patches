@@ -20,7 +20,12 @@ export class AgentClient {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
-      const res = await fetch(`${this.baseUrl}/status`, { signal: controller.signal });
+      const headers = {};
+      if (this.authToken) {
+        headers.Authorization = `Bearer ${this.authToken}`;
+      }
+
+      const res = await fetch(`${this.baseUrl}/status`, { headers, signal: controller.signal });
       if (!res.ok) return null;
       return await res.json();
     } catch {
