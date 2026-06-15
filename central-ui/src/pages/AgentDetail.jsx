@@ -5,11 +5,11 @@ import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon } from '../components/icons';
-import { fetchAgent, sendAgentMessage } from '../api/client';
+import { fetchAgent, fetchAgentMemory, sendAgentMessage } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Activity', 'Recommendations & Approvals', 'Interact'];
+const TABS = ['Activity', 'Recommendations & Approvals', 'Interact', 'Agent Memory'];
 
 export default function AgentDetail() {
   const { id } = useParams();
@@ -98,6 +98,8 @@ export default function AgentDetail() {
       )}
 
       {tab === 'Interact' && <InteractTab agent={agent} />}
+
+      {tab === 'Agent Memory' && <AgentMemoryTab agent={agent} />}
     </div>
   );
 }
@@ -260,5 +262,58 @@ function InteractTab({ agent }) {
         </form>
       </div>
     </Card>
+  );
+}
+
+function AgentMemoryTab({ agent }) {
+  const { data, loading, error } = useApi(() => fetchAgentMemory(agent.id), [agent.id]);
+
+  if (loading) {
+    return <AsyncState loading loadingLabel="Loading agent memory..." />;
+  }
+
+  if (error) {
+    return <AsyncState error={error} />;
+  }
+
+  const domains = Object.entries(data?.domains ?? {});
+  const attrs = Object.entries(data?.attrs ?? {});
+
+  return (
+    <div className="space-y-4">
+      <Card title="Memory domains" subtitle="Most recent snapshot from each memory domain, via read_agent_memory">
+        {domains.length === 0 ? (
+          <p className="text-sm text-slate-500">This agent has no memory domains recorded yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {domains.map(([name, value]) => (
+              <div key={name} className="rounded-lg border border-slate-800 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{name}</p>
+                <pre className="mt-2 overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
+                  {JSON.stringify(value, null, 2)}
+                </pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card title="Attributes" subtitle="Key/value attributes recorded by skills (e.g. last-known skill health)">
+        {attrs.length === 0 ? (
+          <p className="text-sm text-slate-500">No attributes recorded yet.</p>
+        ) : (
+          <div className="space-y-4">
+            {attrs.map(([key, value]) => (
+              <div key={key} className="rounded-lg border border-slate-800 p-3">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{key}</p>
+                <pre className="mt-2 overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
+                  {JSON.stringify(value, null, 2)}
+                </pre>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
   );
 }

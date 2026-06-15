@@ -49,6 +49,24 @@ export async function getAgent(req, res, next) {
 // GET /api/agents/:id/activity
 export const getAgentActivity = notImplemented;
 
+// GET /api/agents/:id/memory — the Agent Memory tab: current snapshot of
+// every memory domain plus all attrs, as reported by the agent's GET /memory
+// endpoint.
+export async function getAgentMemory(req, res, next) {
+  try {
+    const memory = await fleet.getAgentMemory(req.params.id);
+    if (memory === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+    if (memory === null) {
+      return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to GET /memory' });
+    }
+    res.json(memory);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /api/agents/:id/messages — relay an operator chat message to the
 // agent and return its reply.
 export async function sendAgentMessage(req, res, next) {

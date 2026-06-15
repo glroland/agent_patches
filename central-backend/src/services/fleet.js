@@ -80,6 +80,23 @@ export async function getFleetAgent(id) {
   return agents.find((agent) => agent.id === id);
 }
 
+// Returns the agent's GET /memory data (current snapshot of every memory
+// domain plus all attrs), or undefined if no agent with that id is in the
+// inventory, or null if the agent is unreachable.
+export async function getAgentMemory(id) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
+  if (!inventoryAgent) {
+    return undefined;
+  }
+
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+  });
+  return client.getMemory();
+}
+
 // Sends a chat message to the agent identified by id and returns its text
 // reply. Throws if no agent with that id is in the inventory, or if the
 // agent is unreachable/errors.

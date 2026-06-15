@@ -46,6 +46,48 @@ func (s *Store) Attrs() *AttrsStore {
 	}
 }
 
+// Dump is a snapshot of every memory domain's most recent value plus all
+// attrs, for diagnostic / UI display.
+type Dump struct {
+	Domains map[string]json.RawMessage `json:"domains"`
+	Attrs   map[string]json.RawMessage `json:"attrs"`
+}
+
+// Dump reads the current snapshot of every domain (subdirectory of the
+// store root) and all attrs. Domains with no snapshot yet are omitted.
+func (s *Store) Dump() (Dump, error) {
+	dump := Dump{Domains: map[string]json.RawMessage{}, Attrs: map[string]json.RawMessage{}}
+
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return dump, nil
+		}
+		return Dump{}, fmt.Errorf("memory: readdir %s: %w", s.root, err)
+	}
+
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		var raw json.RawMessage
+		if err := s.Domain(e.Name()).ReadCurrent(&raw); err != nil {
+			continue
+		}
+		dump.Domains[e.Name()] = raw
+	}
+
+	attrs, err := s.Attrs().All()
+	if err != nil {
+		return Dump{}, err
+	}
+	for k, v := range attrs {
+		dump.Attrs[k] = v
+	}
+
+	return dump, nil
+}
+
 // ---------------------------------------------------------------------------
 // DomainStore
 // ---------------------------------------------------------------------------

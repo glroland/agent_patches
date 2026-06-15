@@ -21,6 +21,7 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/memoryapi"
 	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
 	"agent_patches/endpoint-server/skills/analyze_network_utilization"
 	"agent_patches/endpoint-server/skills/capture_system_info"
@@ -165,14 +166,18 @@ func main() {
 
 	lp := loop.New(cfg, registry, notify)
 	statusSvc := status.New(hostInfo, mem, lp)
+	memorySvc := memoryapi.New(mem)
 
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	var statusHandler http.Handler = statusSvc.Handler()
+	var memoryHandler http.Handler = memorySvc.Handler()
 	if cfg.Security.Scheme == "bearer" {
 		statusHandler = requireBearer(cfg.Security.Token, statusHandler)
+		memoryHandler = requireBearer(cfg.Security.Token, memoryHandler)
 	}
 	mux.Handle("/status", statusHandler)
+	mux.Handle("/memory", memoryHandler)
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(reqHandler))
 
 	srv := &http.Server{

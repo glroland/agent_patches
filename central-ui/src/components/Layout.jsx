@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom';
 import { DashboardIcon, ServerIcon, AlertIcon, HandIcon, ChatIcon } from './icons';
 import { fetchSummary } from '../api/client';
 import { useApi } from '../hooks/useApi';
+import logo from '../assets/logo.png';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon, exact: true },
@@ -25,14 +26,8 @@ export default function Layout() {
   return (
     <div className="flex min-h-screen bg-slate-950">
       <aside className="flex w-64 flex-col border-r border-slate-800 bg-slate-900/40 px-4 py-6">
-        <div className="mb-8 flex items-center gap-2.5 px-2">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 text-sm font-bold text-white shadow-lg shadow-indigo-900/40">
-            AP
-          </div>
-          <div>
-            <p className="text-sm font-semibold text-slate-100">agent_patches</p>
-            <p className="text-xs text-slate-500">Fleet Console</p>
-          </div>
+        <div className="mb-8 flex flex-col items-center px-2 text-center">
+          <img src={logo} alt="Agent Patches" className="h-48 w-48 rounded-lg object-contain" />
         </div>
 
         <nav className="flex flex-col gap-1">

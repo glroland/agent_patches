@@ -36,3 +36,4 @@ config.yaml
 venv
 .venv
 inventory.csv
+.DS_Store

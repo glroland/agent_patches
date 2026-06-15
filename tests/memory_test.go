@@ -295,6 +295,68 @@ func TestMemoryAttrs_StoredAsJSON(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Dump
+// ---------------------------------------------------------------------------
+
+func TestMemoryDump_IncludesDomainsAndAttrs(t *testing.T) {
+	store, _ := newMemoryStore(t)
+
+	if err := store.Domain("disk").Write(map[string]any{"usedPct": 42}); err != nil {
+		t.Fatalf("Write domain: %v", err)
+	}
+	if err := store.Attrs().Set("skill_state:check_drives", map[string]string{"health": "ok"}); err != nil {
+		t.Fatalf("Set attr: %v", err)
+	}
+
+	dump, err := store.Dump()
+	if err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+
+	if _, ok := dump.Domains["disk"]; !ok {
+		t.Errorf("Dump.Domains missing %q: %+v", "disk", dump.Domains)
+	}
+	if !strings.Contains(string(dump.Domains["disk"]), "42") {
+		t.Errorf("Dump.Domains[disk] = %s, want it to contain 42", dump.Domains["disk"])
+	}
+	if _, ok := dump.Attrs["skill_state:check_drives"]; !ok {
+		t.Errorf("Dump.Attrs missing %q: %+v", "skill_state:check_drives", dump.Attrs)
+	}
+}
+
+func TestMemoryDump_EmptyStore_ReturnsEmptyMaps(t *testing.T) {
+	store, _ := newMemoryStore(t)
+
+	dump, err := store.Dump()
+	if err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+	if dump.Domains == nil || len(dump.Domains) != 0 {
+		t.Errorf("Dump.Domains = %+v, want empty map", dump.Domains)
+	}
+	if dump.Attrs == nil || len(dump.Attrs) != 0 {
+		t.Errorf("Dump.Attrs = %+v, want empty map", dump.Attrs)
+	}
+}
+
+func TestMemoryDump_OmitsDomainWithNoSnapshot(t *testing.T) {
+	store, root := newMemoryStore(t)
+
+	// Create an empty domain directory with no snapshots.
+	if err := os.MkdirAll(filepath.Join(root, "empty_domain"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	dump, err := store.Dump()
+	if err != nil {
+		t.Fatalf("Dump: %v", err)
+	}
+	if _, ok := dump.Domains["empty_domain"]; ok {
+		t.Errorf("Dump.Domains should omit domain with no snapshot, got %+v", dump.Domains)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 

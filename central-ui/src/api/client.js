@@ -42,6 +42,12 @@ export function fetchAgent(id) {
   return getJSON(`/agents/${id}`);
 }
 
+// A single agent's current memory: every memory domain's latest snapshot
+// plus all attrs.
+export function fetchAgentMemory(id) {
+  return getJSON(`/agents/${id}/memory`);
+}
+
 // Pending approval requests across the fleet.
 export function fetchApprovals() {
   return getJSON('/approvals');
