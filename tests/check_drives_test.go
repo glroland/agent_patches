@@ -6,7 +6,10 @@ import (
 	"strings"
 	"testing"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/check_drives"
+	"agent_patches/endpoint-server/skillstate"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 func TestDiskStat_UsedPct_Normal(t *testing.T) {
@@ -112,7 +115,8 @@ func TestDedupeDisks_KeepsDistinctFilesystems(t *testing.T) {
 }
 
 func TestNewDiskUsageTool_NameAndDescription(t *testing.T) {
-	tl, err := check_drives.NewDiskUsageTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := check_drives.NewDiskUsageTool(mem)
 	if err != nil {
 		t.Fatalf("NewDiskUsageTool() unexpected error: %v", err)
 	}
@@ -125,7 +129,8 @@ func TestNewDiskUsageTool_NameAndDescription(t *testing.T) {
 }
 
 func TestDiskUsageTool_Execute_ReturnsReport(t *testing.T) {
-	tl, err := check_drives.NewDiskUsageTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := check_drives.NewDiskUsageTool(mem)
 	if err != nil {
 		t.Fatalf("NewDiskUsageTool() unexpected error: %v", err)
 	}
@@ -137,5 +142,21 @@ func TestDiskUsageTool_Execute_ReturnsReport(t *testing.T) {
 	}
 	if result == "" {
 		t.Error("Execute() returned empty result")
+	}
+
+	states, err := skillstate.LoadAll(mem)
+	if err != nil {
+		t.Fatalf("skillstate.LoadAll: %v", err)
+	}
+	if len(states) != 1 || states[0].Skill != "check_drives" {
+		t.Fatalf("skillstate after Execute() = %+v, want one entry for check_drives", states)
+	}
+	switch states[0].Health {
+	case skillstate.HealthOK, skillstate.HealthWarning, skillstate.HealthCritical:
+	default:
+		t.Errorf("skillstate health = %q, want ok/warning/critical", states[0].Health)
+	}
+	if states[0].Summary == "" {
+		t.Error("skillstate summary is empty")
 	}
 }

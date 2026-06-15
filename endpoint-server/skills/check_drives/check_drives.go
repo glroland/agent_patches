@@ -7,6 +7,16 @@ import (
 	"strings"
 
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
+)
+
+// Disk usage thresholds (percent used) for the skill's last-known-state
+// health, matching the "above 90% capacity" guidance in the disk-space-check
+// responsibility prompt.
+const (
+	usedPctWarning  = 80.0
+	usedPctCritical = 90.0
 )
 
 // DiskStat holds usage statistics for one local disk.
@@ -35,8 +45,10 @@ func (d DiskStat) UsedPct() float64 {
 type diskUsageInput struct{}
 
 // NewDiskUsageTool returns a task tool that reports current disk space usage
-// for all local disks on the host.
-func NewDiskUsageTool() (tool.Tool, error) {
+// for all local disks on the host. The result is also recorded as the
+// skill's last known state (see skillstate), so a near-full or failing disk
+// is reflected in GET /status even if the agent never calls report_findings.
+func NewDiskUsageTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"check_drives",
 		"Reports current disk space usage for all local disks on the host, "+
@@ -48,19 +60,54 @@ func NewDiskUsageTool() (tool.Tool, error) {
 			disks, err := localDisks()
 			if err != nil {
 				slog.Info("check_drives: failed", "error", err)
+				_ = skillstate.Save(mem, "check_drives", skillstate.HealthCritical, fmt.Sprintf("failed to read disk usage: %v", err))
 				return "", fmt.Errorf("disk_usage: %w", err)
 			}
 			disks = DedupeDisks(disks)
 			slog.Debug("check_drives: found local disks", "count", len(disks))
 			if len(disks) == 0 {
 				slog.Info("check_drives: completed", "disks", 0)
+				_ = skillstate.Save(mem, "check_drives", skillstate.HealthOK, "no local disks found")
 				return "No local disks found.", nil
 			}
-			report := BuildReport(disks)
+			smartCache := collectSmartReports(disks)
+			report := buildReport(disks, smartCache)
 			slog.Info("check_drives: completed", "disks", len(disks), "output_len", len(report))
+			health, summary := diskHealth(disks, smartCache)
+			_ = skillstate.Save(mem, "check_drives", health, summary)
 			return report, nil
 		},
 	)
+}
+
+// diskHealth derives a skillstate health/summary pair from a set of disks:
+// critical if any disk's SMART status has failed or it is at/above
+// usedPctCritical, warning if any disk is at/above usedPctWarning, else ok.
+func diskHealth(disks []DiskStat, smartCache map[string][]SmartReport) (skillstate.Health, string) {
+	var warnings, criticals []string
+	for _, d := range disks {
+		pct := d.UsedPct()
+		switch {
+		case pct >= usedPctCritical:
+			criticals = append(criticals, fmt.Sprintf("%s is %.1f%% full", d.Mount, pct))
+		case pct >= usedPctWarning:
+			warnings = append(warnings, fmt.Sprintf("%s is %.1f%% full", d.Mount, pct))
+		}
+		for _, sr := range smartCache[d.Device] {
+			if sr.Available && !sr.Healthy {
+				criticals = append(criticals, fmt.Sprintf("SMART status FAILED for %s (%s)", sr.Device, strings.Join(sr.Findings, "; ")))
+			}
+		}
+	}
+
+	switch {
+	case len(criticals) > 0:
+		return skillstate.HealthCritical, strings.Join(criticals, "; ")
+	case len(warnings) > 0:
+		return skillstate.HealthWarning, strings.Join(warnings, "; ")
+	default:
+		return skillstate.HealthOK, "all disks healthy"
+	}
 }
 
 // dedupeFreeTolerance is how close two mounts' free space must be, relative
@@ -137,8 +184,28 @@ const topLargestCount = 3
 
 // BuildReport composes a human-readable summary of disk usage.
 func BuildReport(disks []DiskStat) string {
+	return buildReport(disks, collectSmartReports(disks))
+}
+
+// collectSmartReports runs CheckSmart once per distinct device.
+func collectSmartReports(disks []DiskStat) map[string][]SmartReport {
+	cache := make(map[string][]SmartReport)
+	for _, d := range disks {
+		if d.Device == "" {
+			continue
+		}
+		if _, ok := cache[d.Device]; !ok {
+			slog.Debug("check_drives: checking SMART status", "device", d.Device)
+			cache[d.Device] = CheckSmart(d.Device)
+		}
+	}
+	return cache
+}
+
+// buildReport composes a human-readable summary of disk usage, using
+// pre-fetched SMART reports keyed by device.
+func buildReport(disks []DiskStat, smartCache map[string][]SmartReport) string {
 	var sb strings.Builder
-	smartCache := make(map[string][]SmartReport)
 	for i, d := range disks {
 		fmt.Fprintf(&sb, "Mount:      %s\n", d.Mount)
 		if d.FSType != "" {
@@ -149,12 +216,7 @@ func BuildReport(disks []DiskStat) string {
 		fmt.Fprintf(&sb, "Free:       %s\n", formatBytes(d.Free))
 
 		if d.Device != "" {
-			reports, ok := smartCache[d.Device]
-			if !ok {
-				slog.Debug("check_drives: checking SMART status", "device", d.Device)
-				reports = CheckSmart(d.Device)
-				smartCache[d.Device] = reports
-			}
+			reports := smartCache[d.Device]
 			if len(reports) == 0 {
 				slog.Debug("check_drives: SMART status unavailable", "device", d.Device)
 			}

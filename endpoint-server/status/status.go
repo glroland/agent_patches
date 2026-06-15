@@ -2,11 +2,13 @@ package status
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/capture_system_info"
+	"agent_patches/endpoint-server/skillstate"
 )
 
 // currentTasker reports the name of the responsibility currently in flight,
@@ -42,6 +44,25 @@ func (s *Service) build() Response {
 	_ = s.mem.Domain("timeline").ReadCurrent(&timeline)
 	if timeline == nil {
 		timeline = []TimelineEntry{}
+	}
+
+	// Merge in the last known state of every check/analyze skill, so a
+	// problem (e.g. a near-full or failing disk) is reflected here even if
+	// the agent's tool-use loop never calls report_findings.
+	if states, _ := skillstate.LoadAll(s.mem); len(states) > 0 {
+		for _, st := range states {
+			if st.Health == skillstate.HealthOK {
+				continue
+			}
+			timeline = append([]TimelineEntry{{
+				ID:       "skillstate:" + st.Skill,
+				Time:     st.Time,
+				Type:     "observation",
+				Title:    fmt.Sprintf("%s: %s", st.Skill, st.Summary),
+				Detail:   st.Summary,
+				Severity: string(st.Health),
+			}}, timeline...)
+		}
 	}
 
 	var currentTask *string

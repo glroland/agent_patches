@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
+	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/utils/notifier"
 )
 
@@ -17,8 +19,10 @@ type patchInput struct{}
 // NewPatchTool creates a task tool that patches the current system.
 // It auto-detects whether the OS is Windows, Debian-based, or Fedora-based,
 // runs the appropriate package manager, and reboots the system if required.
-// n may be nil, in which case notifications are silently skipped.
-func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
+// n may be nil, in which case notifications are silently skipped. The
+// outcome is also recorded as the skill's last known state (see
+// skillstate), surfaced in GET /status.
+func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"check_for_pending_system_patches",
 		"Patches the current system. Detects the OS (Windows, Debian-based Linux, "+
@@ -33,6 +37,7 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 				msg := fmt.Sprintf("OS detection failed: %v", err)
 				slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "os_detection_failed")
 				n.Notify(ctx, fmt.Sprintf("[%s] Patch Failed", host), msg)
+				_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthWarning, msg)
 				return msg, nil
 			}
 			slog.Debug("check_for_pending_system_patches: detected OS", "os", p.OS())
@@ -42,6 +47,7 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 				slog.Warn("patch: update check failed, proceeding anyway", "error", err)
 			} else if !available {
 				slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "up_to_date")
+				_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthOK, "system is up to date")
 				return "No updates available. System is up to date.\n\n" + checkOut, nil
 			}
 			slog.Debug("check_for_pending_system_patches: updates available, gathering details")
@@ -72,6 +78,7 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 					fmt.Sprintf("[%s] Patch Failed", host),
 					fmt.Sprintf("Patch run on host %q encountered an error.\n\nError: %v\n\nOutput:\n%s", host, err, log),
 				)
+				_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthCritical, fmt.Sprintf("patch run failed: %v", err))
 				return fmt.Sprintf("%serror: %v", log, err), nil
 			}
 
@@ -80,6 +87,7 @@ func NewPatchTool(n *notifier.Notifier) (tool.Tool, error) {
 				fmt.Sprintf("[%s] Patch Complete", host),
 				fmt.Sprintf("System patch completed successfully on host %q.\n\nOutput:\n%s", host, log),
 			)
+			_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthOK, "updates applied successfully")
 			return log, nil
 		},
 	)

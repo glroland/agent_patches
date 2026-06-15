@@ -8,6 +8,7 @@ import (
 
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/capture_system_info"
+	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/config"
 )
@@ -121,6 +122,29 @@ func TestStatusHandler_AttentionFromPendingApproval(t *testing.T) {
 
 	if resp.Status.State != "attention" {
 		t.Errorf("Status.State = %q, want %q", resp.Status.State, "attention")
+	}
+}
+
+func TestStatusHandler_AttentionFromSkillState(t *testing.T) {
+	svc, mem := newStatusService(t, "")
+
+	if err := skillstate.Save(mem, "check_drives", skillstate.HealthCritical, "/ is 94.7% full; SMART status FAILED for /dev/sda"); err != nil {
+		t.Fatalf("skillstate.Save: %v", err)
+	}
+
+	resp := doStatusRequest(t, svc)
+
+	if resp.Status.State != "attention" {
+		t.Errorf("Status.State = %q, want %q", resp.Status.State, "attention")
+	}
+	if len(resp.Timeline) != 1 {
+		t.Fatalf("Timeline len = %d, want 1", len(resp.Timeline))
+	}
+	if resp.Timeline[0].Severity != "critical" {
+		t.Errorf("Timeline[0].Severity = %q, want %q", resp.Timeline[0].Severity, "critical")
+	}
+	if resp.Timeline[0].ID != "skillstate:check_drives" {
+		t.Errorf("Timeline[0].ID = %q, want %q", resp.Timeline[0].ID, "skillstate:check_drives")
 	}
 }
 

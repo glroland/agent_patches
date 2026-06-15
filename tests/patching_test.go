@@ -5,8 +5,10 @@ import (
 	"strings"
 	"testing"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 // ---- mock Commander ---------------------------------------------------------
@@ -542,7 +544,8 @@ func TestUpdatesAvailable_UnknownOS_ReturnsError(t *testing.T) {
 // ---- NewPatchTool -----------------------------------------------------------
 
 func TestNewPatchTool_NameAndDescription(t *testing.T) {
-	tool, err := check_for_pending_system_patches.NewPatchTool(nil)
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tool, err := check_for_pending_system_patches.NewPatchTool(nil, mem)
 	if err != nil {
 		t.Fatalf("NewPatchTool() error: %v", err)
 	}

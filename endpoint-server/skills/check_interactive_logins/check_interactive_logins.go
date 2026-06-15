@@ -10,6 +10,8 @@ import (
 	"github.com/godbus/dbus/v5"
 
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
 )
 
 const (
@@ -40,8 +42,9 @@ type loginSessionsInput struct{}
 // NewLoginSessionsTool returns a task tool that reports currently active
 // login sessions on the host via the systemd-logind D-Bus API.
 // On hosts without systemd-logind (e.g. macOS, Windows) it reports that
-// session enumeration is unavailable.
-func NewLoginSessionsTool() (tool.Tool, error) {
+// session enumeration is unavailable. The result is also recorded as the
+// skill's last known state (see skillstate), surfaced in GET /status.
+func NewLoginSessionsTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"check_interactive_logins",
 		"Lists currently active login sessions on the host, including the "+
@@ -52,14 +55,17 @@ func NewLoginSessionsTool() (tool.Tool, error) {
 			sessions, err := listSessions()
 			if err != nil {
 				slog.Info("check_interactive_logins: completed", "result", "unavailable", "error", err)
+				_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, fmt.Sprintf("session enumeration unavailable: %v", err))
 				return fmt.Sprintf("Login session enumeration unavailable: %v", err), nil
 			}
 			if len(sessions) == 0 {
 				slog.Info("check_interactive_logins: completed", "sessions", 0)
+				_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, "no active login sessions")
 				return "No active login sessions.", nil
 			}
 			report := BuildReport(sessions)
 			slog.Info("check_interactive_logins: completed", "sessions", len(sessions), "output_len", len(report))
+			_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, fmt.Sprintf("%d active login session(s)", len(sessions)))
 			return report, nil
 		},
 	)

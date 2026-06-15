@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
 )
 
 const (
@@ -21,8 +23,9 @@ type networkUsageInput struct {
 
 // NewNetworkUsageTool returns a task tool that reports current upload and
 // download rates for the host by sampling network counters twice over a
-// short interval.
-func NewNetworkUsageTool() (tool.Tool, error) {
+// short interval. The result is also recorded as the skill's last known
+// state (see skillstate), surfaced in GET /status.
+func NewNetworkUsageTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"analyze_network_utilization",
 		"Reports current network upload and download rates (in MB/s) for the "+
@@ -46,6 +49,7 @@ func NewNetworkUsageTool() (tool.Tool, error) {
 			inBytes1, outBytes1, err := snapshot()
 			if err != nil {
 				slog.Info("analyze_network_utilization: failed", "error", err)
+				_ = skillstate.Save(mem, "analyze_network_utilization", skillstate.HealthCritical, fmt.Sprintf("failed to read network counters: %v", err))
 				return "", fmt.Errorf("network_usage: %w", err)
 			}
 			slog.Debug("analyze_network_utilization: initial snapshot", "in_bytes", inBytes1, "out_bytes", outBytes1)
@@ -60,6 +64,7 @@ func NewNetworkUsageTool() (tool.Tool, error) {
 			inBytes2, outBytes2, err := snapshot()
 			if err != nil {
 				slog.Info("analyze_network_utilization: failed", "error", err)
+				_ = skillstate.Save(mem, "analyze_network_utilization", skillstate.HealthCritical, fmt.Sprintf("failed to read network counters: %v", err))
 				return "", fmt.Errorf("network_usage: %w", err)
 			}
 			slog.Debug("analyze_network_utilization: final snapshot", "in_bytes", inBytes2, "out_bytes", outBytes2)
@@ -75,6 +80,8 @@ func NewNetworkUsageTool() (tool.Tool, error) {
 			report := BuildReport(downRate, upRate)
 			slog.Info("analyze_network_utilization: completed",
 				"download_mbps", fmt.Sprintf("%.2f", downRate), "upload_mbps", fmt.Sprintf("%.2f", upRate))
+			summary := fmt.Sprintf("Download: %s, Upload: %s", formatBandwidth(downRate), formatBandwidth(upRate))
+			_ = skillstate.Save(mem, "analyze_network_utilization", skillstate.HealthOK, summary)
 			return report, nil
 		},
 	)

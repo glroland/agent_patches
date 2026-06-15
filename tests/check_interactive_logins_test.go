@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 func TestLoginSessions_BuildReport_LocalSession(t *testing.T) {
@@ -52,7 +54,8 @@ func TestLoginSessions_BuildReport_RemoteSession(t *testing.T) {
 }
 
 func TestNewLoginSessionsTool_NameAndDescription(t *testing.T) {
-	tl, err := check_interactive_logins.NewLoginSessionsTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := check_interactive_logins.NewLoginSessionsTool(mem)
 	if err != nil {
 		t.Fatalf("NewLoginSessionsTool() unexpected error: %v", err)
 	}
@@ -65,7 +68,8 @@ func TestNewLoginSessionsTool_NameAndDescription(t *testing.T) {
 }
 
 func TestLoginSessionsTool_Execute_DoesNotError(t *testing.T) {
-	tl, err := check_interactive_logins.NewLoginSessionsTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := check_interactive_logins.NewLoginSessionsTool(mem)
 	if err != nil {
 		t.Fatalf("NewLoginSessionsTool() unexpected error: %v", err)
 	}

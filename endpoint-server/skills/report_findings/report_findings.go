@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/status"
 )
 
@@ -73,7 +75,16 @@ func NewReportFindingsTool(mem *memory.Store) (tool.Tool, error) {
 			}
 
 			slog.Info("report_findings: completed", "total_entries", len(entries))
-			return fmt.Sprintf("recorded %d finding(s)", len(in.Findings)), nil
+
+			var sb strings.Builder
+			fmt.Fprintf(&sb, "recorded %d finding(s)", len(in.Findings))
+			if states, _ := skillstate.LoadAll(mem); len(states) > 0 {
+				sb.WriteString("\n\nLast known state from check/analyze skills:\n")
+				for _, st := range states {
+					fmt.Fprintf(&sb, "- %s: %s — %s (as of %s)\n", st.Skill, st.Health, st.Summary, st.Time)
+				}
+			}
+			return sb.String(), nil
 		},
 	)
 }

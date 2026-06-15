@@ -306,6 +306,31 @@ func (a *AttrsStore) Set(key string, value any) error {
 	return nil
 }
 
+// All returns every key/value pair in attrs.json. Returns nil, nil if the
+// file does not exist yet. A nil AttrsStore returns nil, nil.
+func (a *AttrsStore) All() (map[string]json.RawMessage, error) {
+	if a == nil {
+		return nil, nil
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	raw, err := os.ReadFile(a.path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("memory: read attrs: %w", err)
+	}
+
+	var attrs map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &attrs); err != nil {
+		return nil, fmt.Errorf("memory: parse attrs: %w", err)
+	}
+	return attrs, nil
+}
+
 // Get reads the value for key into v.
 // Returns an error if the key does not exist.
 // A nil AttrsStore always returns an error.

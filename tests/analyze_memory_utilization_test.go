@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 func TestMemStat_UsedPct_Normal(t *testing.T) {
@@ -70,7 +72,8 @@ func TestMemoryUsage_BuildReport_NoSwap(t *testing.T) {
 }
 
 func TestNewMemoryUsageTool_NameAndDescription(t *testing.T) {
-	tl, err := analyze_memory_utilization.NewMemoryUsageTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := analyze_memory_utilization.NewMemoryUsageTool(mem)
 	if err != nil {
 		t.Fatalf("NewMemoryUsageTool() unexpected error: %v", err)
 	}
@@ -83,7 +86,8 @@ func TestNewMemoryUsageTool_NameAndDescription(t *testing.T) {
 }
 
 func TestMemoryUsageTool_Execute_ReturnsReport(t *testing.T) {
-	tl, err := analyze_memory_utilization.NewMemoryUsageTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := analyze_memory_utilization.NewMemoryUsageTool(mem)
 	if err != nil {
 		t.Fatalf("NewMemoryUsageTool() unexpected error: %v", err)
 	}

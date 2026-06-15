@@ -7,6 +7,14 @@ import (
 	"strings"
 
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
+)
+
+// RAM usage thresholds (percent used) for the skill's last-known-state health.
+const (
+	usedPctWarning  = 80.0
+	usedPctCritical = 90.0
 )
 
 // MemStat holds memory usage statistics for the current host.
@@ -48,8 +56,10 @@ func (m MemStat) SwapUsedPct() float64 {
 type memoryUsageInput struct{}
 
 // NewMemoryUsageTool returns a task tool that reports current RAM and swap
-// usage for the host.
-func NewMemoryUsageTool() (tool.Tool, error) {
+// usage for the host. The result is also recorded as the skill's last known
+// state (see skillstate), so high memory pressure is reflected in
+// GET /status even if the agent never calls report_findings.
+func NewMemoryUsageTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"analyze_memory_utilization",
 		"Reports current RAM and swap usage for the host, including total, "+
@@ -59,6 +69,7 @@ func NewMemoryUsageTool() (tool.Tool, error) {
 			stat, err := localMemory()
 			if err != nil {
 				slog.Info("analyze_memory_utilization: failed", "error", err)
+				_ = skillstate.Save(mem, "analyze_memory_utilization", skillstate.HealthCritical, fmt.Sprintf("failed to read memory usage: %v", err))
 				return "", fmt.Errorf("memory_usage: %w", err)
 			}
 			slog.Debug("analyze_memory_utilization: read stats",
@@ -67,9 +78,27 @@ func NewMemoryUsageTool() (tool.Tool, error) {
 			report := BuildReport(stat)
 			slog.Info("analyze_memory_utilization: completed",
 				"used_pct", fmt.Sprintf("%.1f", stat.UsedPct()), "output_len", len(report))
+			health, summary := memoryHealth(stat)
+			_ = skillstate.Save(mem, "analyze_memory_utilization", health, summary)
 			return report, nil
 		},
 	)
+}
+
+// memoryHealth derives a skillstate health/summary pair from a memory
+// snapshot: critical if RAM usage is at/above usedPctCritical, warning if
+// at/above usedPctWarning, else ok.
+func memoryHealth(stat MemStat) (skillstate.Health, string) {
+	pct := stat.UsedPct()
+	summary := fmt.Sprintf("RAM used: %.1f%% (%s / %s)", pct, formatBytes(stat.Used()), formatBytes(stat.Total))
+	switch {
+	case pct >= usedPctCritical:
+		return skillstate.HealthCritical, summary
+	case pct >= usedPctWarning:
+		return skillstate.HealthWarning, summary
+	default:
+		return skillstate.HealthOK, summary
+	}
 }
 
 // BuildReport composes a human-readable summary of memory usage.

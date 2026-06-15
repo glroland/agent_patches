@@ -6,7 +6,9 @@ import (
 	"strings"
 	"testing"
 
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/analyze_network_utilization"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 func TestNetworkUsage_BuildReport_ContainsEssentialFields(t *testing.T) {
@@ -33,7 +35,8 @@ func TestNetworkUsage_BuildReport_KbpsFormatting(t *testing.T) {
 }
 
 func TestNewNetworkUsageTool_NameAndDescription(t *testing.T) {
-	tl, err := analyze_network_utilization.NewNetworkUsageTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := analyze_network_utilization.NewNetworkUsageTool(mem)
 	if err != nil {
 		t.Fatalf("NewNetworkUsageTool() unexpected error: %v", err)
 	}
@@ -46,7 +49,8 @@ func TestNewNetworkUsageTool_NameAndDescription(t *testing.T) {
 }
 
 func TestNetworkUsageTool_Execute_ReturnsReport(t *testing.T) {
-	tl, err := analyze_network_utilization.NewNetworkUsageTool()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	tl, err := analyze_network_utilization.NewNetworkUsageTool(mem)
 	if err != nil {
 		t.Fatalf("NewNetworkUsageTool() unexpected error: %v", err)
 	}

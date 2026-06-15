@@ -58,6 +58,7 @@ func main() {
 	notify := notifier.New(&cfg.Notifier)
 
 	registry := tasks.NewRegistry()
+	mem := memory.New(&cfg.Memory)
 
 	pingTool, err := ping.NewPingTool()
 	if err != nil {
@@ -66,42 +67,40 @@ func main() {
 	}
 	registry.Register(pingTool)
 
-	patchTool, err := check_for_pending_system_patches.NewPatchTool(notify)
+	patchTool, err := check_for_pending_system_patches.NewPatchTool(notify, mem)
 	if err != nil {
 		slog.Error("failed to create check_for_pending_system_patches tool", "error", err)
 		return
 	}
 	registry.Register(patchTool)
 
-	diskUsageTool, err := check_drives.NewDiskUsageTool()
+	diskUsageTool, err := check_drives.NewDiskUsageTool(mem)
 	if err != nil {
 		slog.Error("failed to create check_drives tool", "error", err)
 		return
 	}
 	registry.Register(diskUsageTool)
 
-	memoryUsageTool, err := analyze_memory_utilization.NewMemoryUsageTool()
+	memoryUsageTool, err := analyze_memory_utilization.NewMemoryUsageTool(mem)
 	if err != nil {
 		slog.Error("failed to create analyze_memory_utilization tool", "error", err)
 		return
 	}
 	registry.Register(memoryUsageTool)
 
-	networkUsageTool, err := analyze_network_utilization.NewNetworkUsageTool()
+	networkUsageTool, err := analyze_network_utilization.NewNetworkUsageTool(mem)
 	if err != nil {
 		slog.Error("failed to create analyze_network_utilization tool", "error", err)
 		return
 	}
 	registry.Register(networkUsageTool)
 
-	loginSessionsTool, err := check_interactive_logins.NewLoginSessionsTool()
+	loginSessionsTool, err := check_interactive_logins.NewLoginSessionsTool(mem)
 	if err != nil {
 		slog.Error("failed to create check_interactive_logins tool", "error", err)
 		return
 	}
 	registry.Register(loginSessionsTool)
-
-	mem := memory.New(&cfg.Memory)
 
 	readMemoryTool, err := read_agent_memory.NewReadMemoryTool(mem)
 	if err != nil {

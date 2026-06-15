@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/report_findings"
+	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/config"
 )
@@ -52,6 +54,39 @@ func TestReportFindingsTool_WritesTimeline(t *testing.T) {
 
 	if entries[1].Type != "observation" || entries[1].Severity != "warning" {
 		t.Errorf("entries[1] = %+v, want observation/warning", entries[1])
+	}
+}
+
+func TestReportFindingsTool_ResultIncludesSkillStates(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+
+	if err := skillstate.Save(mem, "check_drives", skillstate.HealthCritical, "/ is 94.7% full; SMART status FAILED for /dev/sda"); err != nil {
+		t.Fatalf("skillstate.Save: %v", err)
+	}
+	if err := skillstate.Save(mem, "analyze_memory_utilization", skillstate.HealthOK, "RAM used: 40.0% (6.40 GB / 16.00 GB)"); err != nil {
+		t.Fatalf("skillstate.Save: %v", err)
+	}
+
+	tool, err := report_findings.NewReportFindingsTool(mem)
+	if err != nil {
+		t.Fatalf("NewReportFindingsTool: %v", err)
+	}
+
+	input, _ := json.Marshal(map[string]any{
+		"findings": []map[string]any{
+			{"type": "observation", "title": "routine check", "detail": "nothing unusual"},
+		},
+	})
+
+	result, err := tool.Execute(context.Background(), input)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	for _, want := range []string{"check_drives: critical", "SMART status FAILED for /dev/sda", "analyze_memory_utilization: ok"} {
+		if !strings.Contains(result, want) {
+			t.Errorf("result missing %q\nfull result:\n%s", want, result)
+		}
 	}
 }
 
