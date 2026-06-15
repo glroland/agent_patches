@@ -1,0 +1,4 @@
+image:
+   repository: registry.home.glroland.com/ai/central-ui
+   tag: latest
+   pullPolicy: IfNotPresent

@@ -1,0 +1,27 @@
+central-backend:
+  image:
+    repository: central-backend
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    port: 8080
+  env:
+    HOST: "0.0.0.0"
+    PORT: "8080"
+    CORS_ORIGIN: "http://central-ui:8080"
+    AGENT_POLL_INTERVAL_SECONDS: "60"
+    AGENT_INVENTORY_FILE: "./inventory.example.csv"
+    LOG_LEVEL: "info"
+    AGENT_AUTH_TOKEN: ""
+
+central-ui:
+  image:
+    repository: central-ui
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    port: 8080
+  env:
+    VITE_API_BASE_URL: "http://central-backend:8080/api"

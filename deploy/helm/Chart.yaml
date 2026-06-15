@@ -1,0 +1,13 @@
+apiVersion: v2
+description: Central UI and Backend for the agent_patches fleet console
+name: central
+version: 0.1.0
+appVersion: "0.1.0"
+type: application
+dependencies:
+  - name: central-backend
+    version: 0.1.0
+    repository: "file://central-backend"
+  - name: central-ui
+    version: 0.1.0
+    repository: "file://central-ui"

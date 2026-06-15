@@ -1,0 +1,35 @@
+replicaCount: 1
+
+image:
+   repository: registry.home.glroland.com/ai/central-backend
+   tag: latest
+   pullPolicy: IfNotPresent
+
+containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+env:
+  HOST: "0.0.0.0"
+  PORT: "8080"
+  CORS_ORIGIN: "http://localhost:5173"
+  AGENT_POLL_INTERVAL_SECONDS: "60"
+  AGENT_INVENTORY_FILE: "./inventory.example.csv"
+  LOG_LEVEL: "info"
+  AGENT_AUTH_TOKEN_SECRET: ""
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
