@@ -1,0 +1,22 @@
+FROM node:20-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+
+RUN npm ci --only=production
+
+COPY src/ ./src/
+COPY .env ./
+
+ENV HOST=0.0.0.0 \
+    PORT=8080 \
+    CORS_ORIGIN=http://localhost:5173 \
+    AGENT_POLL_INTERVAL_SECONDS=60 \
+    AGENT_INVENTORY_FILE=./inventory.csv \
+    LOG_LEVEL=info \
+    AGENT_AUTH_TOKEN=
+
+EXPOSE 8080
+
+CMD ["npm", "start"]
