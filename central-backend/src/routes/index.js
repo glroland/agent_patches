@@ -4,6 +4,7 @@ import approvalsRouter from './approvals.js';
 import issuesRouter from './issues.js';
 import dashboardRouter from './dashboard.js';
 import summaryRouter from './summary.js';
+import chatRouter from './chat.js';
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use('/approvals', approvalsRouter);
 router.use('/issues', issuesRouter);
 router.use('/dashboard', dashboardRouter);
 router.use('/summary', summaryRouter);
+router.use('/chat', chatRouter);
 
 export default router;

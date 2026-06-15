@@ -5,6 +5,7 @@ import Agents from './pages/Agents';
 import AgentDetail from './pages/AgentDetail';
 import Approvals from './pages/Approvals';
 import Issues from './pages/Issues';
+import FleetChat from './pages/FleetChat';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
         <Route path="/agents/:id" element={<AgentDetail />} />
         <Route path="/approvals" element={<Approvals />} />
         <Route path="/issues" element={<Issues />} />
+        <Route path="/chat" element={<FleetChat />} />
       </Route>
     </Routes>
   );

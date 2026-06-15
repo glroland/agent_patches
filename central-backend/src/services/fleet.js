@@ -96,3 +96,26 @@ export async function sendAgentMessage(id, text) {
   });
   return client.sendMessage(text);
 }
+
+// Sends the same chat message to every agent in the fleet in parallel.
+// Returns one result per agent: { id, hostname, displayName, reply } on
+// success, or { id, hostname, displayName, error } if that agent was
+// unreachable or errored. One agent failing never affects the others.
+export async function broadcastMessage(text) {
+  return Promise.all(
+    inventory.listAgents().map(async (inventoryAgent) => {
+      const id = shortHost(inventoryAgent.fqdn);
+      const client = new AgentClient({
+        fqdn: inventoryAgent.fqdn,
+        port: inventoryAgent.port,
+        authToken: config.agents.authToken,
+      });
+      try {
+        const reply = await client.sendMessage(text);
+        return { id, hostname: inventoryAgent.fqdn, displayName: inventoryAgent.displayName, reply };
+      } catch (err) {
+        return { id, hostname: inventoryAgent.fqdn, displayName: inventoryAgent.displayName, error: err.message };
+      }
+    })
+  );
+}

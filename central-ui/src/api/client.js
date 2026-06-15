@@ -56,3 +56,9 @@ export function fetchIssues() {
 export function sendAgentMessage(id, message) {
   return postJSON(`/agents/${id}/messages`, { message });
 }
+
+// Sends a chat message to every agent in the fleet and returns each
+// agent's reply (or error).
+export function broadcastMessage(message) {
+  return postJSON('/chat', { message });
+}

@@ -6,6 +6,7 @@ import path from 'node:path';
 
 let listFleet;
 let sendAgentMessage;
+let broadcastMessage;
 let AgentClient;
 let _clearStatusCacheForTests;
 let inventoryPath;
@@ -20,7 +21,7 @@ before(async () => {
   );
   process.env.AGENT_INVENTORY_FILE = inventoryPath;
 
-  ({ listFleet, sendAgentMessage, _clearStatusCacheForTests } = await import('./fleet.js'));
+  ({ listFleet, sendAgentMessage, broadcastMessage, _clearStatusCacheForTests } = await import('./fleet.js'));
   ({ AgentClient } = await import('./agentClient.js'));
 });
 
@@ -128,5 +129,38 @@ describe('fleet.sendAgentMessage', () => {
   test('returns undefined for an unknown agent id', async () => {
     const reply = await sendAgentMessage('does-not-exist', 'hi');
     assert.equal(reply, undefined);
+  });
+});
+
+describe('fleet.broadcastMessage', () => {
+  let originalSendMessage;
+
+  beforeEach(() => {
+    originalSendMessage = AgentClient.prototype.sendMessage;
+  });
+
+  afterEach(() => {
+    AgentClient.prototype.sendMessage = originalSendMessage;
+  });
+
+  test('sends to every agent and returns a result per agent, errors included', async () => {
+    AgentClient.prototype.sendMessage = async function (text) {
+      assert.equal(text, 'status?');
+      if (this.baseUrl === 'http://web01.prod.internal:8080') {
+        return 'all good';
+      }
+      throw new Error('connection refused');
+    };
+
+    const results = await broadcastMessage('status?');
+
+    const web01 = results.find((r) => r.id === 'web01');
+    const build01 = results.find((r) => r.id === 'build01');
+
+    assert.equal(web01.reply, 'all good');
+    assert.equal(web01.error, undefined);
+
+    assert.equal(build01.reply, undefined);
+    assert.equal(build01.error, 'connection refused');
   });
 });

@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { DashboardIcon, ServerIcon, AlertIcon, HandIcon } from './icons';
+import { DashboardIcon, ServerIcon, AlertIcon, HandIcon, ChatIcon } from './icons';
 import { fetchSummary } from '../api/client';
 import { useApi } from '../hooks/useApi';
 
@@ -8,6 +8,7 @@ const navItems = [
   { to: '/agents', label: 'Agents', icon: ServerIcon },
   { to: '/approvals', label: 'Approvals', icon: HandIcon },
   { to: '/issues', label: 'Issues & Concerns', icon: AlertIcon },
+  { to: '/chat', label: 'Fleet Chat', icon: ChatIcon },
 ];
 
 export default function Layout() {
