@@ -62,6 +62,6 @@ The `Commander` interface abstracts `exec.Cmd`; inject a `mockCmdr` in tests via
 |---|---|
 | `server.host` | `0.0.0.0` |
 | `server.port` | `8080` |
-| `server.public_url` | `http://<os.Hostname()>:<port>` (dynamic) |
+| `server.public_url` | `http://<fqdn-or-hostname>:<port>` (dynamic; FQDN via reverse DNS, falling back to `os.Hostname()`) |
 | `security.scheme` | `none` |
 | `logging.file` | _(stderr)_ |

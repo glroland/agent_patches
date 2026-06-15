@@ -100,7 +100,7 @@ run-central-backend:
 
 ## deploy: release and deploy to all hosts in the Ansible inventory
 deploy:
-	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -K -i $(INVENTORY) $(PLAYBOOK)
+	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -K -i $(INVENTORY) $(PLAYBOOK) --ask-pass
 
 ## fmt: format all Go source files
 fmt:

@@ -100,8 +100,11 @@ type StorageSettings struct {
 
 // ServerSettings controls the HTTP listener.
 type ServerSettings struct {
-	Host      string `yaml:"host"`
-	Port      int    `yaml:"port"`
+	Host string `yaml:"host"`
+	Port int    `yaml:"port"`
+
+	// PublicURL is the URL embedded in the agent card. Optional: if unset,
+	// it's derived from the host's FQDN (via reverse DNS) or hostname.
 	PublicURL string `yaml:"public_url"`
 }
 

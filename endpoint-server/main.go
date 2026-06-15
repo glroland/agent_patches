@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -149,7 +150,9 @@ func main() {
 	if cardURL == "" {
 		host := cfg.Server.Host
 		if host == "0.0.0.0" || host == "" {
-			if h, err := os.Hostname(); err == nil {
+			if fqdn, ok := lookupFQDN(); ok {
+				host = fqdn
+			} else if h, err := os.Hostname(); err == nil {
 				host = h
 			} else {
 				host = "localhost"
@@ -277,4 +280,27 @@ func (b *bearerInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallCont
 		return ctx, nil, a2a.ErrUnauthenticated
 	}
 	return ctx, nil, nil
+}
+
+// lookupFQDN tries to determine this host's fully-qualified domain name via
+// reverse DNS: resolve the local hostname to an IP, then look up the PTR
+// record for that IP. Returns ok=false if the hostname can't be resolved or
+// no PTR record is found.
+func lookupFQDN() (string, bool) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", false
+	}
+	addrs, err := net.LookupHost(hostname)
+	if err != nil {
+		return "", false
+	}
+	for _, addr := range addrs {
+		names, err := net.LookupAddr(addr)
+		if err != nil || len(names) == 0 {
+			continue
+		}
+		return strings.TrimSuffix(names[0], "."), true
+	}
+	return "", false
 }
