@@ -7,11 +7,13 @@ import path from 'node:path';
 let listFleet;
 let sendAgentMessage;
 let broadcastMessage;
+let setFleet;
 let AgentClient;
-let _clearStatusCacheForTests;
 let inventoryPath;
 
 before(async () => {
+  process.env.AGENT_AUTH_TOKEN = 'test-token';
+
   inventoryPath = path.join(os.tmpdir(), `fleet-test-inventory-${process.pid}.csv`);
   fs.writeFileSync(
     inventoryPath,
@@ -21,7 +23,8 @@ before(async () => {
   );
   process.env.AGENT_INVENTORY_FILE = inventoryPath;
 
-  ({ listFleet, sendAgentMessage, broadcastMessage, _clearStatusCacheForTests } = await import('./fleet.js'));
+  ({ listFleet, sendAgentMessage, broadcastMessage } = await import('./fleet.js'));
+  ({ setFleet } = await import('./fleetCache.js'));
   ({ AgentClient } = await import('./agentClient.js'));
 });
 
@@ -34,7 +37,8 @@ describe('fleet.listFleet', () => {
 
   beforeEach(() => {
     originalGetStatus = AgentClient.prototype.getStatus;
-    _clearStatusCacheForTests();
+    // Reset the fleet cache so each test starts with a live-fetch fallback.
+    setFleet(null);
   });
 
   test('merges live /status data for a reachable agent', async (t) => {
@@ -84,23 +88,24 @@ describe('fleet.listFleet', () => {
     assert.equal(build01.role, 'Endpoint agent');
   });
 
-  test('caches /status responses within the TTL window', async (t) => {
+  test('returns fleet from cache without calling agents when cache is populated', async (t) => {
     t.after(() => {
       AgentClient.prototype.getStatus = originalGetStatus;
+      setFleet(null);
     });
 
+    const cached = [{ id: 'web01', status: 'idle', hostname: 'web01.prod.internal' }];
+    setFleet(cached);
+
     let calls = 0;
-    AgentClient.prototype.getStatus = async function () {
+    AgentClient.prototype.getStatus = async () => {
       calls += 1;
       return { agent: {}, status: { state: 'idle', lastPoll: null, currentTask: null }, timeline: [] };
     };
 
-    await listFleet();
-    await listFleet();
-
-    // Two agents in inventory; each should only be fetched once across both
-    // listFleet() calls thanks to the short-TTL cache.
-    assert.equal(calls, 2);
+    const agents = await listFleet();
+    assert.equal(calls, 0);
+    assert.deepEqual(agents, cached);
   });
 });
 

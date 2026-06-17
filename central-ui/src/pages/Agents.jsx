@@ -4,8 +4,7 @@ import Badge from '../components/Badge';
 import Card from '../components/Card';
 import AsyncState from '../components/AsyncState';
 import { SearchIcon, HandIcon } from '../components/icons';
-import { fetchAgents } from '../api/client';
-import { useApi } from '../hooks/useApi';
+import { useFleetSocket } from '../hooks/useFleetSocket';
 import { relativeTime } from '../utils/time';
 
 const STATUS_FILTERS = [
@@ -17,7 +16,7 @@ const STATUS_FILTERS = [
 ];
 
 export default function Agents() {
-  const { data: agents, loading, error } = useApi(fetchAgents, []);
+  const { agents } = useFleetSocket();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -36,8 +35,8 @@ export default function Agents() {
     });
   }, [agents, query, statusFilter]);
 
-  if (loading || error) {
-    return <AsyncState loading={loading} error={error} loadingLabel="Loading agents..." />;
+  if (!agents) {
+    return <AsyncState loading loadingLabel="Loading agents..." />;
   }
 
   return (

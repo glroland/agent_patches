@@ -1,17 +1,26 @@
-// Background poller that will periodically query each enrolled agent via
-// AgentClient and update the agentRegistry / activity store. Not yet wired
-// up — start() is a no-op placeholder so the server can reference it without
-// affecting current behavior.
-
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
+import { fetchAllAgents } from './fleet.js';
+import { setFleet } from './fleetCache.js';
 
 let timer = null;
 
+async function pollAllAgents() {
+  try {
+    const agents = await fetchAllAgents();
+    setFleet(agents);
+    logger.info(`poller: updated ${agents.length} agent(s)`);
+  } catch (err) {
+    logger.error(`poller: poll failed: ${err.message}`);
+  }
+}
+
 export function start() {
   if (timer) return;
-  logger.info(`poller: scaffolded, would poll every ${config.agents.pollIntervalSeconds}s (not yet implemented)`);
-  // TODO: timer = setInterval(pollAllAgents, config.agents.pollIntervalSeconds * 1000);
+  const intervalMs = config.agents.pollIntervalSeconds * 1000;
+  logger.info(`poller: starting, interval ${config.agents.pollIntervalSeconds}s`);
+  pollAllAgents();
+  timer = setInterval(pollAllAgents, intervalMs);
 }
 
 export function stop() {

@@ -4,18 +4,17 @@ import Card from '../components/Card';
 import Badge from '../components/Badge';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
-import { fetchDashboard } from '../api/client';
-import { useApi } from '../hooks/useApi';
+import { useFleetSocket } from '../hooks/useFleetSocket';
 import { relativeTime } from '../utils/time';
 
 export default function Dashboard() {
-  const { data, loading, error } = useApi(fetchDashboard, []);
+  const { dashboard } = useFleetSocket();
 
-  if (loading || error) {
-    return <AsyncState loading={loading} error={error} loadingLabel="Loading fleet activity..." />;
+  if (!dashboard) {
+    return <AsyncState loading loadingLabel="Loading fleet activity..." />;
   }
 
-  const { stats, attention, approvals, activity } = data;
+  const { stats, attention, approvals, activity } = dashboard;
 
   return (
     <div className="space-y-6">

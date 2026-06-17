@@ -4,6 +4,7 @@
 import * as inventory from './inventory.js';
 import { AgentClient } from './agentClient.js';
 import { config } from '../config/index.js';
+import { getFleet } from './fleetCache.js';
 
 const STATUS_META = {
   active: { label: 'Active', description: 'Currently working on a task' },
@@ -12,38 +13,18 @@ const STATUS_META = {
   offline: { label: 'Offline', description: 'Not responding to polls' },
 };
 
-// Short-TTL cache so a single page load (which may hit dashboard, summary,
-// and agents endpoints) doesn't fan out multiple /status calls per agent.
-const STATUS_CACHE_TTL_MS = 5000;
-const statusCache = new Map(); // id -> { data, fetchedAt }
-
-// Exposed for tests only, so each test can start from a clean cache.
-export function _clearStatusCacheForTests() {
-  statusCache.clear();
-}
-
 function shortHost(fqdn) {
   return fqdn.split('.')[0].toLowerCase();
 }
 
-async function fetchStatus(inventoryAgent, id) {
-  const cached = statusCache.get(id);
-  if (cached && Date.now() - cached.fetchedAt < STATUS_CACHE_TTL_MS) {
-    return cached.data;
-  }
+async function toFleetAgent(inventoryAgent) {
+  const id = shortHost(inventoryAgent.fqdn);
   const client = new AgentClient({
     fqdn: inventoryAgent.fqdn,
     port: inventoryAgent.port,
     authToken: config.agents.authToken,
   });
   const data = await client.getStatus();
-  statusCache.set(id, { data, fetchedAt: Date.now() });
-  return data;
-}
-
-async function toFleetAgent(inventoryAgent) {
-  const id = shortHost(inventoryAgent.fqdn);
-  const data = await fetchStatus(inventoryAgent, id);
 
   const agentInfo = data?.agent ?? {};
   const statusBlock = data?.status ?? { state: 'offline', lastPoll: null, currentTask: null };
@@ -69,9 +50,17 @@ async function toFleetAgent(inventoryAgent) {
   };
 }
 
-// Returns the full fleet: inventory rows merged with live agent status.
-export async function listFleet() {
+// Polls every enrolled agent in parallel. Called by the poller; also used as
+// a fallback by listFleet() before the first poll cycle completes.
+export async function fetchAllAgents() {
   return Promise.all(inventory.listAgents().map(toFleetAgent));
+}
+
+// Returns the full fleet from the cache populated by the poller. Falls back
+// to a live fetch if the cache has not yet been populated (e.g. first request
+// arrives before the first poll cycle finishes).
+export async function listFleet() {
+  return getFleet() ?? fetchAllAgents();
 }
 
 // Returns a single fleet agent by id (short hostname), or undefined if not found.
@@ -80,9 +69,8 @@ export async function getFleetAgent(id) {
   return agents.find((agent) => agent.id === id);
 }
 
-// Returns the agent's GET /memory data (current snapshot of every memory
-// domain plus all attrs), or undefined if no agent with that id is in the
-// inventory, or null if the agent is unreachable.
+// Returns the agent's GET /memory data, or undefined if not in inventory, or
+// null if the agent is unreachable.
 export async function getAgentMemory(id) {
   const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
   if (!inventoryAgent) {
@@ -97,9 +85,6 @@ export async function getAgentMemory(id) {
   return client.getMemory();
 }
 
-// Sends a chat message to the agent identified by id and returns its text
-// reply. Throws if no agent with that id is in the inventory, or if the
-// agent is unreachable/errors.
 export async function sendAgentMessage(id, text) {
   const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
   if (!inventoryAgent) {
@@ -114,10 +99,6 @@ export async function sendAgentMessage(id, text) {
   return client.sendMessage(text);
 }
 
-// Sends the same chat message to every agent in the fleet in parallel.
-// Returns one result per agent: { id, hostname, displayName, reply } on
-// success, or { id, hostname, displayName, error } if that agent was
-// unreachable or errored. One agent failing never affects the others.
 export async function broadcastMessage(text) {
   return Promise.all(
     inventory.listAgents().map(async (inventoryAgent) => {

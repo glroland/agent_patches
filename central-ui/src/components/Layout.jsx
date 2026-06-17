@@ -1,7 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import { DashboardIcon, ServerIcon, AlertIcon, HandIcon, ChatIcon } from './icons';
-import { fetchSummary } from '../api/client';
-import { useApi } from '../hooks/useApi';
+import { useFleetSocket } from '../hooks/useFleetSocket';
 import logo from '../assets/logo.png';
 
 const navItems = [
@@ -13,7 +12,7 @@ const navItems = [
 ];
 
 export default function Layout() {
-  const { data: summary, error } = useApi(fetchSummary, []);
+  const { summary, connected } = useFleetSocket();
 
   const badgeFor = summary
     ? {
@@ -81,15 +80,16 @@ export default function Layout() {
             <p className="text-sm font-medium text-slate-200">central-backend</p>
           </div>
           <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span
+                className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}
+              />
+              <span className="text-xs text-slate-500">{connected ? 'Live' : 'Reconnecting...'}</span>
+            </div>
             <div className="h-9 w-9 rounded-full bg-gradient-to-br from-slate-700 to-slate-800 ring-1 ring-slate-700" />
           </div>
         </header>
         <main className="flex-1 px-8 py-6">
-          {error && (
-            <div className="mb-4 rounded-lg border border-rose-500/40 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-              Failed to load fleet summary from central-backend: {error.message}
-            </div>
-          )}
           <Outlet />
         </main>
       </div>

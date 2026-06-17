@@ -1,11 +1,16 @@
+import { createServer } from 'node:http';
 import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { logger } from './utils/logger.js';
 import * as poller from './services/poller.js';
+import * as wsHub from './services/wsHub.js';
 
 const app = createApp();
+const server = createServer(app);
 
-app.listen(config.server.port, config.server.host, () => {
+wsHub.attach(server);
+
+server.listen(config.server.port, config.server.host, () => {
   logger.info(`central-backend listening on http://${config.server.host}:${config.server.port}`);
   poller.start();
 });

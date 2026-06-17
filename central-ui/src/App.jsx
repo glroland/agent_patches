@@ -6,18 +6,21 @@ import AgentDetail from './pages/AgentDetail';
 import Approvals from './pages/Approvals';
 import Issues from './pages/Issues';
 import FleetChat from './pages/FleetChat';
+import { FleetSocketProvider } from './hooks/useFleetSocket';
 
 export default function App() {
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/agents" element={<Agents />} />
-        <Route path="/agents/:id" element={<AgentDetail />} />
-        <Route path="/approvals" element={<Approvals />} />
-        <Route path="/issues" element={<Issues />} />
-        <Route path="/chat" element={<FleetChat />} />
-      </Route>
-    </Routes>
+    <FleetSocketProvider>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/agents" element={<Agents />} />
+          <Route path="/agents/:id" element={<AgentDetail />} />
+          <Route path="/approvals" element={<Approvals />} />
+          <Route path="/issues" element={<Issues />} />
+          <Route path="/chat" element={<FleetChat />} />
+        </Route>
+      </Routes>
+    </FleetSocketProvider>
   );
 }
