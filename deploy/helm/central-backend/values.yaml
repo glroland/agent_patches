@@ -1,9 +1,13 @@
 replicaCount: 1
 
+global:
+  clusterDomain: apps.example.com
+
 image:
-   repository: registry.home.glroland.com/agent_patches/central-backend
-   tag: latest
-   pullPolicy: IfNotPresent
+  name: central-backend
+  registry: registry.home.glroland.com/agent_patches
+  tag: latest
+  pullPolicy: IfNotPresent
 
 containerPort: 8080
 
@@ -29,7 +33,6 @@ secret:
 env:
   HOST: "0.0.0.0"
   PORT: "8080"
-  CORS_ORIGIN: "http://localhost:5173"
   AGENT_POLL_INTERVAL_SECONDS: "60"
   AGENT_INVENTORY_FILE: "./inventory.example.csv"
   LOG_LEVEL: "info"

@@ -1,7 +1,11 @@
+global:
+  registry: registry.home.glroland.com/agent_patches
+  tag: "4"
+  clusterDomain: apps.home.glroland.com
+
 central-backend:
   image:
-    repository: central-backend
-    tag: 4
+    name: central-backend
     pullPolicy: IfNotPresent
   containerPort: 8080
   service:
@@ -9,18 +13,14 @@ central-backend:
   env:
     HOST: "0.0.0.0"
     PORT: "8080"
-    CORS_ORIGIN: "http://central-ui:8080"
     AGENT_POLL_INTERVAL_SECONDS: "60"
     AGENT_INVENTORY_FILE: "./inventory.example.csv"
     LOG_LEVEL: "info"
 
 central-ui:
   image:
-    repository: central-ui
-    tag: latest
+    name: central-ui
     pullPolicy: IfNotPresent
   containerPort: 8080
   service:
     port: 8080
-  env:
-    BACKEND_URL: "http://central-backend:8080"

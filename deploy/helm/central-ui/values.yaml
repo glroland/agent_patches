@@ -1,7 +1,11 @@
 replicaCount: 1
 
+global:
+  clusterDomain: apps.example.com
+
 image:
-  repository: registry.home.glroland.com/agent_patches/central-ui
+  name: central-ui
+  registry: registry.home.glroland.com/agent_patches
   tag: latest
   pullPolicy: IfNotPresent
 
@@ -18,11 +22,6 @@ resources:
   requests:
     cpu: 50m
     memory: 64Mi
-
-# BACKEND_URL is the internal cluster URL of the central-backend service.
-# nginx uses this at container start to configure its proxy_pass for /api and /ws.
-env:
-  BACKEND_URL: "http://central-backend:8080"
 
 nodeSelector: {}
 
