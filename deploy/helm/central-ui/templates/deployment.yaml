@@ -18,6 +18,7 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.global.registry | default .Values.image.registry }}/{{ .Values.image.name }}:{{ .Values.global.tag | default .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["-c", "/etc/nginx/nginx-custom.conf", "-g", "daemon off;"]
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
@@ -33,7 +34,8 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
             - name: nginx-config
-              mountPath: /etc/nginx/conf.d
+              mountPath: /etc/nginx/nginx-custom.conf
+              subPath: nginx.conf
               readOnly: true
       volumes:
         - name: nginx-config
