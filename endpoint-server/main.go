@@ -33,6 +33,7 @@ import (
 	"agent_patches/endpoint-server/skills/read_agent_memory"
 	"agent_patches/endpoint-server/skills/report_findings"
 	"agent_patches/endpoint-server/skills/request_approval"
+	"agent_patches/endpoint-server/skills/run_approved_command"
 	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
@@ -133,6 +134,13 @@ func main() {
 		return
 	}
 	registry.Register(requestApprovalTool)
+
+	runApprovedCommandTool, err := run_approved_command.NewRunApprovedCommandTool(mem)
+	if err != nil {
+		slog.Error("failed to create run_approved_command tool", "error", err)
+		return
+	}
+	registry.Register(runApprovedCommandTool)
 
 	hostInfo, err := capture_system_info.Gather()
 	if err != nil {

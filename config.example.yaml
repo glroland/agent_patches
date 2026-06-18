@@ -77,10 +77,48 @@ responsibilities:
   - name: disk-space-check
     frequency: "1h"
     instruction: |
-      Check disk usage on all mounted filesystems. If any filesystem is above
-      90% capacity, identify the largest contributors and report them.
+      Check disk usage on all mounted filesystems. Review disk space usage,
+      SMART health, and the largest directories and files on each disk.
+      If any filesystem is above 90% capacity or a SMART failure is detected,
+      identify the root cause. For space issues, propose a specific shell
+      command that could help resolve the problem (e.g. clearing old logs,
+      temporary files, or unused packages) and use run_approved_command to
+      submit it for operator approval before running it. Do not propose
+      commands for SMART hardware failures — report those findings only.
     tools:
       - check_drives
+      - run_approved_command
+    when_to_notify: "on error"
+  - name: memory-utilization-check
+    frequency: "30m"
+    instruction: |
+      Check memory utilization on this host. Report total RAM, used memory,
+      available memory, and swap usage. If memory usage is above 80%, consider
+      whether the pressure is persistent and whether action is warranted. For
+      critical memory pressure above 90%, propose a specific shell command to
+      help relieve it — for example, clearing the page cache
+      (sync; echo 1 > /proc/sys/vm/drop_caches) or listing top memory consumers
+      (ps aux --sort=-%mem | head -20) — and submit it via run_approved_command
+      for operator approval before running anything. Do not act if memory is
+      within normal bounds.
+    tools:
+      - analyze_memory_utilization
+      - run_approved_command
+    when_to_notify: "on error"
+  - name: network-utilization-check
+    frequency: "1h"
+    instruction: |
+      Check network utilization on all active interfaces. Report upload and
+      download rates. If any interface shows unusually high or unexpected
+      traffic, investigate. When excessive or suspicious network activity is
+      detected, propose a diagnostic command — for example, listing active
+      connections and the processes behind them
+      (ss -tunap | head -40) — and submit it via run_approved_command for
+      operator approval before running anything. Report findings even when no
+      action is needed; only propose a command when traffic is clearly anomalous.
+    tools:
+      - analyze_network_utilization
+      - run_approved_command
     when_to_notify: "on error"
   - name: daily-summary
     time: "07:00"
