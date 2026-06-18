@@ -28,7 +28,7 @@ spec:
               value: {{ $value | quote }}
             {{- end }}
             - name: BACKEND_URL
-              value: {{ printf "https://%s-backend.%s" .Release.Name .Values.global.clusterDomain | quote }}
+              value: {{ printf "http://%s:%d" .Values.backend.serviceName (int .Values.backend.servicePort) | quote }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- with .Values.nodeSelector }}

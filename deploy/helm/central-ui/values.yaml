@@ -23,6 +23,10 @@ resources:
     cpu: 50m
     memory: 64Mi
 
+backend:
+  serviceName: central-backend
+  servicePort: 8080
+
 nodeSelector: {}
 
 tolerations: []
