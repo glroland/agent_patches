@@ -1,6 +1,6 @@
 global:
   registry: registry.home.glroland.com/agent_patches
-  tag: "8"
+  tag: "9"
   clusterDomain: apps.ocp.home.glroland.com
 
 central-backend:
