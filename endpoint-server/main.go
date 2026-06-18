@@ -20,6 +20,7 @@ import (
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/approvalapi"
+	"agent_patches/endpoint-server/loginmonitor"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/memoryapi"
@@ -181,6 +182,8 @@ func main() {
 
 	card := buildAgentCard(cardURL, cfg, registry)
 
+	loginMon := loginmonitor.New(mem)
+
 	lp := loop.New(cfg, registry, notify)
 	statusSvc := status.New(hostInfo, mem, lp)
 	memorySvc := memoryapi.New(mem)
@@ -216,6 +219,7 @@ func main() {
 	// handlers (and the tools they call) abort promptly on SIGTERM/SIGINT.
 	srv.BaseContext = func(_ net.Listener) context.Context { return ctx }
 
+	loginMon.Start(ctx)
 	lp.Start(ctx)
 
 	go func() {

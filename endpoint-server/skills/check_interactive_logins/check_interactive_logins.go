@@ -7,207 +7,134 @@ import (
 	"strings"
 	"time"
 
-	"github.com/godbus/dbus/v5"
-
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/logind"
+	"agent_patches/endpoint-server/loginmonitor"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skillstate"
 )
 
-const (
-	logindDest   = "org.freedesktop.login1"
-	logindPath   = dbus.ObjectPath("/org/freedesktop/login1")
-	logindIface  = "org.freedesktop.login1.Manager"
-	sessionIface = "org.freedesktop.login1.Session"
-)
-
-// SessionInfo holds the properties of an active login session.
-type SessionInfo struct {
-	ID          string
-	Username    string
-	Class       string // "user", "greeter", "lock-screen", "background"
-	SessionType string // "tty", "x11", "wayland", "mir", "unspecified"
-	Seat        string
-	Remote      bool
-	RemoteHost  string
-	RemoteUser  string
-	TTY         string
-	Display     string
-	Leader      uint32 // PID of the session leader process
-	Timestamp   time.Time
-}
-
-type loginSessionsInput struct{}
-
-// NewLoginSessionsTool returns a task tool that reports currently active
-// login sessions on the host via the systemd-logind D-Bus API.
-// On hosts without systemd-logind (e.g. macOS, Windows) it reports that
-// session enumeration is unavailable. The result is also recorded as the
-// skill's last known state (see skillstate), surfaced in GET /status.
+// NewLoginSessionsTool returns a tool that reports active login sessions and
+// recent login/logout history recorded by the loginmonitor background service.
+// When no history is available yet (monitor not running, or first start), it
+// falls back to a live D-Bus query so the tool is always useful.
 func NewLoginSessionsTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"check_interactive_logins",
-		"Lists currently active login sessions on the host, including the "+
-			"user, session type, and whether the session originated remotely. "+
+		"Reports currently active login sessions and recent login/logout history. "+
+			"History is maintained by a background monitor that watches systemd-logind "+
+			"D-Bus signals, so it captures events between skill invocations. "+
+			"Falls back to a live snapshot when no history is available. "+
 			"Requires systemd-logind; unavailable on macOS and Windows.",
-		func(_ context.Context, _ loginSessionsInput) (string, error) {
+		func(_ context.Context, _ struct{}) (string, error) {
 			slog.Info("check_interactive_logins: starting")
-			sessions, err := listSessions()
+
+			history, err := loginmonitor.ReadHistory(mem)
 			if err != nil {
-				slog.Info("check_interactive_logins: completed", "result", "unavailable", "error", err)
-				_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, fmt.Sprintf("session enumeration unavailable: %v", err))
-				return fmt.Sprintf("Login session enumeration unavailable: %v", err), nil
+				slog.Warn("check_interactive_logins: could not read history, falling back to live query", "error", err)
 			}
-			if len(sessions) == 0 {
-				slog.Info("check_interactive_logins: completed", "sessions", 0)
-				_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, "no active login sessions")
-				return "No active login sessions.", nil
+
+			if len(history) > 0 {
+				return reportFromHistory(mem, history), nil
 			}
-			report := BuildReport(sessions)
-			slog.Info("check_interactive_logins: completed", "sessions", len(sessions), "output_len", len(report))
-			_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, fmt.Sprintf("%d active login session(s)", len(sessions)))
-			return report, nil
+
+			// No history yet — live fallback.
+			return liveReport(mem), nil
 		},
 	)
 }
 
-// listSessions connects to the system D-Bus, enumerates all sessions known
-// to logind, and fetches their properties.
-func listSessions() ([]SessionInfo, error) {
-	slog.Debug("check_interactive_logins: connecting to system D-Bus")
-	conn, err := dbus.ConnectSystemBus()
-	if err != nil {
-		return nil, fmt.Errorf("connect to system bus: %w", err)
-	}
-	defer conn.Close()
+// reportFromHistory builds a two-section report from recorded history:
+// active sessions and recent activity.
+func reportFromHistory(mem *memory.Store, history []loginmonitor.LoginEvent) string {
+	active := loginmonitor.ActiveSessions(history)
 
-	obj := conn.Object(logindDest, logindPath)
-
-	var rawSessions []struct {
-		ID   string
-		UID  uint32
-		User string
-		Seat string
-		Path dbus.ObjectPath
-	}
-	slog.Debug("check_interactive_logins: calling ListSessions")
-	if err := obj.Call(logindIface+".ListSessions", 0).Store(&rawSessions); err != nil {
-		return nil, fmt.Errorf("ListSessions: %w", err)
-	}
-	slog.Debug("check_interactive_logins: ListSessions returned", "count", len(rawSessions))
-
-	sessions := make([]SessionInfo, 0, len(rawSessions))
-	for _, rs := range rawSessions {
-		info, err := fetchSessionInfo(conn, rs.Path)
-		if err != nil {
-			slog.Debug("check_interactive_logins: skipping session", "id", rs.ID, "error", err)
-			continue
-		}
-		info.ID = rs.ID
-		if info.Username == "" {
-			info.Username = rs.User
-		}
-		if info.Seat == "" {
-			info.Seat = rs.Seat
-		}
-		sessions = append(sessions, *info)
-	}
-	return sessions, nil
-}
-
-// fetchSessionInfo calls GetAll on the session D-Bus object and maps the
-// returned variant map to a SessionInfo.
-func fetchSessionInfo(conn *dbus.Conn, path dbus.ObjectPath) (*SessionInfo, error) {
-	obj := conn.Object(logindDest, path)
-
-	var props map[string]dbus.Variant
-	if err := obj.Call("org.freedesktop.DBus.Properties.GetAll", 0, sessionIface).Store(&props); err != nil {
-		return nil, fmt.Errorf("GetAll(%s): %w", path, err)
-	}
-
-	info := &SessionInfo{}
-
-	if v, ok := props["Name"]; ok {
-		info.Username, _ = v.Value().(string)
-	}
-	if v, ok := props["Class"]; ok {
-		info.Class, _ = v.Value().(string)
-	}
-	if v, ok := props["Type"]; ok {
-		info.SessionType, _ = v.Value().(string)
-	}
-	if v, ok := props["Seat"]; ok {
-		if seat, ok := v.Value().([]interface{}); ok && len(seat) > 0 {
-			info.Seat, _ = seat[0].(string)
-		}
-	}
-	if v, ok := props["Remote"]; ok {
-		info.Remote, _ = v.Value().(bool)
-	}
-	if v, ok := props["RemoteHost"]; ok {
-		info.RemoteHost, _ = v.Value().(string)
-	}
-	if v, ok := props["RemoteUser"]; ok {
-		info.RemoteUser, _ = v.Value().(string)
-	}
-	if v, ok := props["TTY"]; ok {
-		info.TTY, _ = v.Value().(string)
-	}
-	if v, ok := props["Display"]; ok {
-		info.Display, _ = v.Value().(string)
-	}
-	if v, ok := props["Leader"]; ok {
-		info.Leader, _ = v.Value().(uint32)
-	}
-	if v, ok := props["Timestamp"]; ok {
-		// logind reports microseconds since the Unix epoch (UTC).
-		if usec, ok := v.Value().(uint64); ok && usec > 0 {
-			info.Timestamp = time.UnixMicro(int64(usec)).UTC()
-		}
-	}
-
-	return info, nil
-}
-
-// BuildReport composes a human-readable summary of active login sessions.
-func BuildReport(sessions []SessionInfo) string {
 	var sb strings.Builder
-	for i, info := range sessions {
-		fmt.Fprintf(&sb, "Session ID:   %s\n", info.ID)
-		fmt.Fprintf(&sb, "User:         %s\n", info.Username)
-		if info.Class != "" {
-			fmt.Fprintf(&sb, "Class:        %s\n", info.Class)
-		}
-		fmt.Fprintf(&sb, "Session type: %s\n", info.SessionType)
-		if info.Seat != "" {
-			fmt.Fprintf(&sb, "Seat:         %s\n", info.Seat)
-		}
-		if info.TTY != "" {
-			fmt.Fprintf(&sb, "TTY:          %s\n", info.TTY)
-		}
-		if info.Display != "" {
-			fmt.Fprintf(&sb, "Display:      %s\n", info.Display)
-		}
-		if info.Remote {
-			fmt.Fprintf(&sb, "Origin:       remote\n")
-			if info.RemoteHost != "" {
-				fmt.Fprintf(&sb, "From host:    %s\n", info.RemoteHost)
+
+	// Section 1: active sessions.
+	sb.WriteString("=== Active Sessions ===\n")
+	if len(active) == 0 {
+		sb.WriteString("No active login sessions.\n")
+	} else {
+		for i, ev := range active {
+			fmt.Fprintf(&sb, "Session ID:   %s\n", ev.SessionID)
+			fmt.Fprintf(&sb, "User:         %s\n", ev.Username)
+			if ev.Class != "" {
+				fmt.Fprintf(&sb, "Class:        %s\n", ev.Class)
 			}
-			if info.RemoteUser != "" {
-				fmt.Fprintf(&sb, "Remote user:  %s\n", info.RemoteUser)
+			if ev.SessionType != "" {
+				fmt.Fprintf(&sb, "Session type: %s\n", ev.SessionType)
 			}
-		} else {
-			fmt.Fprintf(&sb, "Origin:       local console\n")
-		}
-		if info.Leader > 0 {
-			fmt.Fprintf(&sb, "Leader PID:   %d\n", info.Leader)
-		}
-		if !info.Timestamp.IsZero() {
-			fmt.Fprintf(&sb, "Started:      %s\n", info.Timestamp.Format(time.RFC1123))
-		}
-		if i < len(sessions)-1 {
-			fmt.Fprintf(&sb, "\n")
+			if ev.TTY != "" {
+				fmt.Fprintf(&sb, "TTY:          %s\n", ev.TTY)
+			}
+			if ev.Remote {
+				fmt.Fprintf(&sb, "Origin:       remote\n")
+				if ev.RemoteHost != "" {
+					fmt.Fprintf(&sb, "From host:    %s\n", ev.RemoteHost)
+				}
+			} else {
+				fmt.Fprintf(&sb, "Origin:       local console\n")
+			}
+			fmt.Fprintf(&sb, "Since:        %s\n", ev.Timestamp.Format(time.RFC1123))
+			if i < len(active)-1 {
+				sb.WriteString("\n")
+			}
 		}
 	}
+
+	// Section 2: recent activity (last 50 events, newest first).
+	sb.WriteString("\n=== Recent Activity ===\n")
+	start := 0
+	if len(history) > 50 {
+		start = len(history) - 50
+	}
+	recent := history[start:]
+	for i := len(recent) - 1; i >= 0; i-- {
+		ev := recent[i]
+		origin := "local"
+		if ev.Remote {
+			origin = "remote"
+			if ev.RemoteHost != "" {
+				origin = "remote:" + ev.RemoteHost
+			}
+		}
+		tty := ev.TTY
+		if tty == "" {
+			tty = ev.SessionType
+		}
+		fmt.Fprintf(&sb, "[%s] %-8s %-16s %-12s (%s)\n",
+			ev.Timestamp.UTC().Format("2006-01-02 15:04 UTC"),
+			string(ev.EventType),
+			ev.Username,
+			tty,
+			origin,
+		)
+	}
+
+	state := fmt.Sprintf("%d active session(s); %d history events", len(active), len(history))
+	_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, state)
+	slog.Info("check_interactive_logins: completed from history", "active", len(active), "history", len(history))
 	return sb.String()
+}
+
+// liveReport falls back to a direct D-Bus query when no history exists.
+func liveReport(mem *memory.Store) string {
+	sessions, err := logind.ListSessions()
+	if err != nil {
+		slog.Info("check_interactive_logins: live query unavailable", "error", err)
+		_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK,
+			fmt.Sprintf("session enumeration unavailable: %v", err))
+		return fmt.Sprintf("Login session enumeration unavailable: %v\n(Background login monitor has not recorded any history yet.)", err)
+	}
+	if len(sessions) == 0 {
+		slog.Info("check_interactive_logins: completed (live), no sessions")
+		_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, "no active login sessions")
+		return "No active login sessions.\n(Background login monitor has not recorded any history yet.)"
+	}
+	report := logind.BuildReport(sessions)
+	slog.Info("check_interactive_logins: completed (live)", "sessions", len(sessions))
+	_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK,
+		fmt.Sprintf("%d active login session(s)", len(sessions)))
+	return report + "\n(Background login monitor has not recorded any history yet.)"
 }
