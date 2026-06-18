@@ -1,4 +1,31 @@
+replicaCount: 1
+
 image:
-   repository: registry.home.glroland.com/ai/central-ui
-   tag: latest
-   pullPolicy: IfNotPresent
+  repository: registry.home.glroland.com/agent_patches/central-ui
+  tag: latest
+  pullPolicy: IfNotPresent
+
+containerPort: 8080
+
+service:
+  type: ClusterIP
+  port: 8080
+
+resources:
+  limits:
+    cpu: 100m
+    memory: 128Mi
+  requests:
+    cpu: 50m
+    memory: 64Mi
+
+# BACKEND_URL is the internal cluster URL of the central-backend service.
+# nginx uses this at container start to configure its proxy_pass for /api and /ws.
+env:
+  BACKEND_URL: "http://central-backend:8080"
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}

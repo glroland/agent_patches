@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-   repository: registry.home.glroland.com/ai/central-backend
+   repository: registry.home.glroland.com/agent_patches/central-backend
    tag: latest
    pullPolicy: IfNotPresent
 

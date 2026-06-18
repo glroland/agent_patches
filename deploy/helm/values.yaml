@@ -24,4 +24,4 @@ central-ui:
   service:
     port: 8080
   env:
-    VITE_API_BASE_URL: "http://central-backend:8080/api"
+    BACKEND_URL: "http://central-backend:8080"
