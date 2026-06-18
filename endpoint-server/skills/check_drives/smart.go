@@ -1,6 +1,7 @@
 package check_drives
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -53,7 +54,7 @@ var criticalATAAttrs = map[int]string{
 // device-mapper/LVM mappings where applicable) and returns a S.M.A.R.T.
 // health summary for each. If device cannot be resolved to any physical
 // disk, or smartctl is unavailable, the result is empty.
-func CheckSmart(device string) []SmartReport {
+func CheckSmart(ctx context.Context, device string) []SmartReport {
 	physical := parentDevices(device)
 	if len(physical) == 0 {
 		slog.Debug("check_drives: cannot resolve physical device for SMART check", "device", device)
@@ -61,14 +62,14 @@ func CheckSmart(device string) []SmartReport {
 	}
 	reports := make([]SmartReport, 0, len(physical))
 	for _, dev := range physical {
-		reports = append(reports, checkSmartDevice(dev))
+		reports = append(reports, checkSmartDevice(ctx, dev))
 	}
 	return reports
 }
 
 // checkSmartDevice runs smartctl against a physical disk device and
 // summarizes the result.
-func checkSmartDevice(device string) SmartReport {
+func checkSmartDevice(ctx context.Context, device string) SmartReport {
 	report := SmartReport{Device: device}
 
 	if _, err := exec.LookPath("smartctl"); err != nil {
@@ -78,7 +79,7 @@ func checkSmartDevice(device string) SmartReport {
 
 	args := []string{"-H", "-A", "-j", device}
 	slog.Info("check_drives: running command", "command", "smartctl", "args", args)
-	data, err := exec.Command("smartctl", args...).Output() //nolint:gosec
+	data, err := exec.CommandContext(ctx, "smartctl", args...).Output() //nolint:gosec
 	if err != nil && len(data) == 0 {
 		slog.Info("check_drives: command failed", "command", "smartctl", "device", device, "error", err)
 		return report

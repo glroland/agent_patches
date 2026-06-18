@@ -191,6 +191,10 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Propagate the signal context into every in-flight HTTP request so that
+	// handlers (and the tools they call) abort promptly on SIGTERM/SIGINT.
+	srv.BaseContext = func(_ net.Listener) context.Context { return ctx }
+
 	lp.Start(ctx)
 
 	go func() {

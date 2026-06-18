@@ -55,7 +55,7 @@ func NewDiskUsageTool(mem *memory.Store) (tool.Tool, error) {
 			"including total, used, and free space per mount point, the top "+
 			"largest directories and files on each disk, and S.M.A.R.T. health "+
 			"status for the underlying physical disk (when available).",
-		func(_ context.Context, _ diskUsageInput) (string, error) {
+		func(ctx context.Context, _ diskUsageInput) (string, error) {
 			slog.Info("check_drives: starting")
 			disks, err := localDisks()
 			if err != nil {
@@ -70,8 +70,8 @@ func NewDiskUsageTool(mem *memory.Store) (tool.Tool, error) {
 				_ = skillstate.Save(mem, "check_drives", skillstate.HealthOK, "no local disks found")
 				return "No local disks found.", nil
 			}
-			smartCache := collectSmartReports(disks)
-			report := buildReport(disks, smartCache)
+			smartCache := collectSmartReports(ctx, disks)
+			report := buildReport(ctx, disks, smartCache)
 			slog.Info("check_drives: completed", "disks", len(disks), "output_len", len(report))
 			health, summary := diskHealth(disks, smartCache)
 			_ = skillstate.Save(mem, "check_drives", health, summary)
@@ -183,12 +183,14 @@ func isPreferredMount(mount string) bool {
 const topLargestCount = 3
 
 // BuildReport composes a human-readable summary of disk usage.
+// Uses context.Background() — call buildReport directly when a live context is available.
 func BuildReport(disks []DiskStat) string {
-	return buildReport(disks, collectSmartReports(disks))
+	ctx := context.Background()
+	return buildReport(ctx, disks, collectSmartReports(ctx, disks))
 }
 
 // collectSmartReports runs CheckSmart once per distinct device.
-func collectSmartReports(disks []DiskStat) map[string][]SmartReport {
+func collectSmartReports(ctx context.Context, disks []DiskStat) map[string][]SmartReport {
 	cache := make(map[string][]SmartReport)
 	for _, d := range disks {
 		if d.Device == "" {
@@ -196,7 +198,7 @@ func collectSmartReports(disks []DiskStat) map[string][]SmartReport {
 		}
 		if _, ok := cache[d.Device]; !ok {
 			slog.Debug("check_drives: checking SMART status", "device", d.Device)
-			cache[d.Device] = CheckSmart(d.Device)
+			cache[d.Device] = CheckSmart(ctx, d.Device)
 		}
 	}
 	return cache
@@ -204,7 +206,7 @@ func collectSmartReports(disks []DiskStat) map[string][]SmartReport {
 
 // buildReport composes a human-readable summary of disk usage, using
 // pre-fetched SMART reports keyed by device.
-func buildReport(disks []DiskStat, smartCache map[string][]SmartReport) string {
+func buildReport(ctx context.Context, disks []DiskStat, smartCache map[string][]SmartReport) string {
 	var sb strings.Builder
 	for i, d := range disks {
 		fmt.Fprintf(&sb, "Mount:      %s\n", d.Mount)
@@ -237,7 +239,7 @@ func buildReport(disks []DiskStat, smartCache map[string][]SmartReport) string {
 		}
 
 		slog.Debug("check_drives: scanning for largest entries", "mount", d.Mount)
-		dirs, files, err := TopLargest(d.Mount, topLargestCount)
+		dirs, files, err := TopLargest(ctx, d.Mount, topLargestCount)
 		if err != nil {
 			slog.Debug("check_drives: scan failed", "mount", d.Mount, "error", err)
 		} else {

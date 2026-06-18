@@ -13,6 +13,7 @@ Environment=AGENT_PATCHES_CONFIG=/opt/agent_patches/config/config.yaml
 
 Restart=on-failure
 RestartSec=10s
+TimeoutStopSec=35
 
 StandardOutput=journal
 StandardError=journal

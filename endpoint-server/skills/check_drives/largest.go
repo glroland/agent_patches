@@ -1,6 +1,7 @@
 package check_drives
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -89,8 +90,8 @@ type dirNode struct {
 // whichever unexplored subdirectory currently looks largest, applying the
 // same depth-1 technique. Sizes are propagated up to ancestors as
 // descendants are discovered, refining the directory totals. The scan stops
-// once maxDirsExplored directories have been opened.
-func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, err error) {
+// once maxDirsExplored directories have been opened, or when ctx is cancelled.
+func TopLargest(ctx context.Context, root string, topN int) (dirs []SizedEntry, files []SizedEntry, err error) {
 	rootDev, rootDevOK := deviceID(root)
 	queue := []*dirNode{{path: root, dev: rootDev, devOK: rootDevOK}}
 	var candidates []*dirNode
@@ -98,6 +99,9 @@ func TopLargest(root string, topN int) (dirs []SizedEntry, files []SizedEntry, e
 	explored := 0
 
 	for len(queue) > 0 && explored < maxDirsExplored {
+		if ctx.Err() != nil {
+			return nil, nil, ctx.Err()
+		}
 		// Pick the next directory to explore: directories that already look
 		// substantial (>= promoteThreshold) jump ahead of the queue so large
 		// finds get drilled into immediately. Everything else keeps its
