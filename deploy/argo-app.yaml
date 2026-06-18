@@ -1,31 +1,18 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: agent-patches-central
-  namespace: argocd
+  name: agent-patches
 spec:
-  project: default
-
+  destination:
+    name: in-cluster
+    namespace: agent-patches
+    server: https://kubernetes.default.svc
   source:
-    repoURL: https://github.com/glroland/agent_patches.git
-    targetRevision: main
     path: deploy/helm
+    repoURL: https://github.com/glroland/agent_patches.git
+    targetRevision: HEAD
     helm:
       valueFiles:
         - values.yaml
-
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: agent-patches
-
-  syncPolicy:
-    syncOptions:
-      - CreateNamespace=true
-
-  # The AGENT_AUTH_TOKEN secret referenced by central-backend must exist in
-  # the target namespace before sync. Create it once manually:
-  #
-  #   kubectl -n agent-patches create secret generic central-backend-secrets \
-  #     --from-literal=AGENT_AUTH_TOKEN=<token>
-  #
-  # Argo CD will not manage this secret so the token is never stored in git.
+  sources: []
+  project: default

@@ -13,7 +13,6 @@ central-backend:
     AGENT_POLL_INTERVAL_SECONDS: "60"
     AGENT_INVENTORY_FILE: "./inventory.example.csv"
     LOG_LEVEL: "info"
-    AGENT_AUTH_TOKEN: ""
 
 central-ui:
   image:

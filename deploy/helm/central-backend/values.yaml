@@ -19,6 +19,13 @@ resources:
     cpu: 50m
     memory: 64Mi
 
+# Name of the pre-existing Secret that holds AGENT_AUTH_TOKEN.
+# Create it manually before first sync:
+#   kubectl -n agent-patches create secret generic central-backend-secrets \
+#     --from-literal=AGENT_AUTH_TOKEN=<token>
+secret:
+  name: central-backend-secrets
+
 env:
   HOST: "0.0.0.0"
   PORT: "8080"
@@ -26,7 +33,6 @@ env:
   AGENT_POLL_INTERVAL_SECONDS: "60"
   AGENT_INVENTORY_FILE: "./inventory.example.csv"
   LOG_LEVEL: "info"
-  AGENT_AUTH_TOKEN_SECRET: ""
 
 nodeSelector: {}
 
