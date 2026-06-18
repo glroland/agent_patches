@@ -127,6 +127,35 @@ func (p *Patcher) Run(ctx context.Context) (string, error) {
 	return sb.String(), nil
 }
 
+// CheckDistUpgrade reports whether Ubuntu's update infrastructure has flagged
+// a new distribution release on this host. It reads only the well-known
+// notification file that Ubuntu's update-notifier writes when a new release is
+// detected — no commands are executed and no network requests are made.
+//
+// Returns the first non-empty line of that file (e.g. "New release '24.04 LTS'
+// available."), or an empty string when no upgrade has been detected or the
+// file is absent (minimal installs without update-notifier will have no file).
+//
+// The result is informational only. The caller must never apply a distribution
+// upgrade automatically.
+func (p *Patcher) CheckDistUpgrade() string {
+	if p.os != OSDebian {
+		return ""
+	}
+
+	data, err := os.ReadFile("/var/lib/update-notifier/release-upgrade-available")
+	if err != nil {
+		return "" // file absent = no detected upgrade
+	}
+
+	for _, line := range strings.Split(string(data), "\n") {
+		if trimmed := strings.TrimSpace(line); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 // UpdatesAvailable checks whether the package manager reports pending updates
 // without applying them. It returns true when at least one update is pending,
 // along with a human-readable summary of what was found.

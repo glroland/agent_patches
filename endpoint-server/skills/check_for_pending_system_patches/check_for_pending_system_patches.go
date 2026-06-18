@@ -22,6 +22,8 @@ type patchInput struct{}
 // It auto-detects whether the OS is Windows, Debian-based, or Fedora-based,
 // analyzes pending updates including CVE severity, requests operator approval,
 // then runs the appropriate package manager and reboots the system if required.
+// On Debian/Ubuntu it also checks for a distribution upgrade and includes that
+// information in every response, but never offers to perform the dist-upgrade.
 // n may be nil, in which case notifications are silently skipped.
 func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
@@ -29,7 +31,8 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 		"Checks for pending system patches, analyses their CVE severity, requests "+
 			"operator approval via the central dashboard, and — once approved — applies "+
 			"the updates and reboots if required. Detects the OS automatically "+
-			"(Windows, Debian-based Linux, or Fedora-based Linux).",
+			"(Windows, Debian-based Linux, or Fedora-based Linux). On Ubuntu/Debian "+
+			"also reports whether a distribution upgrade is available (informational only).",
 		func(ctx context.Context, _ patchInput) (string, error) {
 			host, _ := os.Hostname()
 			slog.Info("check_for_pending_system_patches: starting", "host", host)
@@ -49,10 +52,28 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 			available, checkOut, err := p.UpdatesAvailable(ctx)
 			if err != nil {
 				slog.Warn("patch: update check failed, proceeding anyway", "error", err)
-			} else if !available {
+			}
+
+			// Check for a distribution upgrade (Debian/Ubuntu only).
+			// Pure file read — no command is executed. Always informational;
+			// never included in the proposed action or applied automatically.
+			distUpgrade := p.CheckDistUpgrade()
+			if distUpgrade != "" {
+				slog.Info("check_for_pending_system_patches: dist-upgrade check", "result", distUpgrade)
+			}
+
+			if !available {
+				result := "System packages are up to date.\n\n" + checkOut
+				if distUpgrade != "" {
+					result += "\n\nDistribution upgrade: " + distUpgrade
+				}
+				stateMsg := "system is up to date"
+				if distUpgrade != "" && strings.Contains(distUpgrade, "New release") {
+					stateMsg = "packages current; " + distUpgrade
+				}
 				slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "up_to_date")
-				_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthOK, "system is up to date")
-				return "No updates available. System is up to date.\n\n" + checkOut, nil
+				_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthOK, stateMsg)
+				return result, nil
 			}
 			slog.Debug("check_for_pending_system_patches: updates available, gathering details")
 
@@ -72,13 +93,17 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 
 			// --- Phase 2: request operator approval ---
 
+			// Build the approval detail with the full update report and, when
+			// present, the dist-upgrade notice. The proposed action covers only
+			// regular package updates — never dist-upgrade.
+			approvalDetail := fmt.Sprintf("Host: %s\nOS: %s\n\nPending updates:\n\n%s", host, p.OS(), updateReport)
+			if distUpgrade != "" {
+				approvalDetail += "\n\nDistribution upgrade status: " + distUpgrade +
+					"\n(Distribution upgrades are reported for information only and will not be applied automatically.)"
+			}
+
 			risk := riskFromUpdates(updates)
 			proposedAction := proposedActionFor(p.OS(), updates)
-
-			approvalDetail := fmt.Sprintf(
-				"Host: %s\nOS: %s\n\nPending updates:\n\n%s",
-				host, p.OS(), updateReport,
-			)
 
 			slog.Info("check_for_pending_system_patches: requesting operator approval",
 				"host", host, "packages", len(updates), "risk", risk)
@@ -98,6 +123,9 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 			switch decision {
 			case "rejected":
 				msg := "Patching cancelled: operator rejected the update request."
+				if distUpgrade != "" {
+					msg += "\n\nDistribution upgrade: " + distUpgrade
+				}
 				slog.Info("check_for_pending_system_patches: operator rejected patching", "host", host)
 				_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthWarning,
 					"patching declined by operator")
@@ -105,6 +133,9 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 
 			case "timed_out":
 				msg := "Patching skipped: no operator response within the approval window."
+				if distUpgrade != "" {
+					msg += "\n\nDistribution upgrade: " + distUpgrade
+				}
 				slog.Info("check_for_pending_system_patches: approval timed out", "host", host)
 				_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthWarning,
 					"patching approval timed out")
@@ -132,13 +163,17 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 				return fmt.Sprintf("%serror: %v", log, err), nil
 			}
 
+			result := log
+			if distUpgrade != "" {
+				result += "\n\nDistribution upgrade: " + distUpgrade
+			}
 			slog.Info("check_for_pending_system_patches: completed", "host", host, "result", "patched", "output_len", len(log))
 			n.Notify(ctx,
 				fmt.Sprintf("[%s] Patch Complete", host),
 				fmt.Sprintf("System patch completed successfully on host %q.\n\nOutput:\n%s", host, log),
 			)
 			_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthOK, "updates applied successfully")
-			return log, nil
+			return result, nil
 		},
 	)
 }
