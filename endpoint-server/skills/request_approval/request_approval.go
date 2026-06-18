@@ -50,10 +50,75 @@ type requestApprovalInput struct {
 	Risk           string `json:"risk" jsonschema_description:"Risk level of the proposed action: low, medium, or high."`
 }
 
-// NewRequestApprovalTool returns a tool that blocks until an operator approves
-// or rejects via the central dashboard. It returns "approved", "rejected", or
-// "timed_out". Use it before any action that modifies system state or carries
-// medium-to-high risk.
+// RequestApproval writes a pending approval to durable agent memory and blocks
+// until the operator decides via the central dashboard.
+//
+// Returns "approved", "rejected", or "timed_out". Returns an error only on
+// context cancellation. The state lives on disk so both the poller and the
+// decision endpoint survive independent restarts.
+func RequestApproval(ctx context.Context, mem *memory.Store, title, detail, proposedAction, risk string) (string, error) {
+	id := newUUID()
+	attrKey := AttrsKey(id)
+	now := time.Now()
+
+	entry := ApprovalEntry{
+		ID:             id,
+		Title:          title,
+		Detail:         detail,
+		ProposedAction: proposedAction,
+		Risk:           risk,
+		Status:         "pending",
+		RequestedAt:    now,
+	}
+
+	// Durable write — the decision endpoint updates this; this loop polls it.
+	if err := mem.Attrs().Set(attrKey, entry); err != nil {
+		return "", fmt.Errorf("request_approval: write attrs: %w", err)
+	}
+
+	// Timeline entry so the operator dashboard shows the pending request.
+	// The entry ID matches the approval UUID so the decision handler can
+	// locate and update it when a decision arrives.
+	if err := writeTimeline(mem, id, title, detail, proposedAction, risk, now); err != nil {
+		slog.Warn("request_approval: failed to write timeline entry", "id", id, "error", err)
+	}
+
+	slog.Info("request_approval: waiting for operator decision", "id", id, "title", title)
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	timeout := time.NewTimer(defaultTimeout)
+	defer timeout.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			_ = patchAttrs(mem, attrKey, "cancelled", "", nil)
+			return "", ctx.Err()
+
+		case <-timeout.C:
+			t := time.Now()
+			_ = patchAttrs(mem, attrKey, "timed_out", "", &t)
+			_ = PatchTimeline(mem, id, "timed_out")
+			return "timed_out", nil
+
+		case <-ticker.C:
+			var current ApprovalEntry
+			if err := mem.Attrs().Get(attrKey, &current); err != nil {
+				slog.Warn("request_approval: poll read failed", "id", id, "error", err)
+				continue
+			}
+			if current.Status != "pending" {
+				slog.Info("request_approval: decision received", "id", id, "decision", current.Status)
+				_ = PatchTimeline(mem, id, current.Status)
+				return current.Status, nil
+			}
+		}
+	}
+}
+
+// NewRequestApprovalTool wraps RequestApproval as an agent tool the LLM can
+// invoke directly from the tool-use loop.
 func NewRequestApprovalTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"request_approval",
@@ -63,85 +128,26 @@ func NewRequestApprovalTool(mem *memory.Store) (tool.Tool, error) {
 			"\"timed_out\". Always use this before actions that modify system state, remove "+
 			"data, restart services, or carry medium-to-high risk.",
 		func(ctx context.Context, in requestApprovalInput) (string, error) {
-			id := newUUID()
-			attrKey := AttrsKey(id)
-			now := time.Now()
-
-			entry := ApprovalEntry{
-				ID:             id,
-				Title:          in.Title,
-				Detail:         in.Detail,
-				ProposedAction: in.ProposedAction,
-				Risk:           in.Risk,
-				Status:         "pending",
-				RequestedAt:    now,
-			}
-
-			// Durable write — this is what the decision endpoint updates and what
-			// this loop polls. Survives restarts on both sides.
-			if err := mem.Attrs().Set(attrKey, entry); err != nil {
-				return "", fmt.Errorf("request_approval: write attrs: %w", err)
-			}
-
-			// Timeline entry lets the dashboard display the pending request.
-			// The entry ID matches the approval ID so the decision handler can
-			// update the timeline status when a decision arrives.
-			if err := writeTimeline(mem, id, in, now); err != nil {
-				slog.Warn("request_approval: failed to write timeline entry", "id", id, "error", err)
-			}
-
-			slog.Info("request_approval: waiting for operator decision", "id", id, "title", in.Title)
-
-			ticker := time.NewTicker(pollInterval)
-			defer ticker.Stop()
-			timeout := time.NewTimer(defaultTimeout)
-			defer timeout.Stop()
-
-			for {
-				select {
-				case <-ctx.Done():
-					_ = patchAttrs(mem, attrKey, "cancelled", "", nil)
-					return "", ctx.Err()
-
-				case <-timeout.C:
-					t := time.Now()
-					_ = patchAttrs(mem, attrKey, "timed_out", "", &t)
-					_ = PatchTimeline(mem, id, "timed_out")
-					return "timed_out", nil
-
-				case <-ticker.C:
-					var current ApprovalEntry
-					if err := mem.Attrs().Get(attrKey, &current); err != nil {
-						slog.Warn("request_approval: poll read failed", "id", id, "error", err)
-						continue
-					}
-					if current.Status != "pending" {
-						slog.Info("request_approval: decision received", "id", id, "decision", current.Status)
-						_ = PatchTimeline(mem, id, current.Status)
-						return current.Status, nil
-					}
-				}
-			}
+			return RequestApproval(ctx, mem, in.Title, in.Detail, in.ProposedAction, in.Risk)
 		},
 	)
 }
 
 // writeTimeline prepends an approval entry to the timeline domain.
-func writeTimeline(mem *memory.Store, id string, in requestApprovalInput, now time.Time) error {
+func writeTimeline(mem *memory.Store, id, title, detail, proposedAction, risk string, now time.Time) error {
 	d := mem.Domain("timeline")
 	var entries []status.TimelineEntry
 	_ = d.ReadCurrent(&entries)
 
-	proposed := in.ProposedAction
 	pending := "pending"
 	entries = append([]status.TimelineEntry{{
 		ID:             id,
 		Time:           now.Format(time.RFC3339),
 		Type:           "approval",
-		Title:          in.Title,
-		Detail:         in.Detail,
-		Risk:           in.Risk,
-		ProposedAction: &proposed,
+		Title:          title,
+		Detail:         detail,
+		Risk:           risk,
+		ProposedAction: &proposedAction,
 		Status:         &pending,
 	}}, entries...)
 
