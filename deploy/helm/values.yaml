@@ -1,7 +1,7 @@
 central-backend:
   image:
     repository: central-backend
-    tag: latest
+    tag: 4
     pullPolicy: IfNotPresent
   containerPort: 8080
   service:
