@@ -1,7 +1,7 @@
 global:
   registry: registry.home.glroland.com/agent_patches
   tag: "5"
-  clusterDomain: apps.home.glroland.com
+  clusterDomain: apps.ocp.home.glroland.com
 
 central-backend:
   image:
