@@ -1,4 +1,4 @@
-FROM node:20-alpine
+FROM registry.access.redhat.com/ubi9/nodejs-24-minimal:9.8-1781562052
 
 WORKDIR /app
 

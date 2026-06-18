@@ -38,7 +38,7 @@ pipeline
       {
          steps 
          {
-            sh 'cd central-backend ; docker build -f Dockerfile --tag central-backend:$BUILD_NUMBER .'
+            sh 'cd central-backend ; docker build -f Containerfile --tag central-backend:$BUILD_NUMBER .'
             sh 'cd central-backend ; docker save central-backend:$BUILD_NUMBER > central-backend-dockerimage.tar'
             step(followSymlinks: false, artifacts: 'central-backend/central-backend-dockerimage.tar', $class: 'ArtifactArchiver')
             sh 'cd central-backend ; docker rmi central-backend:$BUILD_NUMBER'
