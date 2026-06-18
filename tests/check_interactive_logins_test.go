@@ -7,13 +7,14 @@ import (
 	"testing"
 	"time"
 
+	"agent_patches/endpoint-server/logind"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
 	"agent_patches/endpoint-server/utils/config"
 )
 
 func TestLoginSessions_BuildReport_LocalSession(t *testing.T) {
-	sessions := []check_interactive_logins.SessionInfo{
+	sessions := []logind.SessionInfo{
 		{
 			ID:          "1",
 			Username:    "alice",
@@ -24,7 +25,7 @@ func TestLoginSessions_BuildReport_LocalSession(t *testing.T) {
 			Timestamp:   time.Date(2024, 1, 2, 3, 4, 5, 0, time.UTC),
 		},
 	}
-	report := check_interactive_logins.BuildReport(sessions)
+	report := logind.BuildReport(sessions)
 
 	for _, want := range []string{"alice", "tty1", "local console", "1234"} {
 		if !strings.Contains(report, want) {
@@ -34,7 +35,7 @@ func TestLoginSessions_BuildReport_LocalSession(t *testing.T) {
 }
 
 func TestLoginSessions_BuildReport_RemoteSession(t *testing.T) {
-	sessions := []check_interactive_logins.SessionInfo{
+	sessions := []logind.SessionInfo{
 		{
 			ID:          "2",
 			Username:    "bob",
@@ -44,7 +45,7 @@ func TestLoginSessions_BuildReport_RemoteSession(t *testing.T) {
 			RemoteUser:  "bob",
 		},
 	}
-	report := check_interactive_logins.BuildReport(sessions)
+	report := logind.BuildReport(sessions)
 
 	for _, want := range []string{"bob", "remote", "10.0.0.5"} {
 		if !strings.Contains(report, want) {
