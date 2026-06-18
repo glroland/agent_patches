@@ -16,13 +16,24 @@ export const config = {
     origin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   },
   agents: {
-    // Interval the poller will use once implemented.
     pollIntervalSeconds: Number(process.env.AGENT_POLL_INTERVAL_SECONDS) || 60,
-    // Path to the CSV file listing enrolled agents (display name, fqdn, port, os flavor).
     inventoryFile: process.env.AGENT_INVENTORY_FILE,
-    // Bearer token sent to every endpoint-server agent, when set. Must match
-    // each agent's security.token (security.scheme: bearer in config.yaml).
     authToken: process.env.AGENT_AUTH_TOKEN,
+  },
+  email: {
+    // Set EMAIL_ENABLED=true and fill in the remaining vars to enable.
+    enabled: process.env.EMAIL_ENABLED === 'true',
+    host: process.env.EMAIL_HOST || '',
+    port: Number(process.env.EMAIL_PORT) || 587,
+    username: process.env.EMAIL_USERNAME || '',
+    password: process.env.EMAIL_PASSWORD || '',
+    from: process.env.EMAIL_FROM || '',
+    // Comma-separated list of recipient addresses.
+    to: (process.env.EMAIL_TO || '').split(',').map((s) => s.trim()).filter(Boolean),
+    // Transport security: "starttls" (default, port 587) | "tls" (port 465) | "none"
+    tlsMode: process.env.EMAIL_TLS_MODE || 'starttls',
+    // Local HH:MM time to send the daily fleet summary.
+    dailySummaryTime: process.env.EMAIL_DAILY_SUMMARY_TIME || '07:00',
   },
   logging: {
     level: process.env.LOG_LEVEL || 'info',

@@ -57,8 +57,8 @@ loop:
 # observations, actions, recommendations, or approval requests that are
 # surfaced via GET /status.
 #
-# "when_to_notify" controls when the manager is emailed about the run's
-# outcome: "always" (every run), "on_error"/"on error" (failures only,
+# "when_to_notify" controls when a notification is stored to agent memory
+# after a run: "always" (every run), "on_error"/"on error" (failures only,
 # the default), or "never".
 #
 # Every responsibility run uses responsibility_system_prompt (below) as the
@@ -99,16 +99,3 @@ responsibilities:
       - check_for_pending_system_patches
     when_to_notify: "always"
 
-# Notifier sends event messages to configured sinks before and after patching.
-notifier:
-  email:
-    enabled: false
-    host: smtp.example.com
-    port: 587
-    username: alerts@example.com
-    password: change-me
-    from: alerts@example.com
-    to:
-      - admin@example.com
-    # tls_mode: "starttls" (default, port 587) | "tls" (implicit TLS, port 465) | "none" (local relay)
-    tls_mode: starttls

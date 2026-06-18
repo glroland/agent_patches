@@ -57,10 +57,10 @@ func main() {
 	)
 
 	store := storage.NewStore(cfg.Storage.TasksFile)
-	notify := notifier.New(&cfg.Notifier)
+	mem := memory.New(&cfg.Memory)
+	notify := notifier.New(mem)
 
 	registry := tasks.NewRegistry()
-	mem := memory.New(&cfg.Memory)
 
 	pingTool, err := ping.NewPingTool()
 	if err != nil {

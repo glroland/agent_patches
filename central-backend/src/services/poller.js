@@ -2,6 +2,7 @@ import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { fetchAllAgents } from './fleet.js';
 import { setFleet } from './fleetCache.js';
+import * as notifier from './notifier.js';
 
 let timer = null;
 
@@ -10,6 +11,7 @@ async function pollAllAgents() {
     const agents = await fetchAllAgents();
     setFleet(agents);
     logger.info(`poller: updated ${agents.length} agent(s)`);
+    await notifier.onFleetUpdate(agents);
   } catch (err) {
     logger.error(`poller: poll failed: ${err.message}`);
   }
