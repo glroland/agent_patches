@@ -56,6 +56,32 @@ export class AgentClient {
     }
   }
 
+  // Posts an operator decision for a pending approval.
+  // decision must be "approved" or "rejected".
+  async resolveApproval(id, decision, reason = '') {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (this.authToken) {
+        headers.Authorization = `Bearer ${this.authToken}`;
+      }
+      const res = await fetch(`${this.baseUrl}/approvals/${id}/decision`, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+        body: JSON.stringify({ decision, reason }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.message || `agent returned ${res.status} ${res.statusText}`);
+      }
+      return res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Sends a chat message to the agent via the A2A JSON-RPC "message/send"
   // method and returns its text reply. Throws on a network error, timeout,
   // non-2xx response, or a JSON-RPC error response.

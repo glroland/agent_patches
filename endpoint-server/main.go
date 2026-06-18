@@ -19,6 +19,7 @@ import (
 	"agent_patches/endpoint-server/a2a/agent"
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
+	"agent_patches/endpoint-server/approvalapi"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/memoryapi"
@@ -31,6 +32,7 @@ import (
 	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/skills/read_agent_memory"
 	"agent_patches/endpoint-server/skills/report_findings"
+	"agent_patches/endpoint-server/skills/request_approval"
 	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
@@ -125,6 +127,13 @@ func main() {
 	}
 	registry.Register(reportFindingsTool)
 
+	requestApprovalTool, err := request_approval.NewRequestApprovalTool(mem)
+	if err != nil {
+		slog.Error("failed to create request_approval tool", "error", err)
+		return
+	}
+	registry.Register(requestApprovalTool)
+
 	hostInfo, err := capture_system_info.Gather()
 	if err != nil {
 		slog.Error("capture_system_info: failed to gather host metadata", "error", err)
@@ -167,17 +176,21 @@ func main() {
 	lp := loop.New(cfg, registry, notify)
 	statusSvc := status.New(hostInfo, mem, lp)
 	memorySvc := memoryapi.New(mem)
+	approvalSvc := approvalapi.New(mem)
 
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
 	var statusHandler http.Handler = statusSvc.Handler()
 	var memoryHandler http.Handler = memorySvc.Handler()
+	var approvalHandler http.Handler = approvalSvc.Handler()
 	if cfg.Security.Scheme == "bearer" {
 		statusHandler = requireBearer(cfg.Security.Token, statusHandler)
 		memoryHandler = requireBearer(cfg.Security.Token, memoryHandler)
+		approvalHandler = requireBearer(cfg.Security.Token, approvalHandler)
 	}
 	mux.Handle("/status", statusHandler)
 	mux.Handle("/memory", memoryHandler)
+	mux.Handle("/approvals/", approvalHandler)
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(reqHandler))
 
 	srv := &http.Server{

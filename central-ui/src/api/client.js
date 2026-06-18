@@ -53,6 +53,12 @@ export function fetchApprovals() {
   return getJSON('/approvals');
 }
 
+// Submits an operator decision for a pending approval.
+// decision must be "approved" or "rejected".
+export function decideApproval(approvalId, decision, agentId, reason = '') {
+  return postJSON(`/approvals/${approvalId}/decision`, { decision, agentId, reason });
+}
+
 // Aggregated issues/concerns plus per-severity counts.
 export function fetchIssues() {
   return getJSON('/issues');

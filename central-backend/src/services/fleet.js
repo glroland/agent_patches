@@ -99,6 +99,19 @@ export async function sendAgentMessage(id, text) {
   return client.sendMessage(text);
 }
 
+export async function resolveApproval(agentId, approvalId, decision, reason = '') {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === agentId);
+  if (!inventoryAgent) {
+    throw new Error(`agent ${agentId} not found in inventory`);
+  }
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+  });
+  return client.resolveApproval(approvalId, decision, reason);
+}
+
 export async function broadcastMessage(text) {
   return Promise.all(
     inventory.listAgents().map(async (inventoryAgent) => {
