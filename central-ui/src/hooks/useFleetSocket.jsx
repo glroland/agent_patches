@@ -1,7 +1,6 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:4000/api';
-const WS_URL = API_BASE.replace(/^http/, 'ws').replace(/\/api$/, '/ws');
+const WS_URL = `${window.location.origin.replace(/^http/, 'ws')}/ws`;
 
 const RECONNECT_DELAY_MS = 3000;
 

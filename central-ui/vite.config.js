@@ -4,6 +4,10 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  // Load the .env file from the project root instead of central-ui/.
-  envDir: '..',
+  server: {
+    proxy: {
+      '/api': 'http://localhost:4000',
+      '/ws': { target: 'ws://localhost:4000', ws: true },
+    },
+  },
 })

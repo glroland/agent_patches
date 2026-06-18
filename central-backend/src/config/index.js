@@ -1,5 +1,3 @@
-import 'dotenv/config';
-
 if (!process.env.AGENT_AUTH_TOKEN) {
   throw new Error('AGENT_AUTH_TOKEN environment variable is required (see .env.example)');
 }
