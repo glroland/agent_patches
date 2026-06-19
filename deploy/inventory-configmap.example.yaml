@@ -1,0 +1,27 @@
+# Example ConfigMap for the agent inventory.
+#
+# This ConfigMap must be created manually before deploying the Helm chart.
+# Argo CD / Helm will not create or manage it.
+#
+# To create from a file:
+#   kubectl -n agent-patches create configmap central-backend-inventory \
+#     --from-file=inventory.csv=/path/to/your/inventory.csv
+#
+# To create from this example directly (after editing the data below):
+#   kubectl -n agent-patches apply -f deploy/inventory-configmap.example.yaml
+#
+# CSV columns: display_name, fqdn, port, os_type, role, tags
+#   os_type values: ubuntu, fedora, windows, macos
+#   tags: comma-separated list, quoted if they contain commas
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: central-backend-inventory
+  namespace: agent-patches
+data:
+  inventory.csv: |
+    display_name,fqdn,port,os_type,role,tags
+    web01,web01.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
+    web02,web02.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
+    db01,db01.prod.internal,8080,ubuntu,Primary database,"production,database"

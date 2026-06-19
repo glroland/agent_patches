@@ -30,11 +30,19 @@ resources:
 secret:
   name: central-backend-secrets
 
+# Name of the pre-existing ConfigMap that holds the agent inventory CSV.
+# Create it manually before first sync:
+#   kubectl -n agent-patches create configmap central-backend-inventory \
+#     --from-file=inventory.csv=/path/to/your/inventory.csv
+# See deploy/inventory-configmap.example.yaml for the expected format.
+inventory:
+  configMapName: central-backend-inventory
+  mountPath: /opt/inventory/inventory.csv
+
 env:
   HOST: "0.0.0.0"
   PORT: "8080"
   AGENT_POLL_INTERVAL_SECONDS: "60"
-  AGENT_INVENTORY_FILE: "./inventory.example.csv"
   LOG_LEVEL: "info"
 
 nodeSelector: {}

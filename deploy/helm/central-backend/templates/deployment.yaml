@@ -27,6 +27,8 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            - name: AGENT_INVENTORY_FILE
+              value: {{ .Values.inventory.mountPath | quote }}
             - name: CORS_ORIGIN
               value: {{ printf "https://%s-ui.%s" .Release.Name .Values.global.clusterDomain | quote }}
             - name: AGENT_AUTH_TOKEN
@@ -36,6 +38,16 @@ spec:
                   key: AGENT_AUTH_TOKEN
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: inventory
+              mountPath: {{ .Values.inventory.mountPath }}
+              subPath: inventory.csv
+              readOnly: true
+      volumes:
+        - name: inventory
+          configMap:
+            name: {{ .Values.inventory.configMapName }}
+            defaultMode: 0444
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
