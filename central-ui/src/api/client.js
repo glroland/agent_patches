@@ -21,6 +21,15 @@ async function postJSON(path, body) {
   return response.json();
 }
 
+async function deleteJSON(path) {
+  const response = await fetch(`${API_BASE_URL}${path}`, { method: 'DELETE' });
+  if (!response.ok) {
+    const payload = await response.json().catch(() => null);
+    throw new Error(payload?.message || `${path} returned ${response.status} ${response.statusText}`);
+  }
+  return response.json();
+}
+
 // Fleet-wide counts for the navigation shell.
 export function fetchSummary() {
   return getJSON('/summary');
@@ -73,4 +82,14 @@ export function sendAgentMessage(id, message) {
 // agent's reply (or error).
 export function broadcastMessage(message) {
   return postJSON('/chat', { message });
+}
+
+// Clears all memory on a single agent.
+export function clearAgentMemory(id) {
+  return deleteJSON(`/agents/${id}/memory`);
+}
+
+// Clears memory on every enrolled agent in parallel.
+export function clearAllAgentsMemory() {
+  return deleteJSON('/admin/memory');
 }

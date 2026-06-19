@@ -4,12 +4,12 @@ import Badge from '../components/Badge';
 import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
-import { ChatIcon, CheckIcon, XIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, sendAgentMessage } from '../api/client';
+import { ChatIcon, CheckIcon, XIcon, TrashIcon } from '../components/icons';
+import { fetchAgent, fetchAgentMemory, sendAgentMessage, clearAgentMemory } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Activity', 'Recommendations & Approvals', 'Interact', 'Agent Memory'];
+const TABS = ['Activity', 'Recommendations & Approvals', 'Interact', 'Agent Memory', 'Admin'];
 
 export default function AgentDetail() {
   const { id } = useParams();
@@ -100,6 +100,8 @@ export default function AgentDetail() {
       {tab === 'Interact' && <InteractTab agent={agent} />}
 
       {tab === 'Agent Memory' && <AgentMemoryTab agent={agent} />}
+
+      {tab === 'Admin' && <AgentAdminTab agent={agent} />}
     </div>
   );
 }
@@ -260,6 +262,68 @@ function InteractTab({ agent }) {
             Send
           </button>
         </form>
+      </div>
+    </Card>
+  );
+}
+
+function AgentAdminTab({ agent }) {
+  const [state, setState] = useState('idle'); // idle | confirm | working | done | error
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const doClear = async () => {
+    setState('working');
+    try {
+      await clearAgentMemory(agent.id);
+      setState('done');
+      setTimeout(() => setState('idle'), 3000);
+    } catch (err) {
+      setErrorMsg(err.message);
+      setState('error');
+      setTimeout(() => setState('idle'), 4000);
+    }
+  };
+
+  return (
+    <Card title="Agent administration" subtitle="Destructive actions for this agent">
+      <div className="flex items-center justify-between rounded-lg border border-slate-800 p-4">
+        <div>
+          <p className="text-sm font-medium text-slate-200">Clear agent memory</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Removes all cached timeline snapshots, skill state, and attrs. The agent rebuilds memory on its next run cycle.
+          </p>
+        </div>
+        <div className="shrink-0 pl-4">
+          {state === 'idle' && (
+            <button
+              onClick={() => setState('confirm')}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-800/60 px-3 py-1.5 text-xs font-semibold text-rose-400 transition-colors hover:border-rose-600 hover:bg-rose-600/10"
+            >
+              <TrashIcon className="h-3.5 w-3.5" />
+              Clear memory
+            </button>
+          )}
+          {state === 'confirm' && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-400">Are you sure?</span>
+              <button
+                onClick={doClear}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500"
+              >
+                Yes, clear
+              </button>
+              <button
+                onClick={() => setState('idle')}
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          {state === 'working' && <span className="text-xs text-slate-500">Clearing...</span>}
+          {state === 'done' && <span className="text-xs text-emerald-400">Memory cleared</span>}
+          {state === 'error' && <span className="text-xs text-rose-400">{errorMsg}</span>}
+        </div>
       </div>
     </Card>
   );

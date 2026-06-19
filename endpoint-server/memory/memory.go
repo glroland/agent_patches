@@ -53,6 +53,29 @@ type Dump struct {
 	Attrs   map[string]json.RawMessage `json:"attrs"`
 }
 
+// Clear removes all memory: every domain's snapshots and the attrs store.
+// The root directory itself is preserved. Returns the first error encountered,
+// but always attempts to remove every entry.
+func (s *Store) Clear() error {
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("memory: clear readdir %s: %w", s.root, err)
+	}
+	var errs []string
+	for _, e := range entries {
+		if err := os.RemoveAll(filepath.Join(s.root, e.Name())); err != nil {
+			errs = append(errs, err.Error())
+		}
+	}
+	if len(errs) > 0 {
+		return fmt.Errorf("memory: clear: %s", strings.Join(errs, "; "))
+	}
+	return nil
+}
+
 // Dump reads the current snapshot of every domain (subdirectory of the
 // store root) and all attrs. Domains with no snapshot yet are omitted.
 func (s *Store) Dump() (Dump, error) {

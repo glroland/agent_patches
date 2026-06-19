@@ -6,6 +6,7 @@ import AgentDetail from './pages/AgentDetail';
 import Approvals from './pages/Approvals';
 import Issues from './pages/Issues';
 import FleetChat from './pages/FleetChat';
+import Admin from './pages/Admin';
 import { FleetSocketProvider } from './hooks/useFleetSocket';
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/approvals" element={<Approvals />} />
           <Route path="/issues" element={<Issues />} />
           <Route path="/chat" element={<FleetChat />} />
+          <Route path="/admin" element={<Admin />} />
         </Route>
       </Routes>
     </FleetSocketProvider>

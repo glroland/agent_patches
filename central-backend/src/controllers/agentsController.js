@@ -67,6 +67,22 @@ export async function getAgentMemory(req, res, next) {
   }
 }
 
+// DELETE /api/agents/:id/memory — clear all memory on a single agent.
+export async function clearAgentMemory(req, res, next) {
+  try {
+    const result = await fleet.clearAgentMemory(req.params.id);
+    if (result === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+    if (result === null) {
+      return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to DELETE /memory' });
+    }
+    res.json({ cleared: true });
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /api/agents/:id/messages — relay an operator chat message to the
 // agent and return its reply.
 export async function sendAgentMessage(req, res, next) {

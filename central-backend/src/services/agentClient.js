@@ -56,6 +56,26 @@ export class AgentClient {
     }
   }
 
+  // Sends DELETE /memory to clear all memory on the agent. Returns null if
+  // the agent is unreachable or returns a non-2xx status.
+  async clearMemory() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers = {};
+      if (this.authToken) {
+        headers.Authorization = `Bearer ${this.authToken}`;
+      }
+      const res = await fetch(`${this.baseUrl}/memory`, { method: 'DELETE', headers, signal: controller.signal });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Posts an operator decision for a pending approval.
   // decision must be "approved" or "rejected".
   async resolveApproval(id, decision, reason = '') {

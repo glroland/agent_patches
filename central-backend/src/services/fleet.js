@@ -112,6 +112,36 @@ export async function resolveApproval(agentId, approvalId, decision, reason = ''
   return client.resolveApproval(approvalId, decision, reason);
 }
 
+// Sends DELETE /memory to a single agent. Returns undefined if not in inventory,
+// null if unreachable, or the agent's JSON response on success.
+export async function clearAgentMemory(id) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
+  if (!inventoryAgent) return undefined;
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+  });
+  return client.clearMemory();
+}
+
+// Sends DELETE /memory to every enrolled agent in parallel. Returns an array
+// of { id, hostname, ok, error? } results.
+export async function clearAllAgentsMemory() {
+  return Promise.all(
+    inventory.listAgents().map(async (inventoryAgent) => {
+      const id = shortHost(inventoryAgent.fqdn);
+      const client = new AgentClient({
+        fqdn: inventoryAgent.fqdn,
+        port: inventoryAgent.port,
+        authToken: config.agents.authToken,
+      });
+      const result = await client.clearMemory();
+      return { id, hostname: inventoryAgent.fqdn, ok: result !== null, error: result === null ? 'unreachable' : undefined };
+    })
+  );
+}
+
 export async function broadcastMessage(text) {
   return Promise.all(
     inventory.listAgents().map(async (inventoryAgent) => {

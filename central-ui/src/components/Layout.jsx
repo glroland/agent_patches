@@ -1,5 +1,5 @@
 import { NavLink, Outlet } from 'react-router-dom';
-import { DashboardIcon, ServerIcon, AlertIcon, HandIcon, ChatIcon } from './icons';
+import { DashboardIcon, ServerIcon, AlertIcon, HandIcon, ChatIcon, WrenchIcon } from './icons';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import logo from '../assets/logo.png';
 
@@ -9,6 +9,7 @@ const navItems = [
   { to: '/approvals', label: 'Approvals', icon: HandIcon },
   { to: '/issues', label: 'Issues & Concerns', icon: AlertIcon },
   { to: '/chat', label: 'Fleet Chat', icon: ChatIcon },
+  { to: '/admin', label: 'Admin', icon: WrenchIcon },
 ];
 
 export default function Layout() {
