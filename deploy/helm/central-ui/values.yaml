@@ -5,8 +5,6 @@ global:
 
 image:
   name: central-ui
-  registry: registry.home.glroland.com/agent_patches
-  tag: latest
   pullPolicy: IfNotPresent
 
 containerPort: 8080
