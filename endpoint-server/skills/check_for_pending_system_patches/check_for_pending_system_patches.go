@@ -93,13 +93,13 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 
 			// --- Phase 2: request operator approval ---
 
-			// Build the approval detail with the full update report and, when
-			// present, the dist-upgrade notice. The proposed action covers only
-			// regular package updates — never dist-upgrade.
-			approvalDetail := fmt.Sprintf("Host: %s\nOS: %s\n\nPending updates:\n\n%s", host, p.OS(), updateReport)
+			// Build the approval detail shown in the dashboard — concise summary
+			// with grouped packages and any HIGH/CRITICAL CVEs called out.
+			// The full verbose report (updateReport) is reserved for email notifications.
+			approvalDetail := patching.FormatUpdateSummary(host, p.OS(), updates)
 			if distUpgrade != "" {
-				approvalDetail += "\n\nDistribution upgrade status: " + distUpgrade +
-					"\n(Distribution upgrades are reported for information only and will not be applied automatically.)"
+				approvalDetail += "\nDistribution upgrade available: " + distUpgrade +
+					" (informational only — not applied automatically)"
 			}
 
 			risk := riskFromUpdates(updates)

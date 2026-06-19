@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -73,8 +74,8 @@ func (p *Patcher) ListUpdates(ctx context.Context) ([]PackageUpdate, error) {
 	}
 }
 
-// FormatUpdateReport renders a []PackageUpdate as a human-readable report
-// suitable for an email body or log output.
+// FormatUpdateReport renders a []PackageUpdate as a verbose human-readable
+// report suitable for an email body or log output.
 func FormatUpdateReport(updates []PackageUpdate) string {
 	if len(updates) == 0 {
 		return "No updates found.\n"
@@ -106,6 +107,268 @@ func FormatUpdateReport(updates []PackageUpdate) string {
 		}
 		sb.WriteByte('\n')
 	}
+	return sb.String()
+}
+
+// rebootPackagePrefixes lists package name prefixes that typically require
+// a full system reboot to take effect after installation.
+var rebootPackagePrefixes = []string{
+	"kernel", "linux-image", "linux-headers",
+	"glibc", "libc6",
+	"systemd",
+	"udev",
+	"dracut",
+	"grub",
+	"shim",
+}
+
+// notablePackagePrefixes lists package name prefixes that are broadly
+// significant on server systems regardless of their specific workload.
+var notablePackagePrefixes = []string{
+	// Security / cryptography
+	"openssl", "libssl", "ca-cert", "nss", "gnupg", "gpg",
+	// Network tools
+	"curl", "libcurl", "wget", "rsync", "openssh", "libssh",
+	// Container runtime
+	"podman", "docker", "containerd", "cri-o", "runc", "buildah",
+	// Language runtimes
+	"python3", "python2", "nodejs", "java", "openjdk", "ruby", "perl", "php", "golang",
+	// Web / app servers
+	"nginx", "httpd", "apache",
+	// Databases
+	"postgresql", "mysql", "mariadb", "redis", "mongodb",
+	// Auth / identity
+	"sudo", "pam", "sssd", "krb5", "libpam",
+	// Package managers
+	"dnf", "yum", "apt", "rpm",
+}
+
+// rebootLikely returns true when updating this package typically requires
+// a full system reboot.
+func rebootLikely(name string) bool {
+	n := strings.ToLower(name)
+	for _, prefix := range rebootPackagePrefixes {
+		if strings.HasPrefix(n, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// isNotable returns true when a package is broadly significant for server
+// operations (security libraries, container runtime, language runtimes, etc.).
+func isNotable(name string) bool {
+	n := strings.ToLower(name)
+	for _, prefix := range notablePackagePrefixes {
+		if strings.HasPrefix(n, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// shortestName returns the shortest name from a slice (the "root" package in a family).
+func shortestName(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	root := names[0]
+	for _, n := range names[1:] {
+		if len(n) < len(root) {
+			root = n
+		}
+	}
+	return root
+}
+
+// FormatUpdateSummary produces an operator-readable dashboard summary of pending
+// updates. It surfaces what matters most:
+//
+//  1. One bullet per HIGH/CRITICAL CVE being addressed.
+//  2. One bullet summarising packages that will require a reboot.
+//  3. One bullet per version-group of notable server packages (security libs,
+//     container runtime, language runtimes, etc.) not already covered by a CVE bullet.
+//  4. A count of remaining packages with nothing significant to call out.
+func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) string {
+	if len(updates) == 0 {
+		return "All packages are up to date."
+	}
+
+	// ── Categorise packages ──────────────────────────────────────────────────
+
+	type cat int
+	const (
+		catOther   cat = iota
+		catReboot      // requires reboot (kernel, glibc, dracut, …)
+		catNotable     // important server package, no high CVE
+		catCVE         // has HIGH or CRITICAL CVE — gets its own CVE bullet
+	)
+
+	pkgCat := make(map[string]cat, len(updates))
+	for _, u := range updates {
+		switch {
+		case rebootLikely(u.Name):
+			pkgCat[u.Name] = catReboot
+		case isNotable(u.Name):
+			pkgCat[u.Name] = catNotable
+		}
+	}
+
+	// ── Collect HIGH/CRITICAL CVEs ────────────────────────────────────────────
+
+	type cveRef struct {
+		info    CVEInfo
+		pkgName string
+		version string
+	}
+	var topCVEs []cveRef
+	seenCVE := make(map[string]bool)
+	for _, u := range updates {
+		for _, c := range u.CVEs {
+			sev := strings.ToUpper(c.Severity)
+			if (sev == "CRITICAL" || sev == "HIGH") && !seenCVE[c.ID] {
+				seenCVE[c.ID] = true
+				topCVEs = append(topCVEs, cveRef{info: c, pkgName: u.Name, version: u.NewVersion})
+				// Promote the package so it doesn't also appear in notable bullets.
+				pkgCat[u.Name] = catCVE
+			}
+		}
+	}
+	// Sort: CRITICAL before HIGH, then descending CVSS score.
+	sort.Slice(topCVEs, func(i, j int) bool {
+		si, sj := strings.ToUpper(topCVEs[i].info.Severity), strings.ToUpper(topCVEs[j].info.Severity)
+		if si != sj {
+			return si == "CRITICAL"
+		}
+		return topCVEs[i].info.CVSSScore > topCVEs[j].info.CVSSScore
+	})
+
+	// ── Collect reboot packages ───────────────────────────────────────────────
+
+	var rebootPkgs []PackageUpdate
+	for _, u := range updates {
+		if pkgCat[u.Name] == catReboot {
+			rebootPkgs = append(rebootPkgs, u)
+		}
+	}
+
+	// ── Collect notable packages (version-grouped) ────────────────────────────
+
+	// Suppress notable packages whose version is already represented by a CVE
+	// bullet — they're companion libraries covered by the same update.
+	cveVersions := make(map[string]bool)
+	for _, ref := range topCVEs {
+		cveVersions[ref.version] = true
+	}
+
+	type versionGroup struct {
+		names   []string
+		version string
+		desc    string // description of the root package in the group
+	}
+	var notableGroups []*versionGroup
+	notableIdx := make(map[string]int)
+	for _, u := range updates {
+		if pkgCat[u.Name] != catNotable {
+			continue
+		}
+		if cveVersions[u.NewVersion] {
+			continue // companion package already implied by a CVE bullet
+		}
+		v := u.NewVersion
+		if idx, ok := notableIdx[v]; ok {
+			g := notableGroups[idx]
+			g.names = append(g.names, u.Name)
+			if g.desc == "" && u.Description != "" {
+				g.desc = u.Description
+			}
+		} else {
+			notableIdx[v] = len(notableGroups)
+			notableGroups = append(notableGroups, &versionGroup{
+				names:   []string{u.Name},
+				version: v,
+				desc:    u.Description,
+			})
+		}
+	}
+
+	// ── Count remaining ───────────────────────────────────────────────────────
+
+	remaining := 0
+	for _, u := range updates {
+		if pkgCat[u.Name] == catOther {
+			remaining++
+		}
+	}
+
+	// ── Render ────────────────────────────────────────────────────────────────
+
+	var sb strings.Builder
+
+	// 1. CVE bullets — one per HIGH/CRITICAL CVE.
+	for _, ref := range topCVEs {
+		sev := strings.ToUpper(ref.info.Severity)
+		line := fmt.Sprintf("• [%s", sev)
+		if ref.info.CVSSScore > 0 {
+			line += fmt.Sprintf(" %.1f", ref.info.CVSSScore)
+		}
+		line += fmt.Sprintf("] %s in %s → %s", ref.info.ID, ref.pkgName, ref.version)
+		sb.WriteString(line + "\n")
+	}
+
+	// 2. Reboot bullet.
+	if len(rebootPkgs) > 0 {
+		if len(rebootPkgs) <= 3 {
+			names := make([]string, len(rebootPkgs))
+			for i, p := range rebootPkgs {
+				names[i] = p.Name
+			}
+			fmt.Fprintf(&sb, "• Reboot required — %s\n", strings.Join(names, ", "))
+		} else {
+			// Group reboot packages by version and summarise as "root ×N".
+			rebootByVer := make(map[string][]string)
+			var verOrder []string
+			for _, p := range rebootPkgs {
+				v := p.NewVersion
+				if _, seen := rebootByVer[v]; !seen {
+					verOrder = append(verOrder, v)
+				}
+				rebootByVer[v] = append(rebootByVer[v], p.Name)
+			}
+			var parts []string
+			for _, v := range verOrder {
+				names := rebootByVer[v]
+				root := shortestName(names)
+				if len(names) == 1 {
+					parts = append(parts, root)
+				} else {
+					parts = append(parts, fmt.Sprintf("%s ×%d", root, len(names)))
+				}
+			}
+			fmt.Fprintf(&sb, "• Reboot required — %d packages (%s)\n",
+				len(rebootPkgs), strings.Join(parts, ", "))
+		}
+	}
+
+	// 3. Notable package bullets.
+	for _, g := range notableGroups {
+		line := fmt.Sprintf("• %s → %s", strings.Join(g.names, ", "), g.version)
+		if g.desc != "" {
+			line += fmt.Sprintf(" (%s)", g.desc)
+		}
+		sb.WriteString(line + "\n")
+	}
+
+	// 4. Remaining count.
+	if remaining > 0 {
+		called := len(topCVEs) + len(rebootPkgs) + len(notableGroups)
+		if called == 0 {
+			fmt.Fprintf(&sb, "• %d packages ready to update\n", remaining)
+		} else {
+			fmt.Fprintf(&sb, "• %d additional packages\n", remaining)
+		}
+	}
+
 	return sb.String()
 }
 
