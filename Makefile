@@ -29,7 +29,7 @@ CENTRAL_UI_DIR := $(CURDIR)/central-ui
 CENTRAL_BACKEND_DIR := $(CURDIR)/central-backend
 
 # Ansible inventory used by `make deploy`.
-INVENTORY := $(CURDIR)/../home-utils/admin/agent_patches/inventory.yaml
+INVENTORY_ROOT := $(CURDIR)/../home-utils/admin/agent_patches
 PLAYBOOK  := $(CURDIR)/deploy/linux/playbook.yml
 
 .PHONY: install build build-server build-cli release release-server release-cli \
@@ -100,7 +100,12 @@ run-central-backend:
 
 ## deploy: release and deploy to all hosts in the Ansible inventory
 deploy:
-	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -K -i $(INVENTORY) $(PLAYBOOK) --ask-pass
+	echo ""
+	echo "Updating Ubuntu environment...."
+	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -i $(INVENTORY_ROOT)/inventory-ubuntu.yaml -Kk $(PLAYBOOK) --ask-pass
+	echo ""
+	echo "Updating RHEL environment...."
+	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -i $(INVENTORY_ROOT)/inventory-rhel.yaml -Kk $(PLAYBOOK) --ask-pass
 
 ## fmt: format all Go source files
 fmt:

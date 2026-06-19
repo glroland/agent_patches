@@ -107,6 +107,13 @@
         mode: "0640"
         force: true
 
+    - name: Kill any running patches-endpoint-server processes
+      ansible.builtin.command:
+        cmd: pkill -TERM -f patches-endpoint-server
+      register: pkill_result
+      failed_when: pkill_result.rc not in [0, 1]
+      changed_when: pkill_result.rc == 0
+
     - name: Enable and restart agent_patches service
       ansible.builtin.systemd:
         name: agent_patches
