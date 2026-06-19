@@ -20,9 +20,8 @@ import (
 )
 
 const (
-	pollInterval   = 5 * time.Second
-	defaultTimeout = 24 * time.Hour
-	maxEntries     = 50
+	pollInterval = 5 * time.Second
+	maxEntries   = 50
 )
 
 // ApprovalEntry is the durable state stored in AttrsStore under the key
@@ -87,20 +86,12 @@ func RequestApproval(ctx context.Context, mem *memory.Store, title, detail, prop
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
-	timeout := time.NewTimer(defaultTimeout)
-	defer timeout.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			_ = patchAttrs(mem, attrKey, "cancelled", "", nil)
 			return "", ctx.Err()
-
-		case <-timeout.C:
-			t := time.Now()
-			_ = patchAttrs(mem, attrKey, "timed_out", "", &t)
-			_ = PatchTimeline(mem, id, "timed_out")
-			return "timed_out", nil
 
 		case <-ticker.C:
 			var current ApprovalEntry
