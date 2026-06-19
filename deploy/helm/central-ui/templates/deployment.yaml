@@ -18,7 +18,6 @@ spec:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.global.registry | default .Values.image.registry }}/{{ .Values.image.name }}:{{ .Values.global.tag | default .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          args: ["-c", "/etc/nginx/nginx-custom.conf", "-g", "daemon off;"]
           ports:
             - name: http
               containerPort: {{ .Values.containerPort }}
