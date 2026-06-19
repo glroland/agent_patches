@@ -22,25 +22,15 @@ spec:
             - name: http
               containerPort: {{ .Values.containerPort }}
               protocol: TCP
-          {{- if .Values.env }}
           env:
+            - name: BACKEND_URL
+              value: {{ printf "https://%s-backend.%s" .Release.Name .Values.global.clusterDomain | quote }}
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
-          volumeMounts:
-            - name: nginx-config
-              mountPath: /etc/nginx/nginx-custom.conf
-              subPath: nginx.conf
-              readOnly: true
-      volumes:
-        - name: nginx-config
-          configMap:
-            name: {{ .Chart.Name }}-nginx
-            defaultMode: 0444
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
