@@ -13,7 +13,8 @@ export async function getDashboard() {
   const agents = await listFleet();
   const attention = agents.filter((a) => ATTENTION_STATUSES.includes(a.status));
   const approvals = pendingApprovals(agents);
-  const activity = recentActivity(agents, ACTIVITY_LIMIT);
+  // Approvals have their own dedicated page — exclude them from the activity feed.
+  const activity = recentActivity(agents, ACTIVITY_LIMIT).filter((e) => e.type !== 'approval');
   const openRecommendations = agents.flatMap((a) => a.timeline.filter((t) => t.type === 'recommendation')).length;
 
   return {

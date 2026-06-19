@@ -14,7 +14,7 @@ export default function Dashboard() {
     return <AsyncState loading loadingLabel="Loading fleet activity..." />;
   }
 
-  const { stats, attention, approvals, activity } = dashboard;
+  const { stats, attention, activity } = dashboard;
 
   return (
     <div className="space-y-6">
@@ -37,7 +37,7 @@ export default function Dashboard() {
           hint="Agents reporting an issue or unreachable"
         />
         <StatCard
-          label="Approvals waiting on you"
+          label="Approvals waiting"
           value={stats.pendingApprovalCount}
           tone={stats.pendingApprovalCount > 0 ? 'danger' : 'success'}
           hint={stats.hasHighRiskApproval ? 'Includes high-risk requests' : 'Review when convenient'}
@@ -56,55 +56,35 @@ export default function Dashboard() {
           className="lg:col-span-2"
         >
           <div className="space-y-5">
-            {activity.map((entry) => (
-              <TimelineEntry key={entry.id} entry={entry} showAgent />
-            ))}
+            {activity.length === 0 ? (
+              <p className="text-sm text-slate-500">No recent activity.</p>
+            ) : (
+              activity.map((entry) => (
+                <TimelineEntry key={entry.id} entry={entry} showAgent />
+              ))
+            )}
           </div>
         </Card>
 
-        <div className="space-y-4">
-          <Card title="Needs your attention" subtitle="Agents flagging a problem">
-            {attention.length === 0 ? (
-              <p className="text-sm text-slate-500">All agents are reporting normal status.</p>
-            ) : (
-              <div className="space-y-3">
-                {attention.map((agent) => (
-                  <Link key={agent.id} to={`/agents/${agent.id}`} className="block rounded-lg border border-slate-800 p-3 transition-colors hover:border-amber-500/40">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-slate-100">{agent.hostname}</p>
-                      <Badge variant={agent.status}>{agent.statusLabel}</Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500">
-                      {agent.currentTask ?? 'Last seen ' + relativeTime(agent.lastPoll)}
-                    </p>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card
-            title="Pending approvals"
-            subtitle="Actions your agents want to take"
-            action={<Link to="/approvals" className="text-xs font-medium text-indigo-400 hover:text-indigo-300">Review &rarr;</Link>}
-          >
-            {approvals.length === 0 ? (
-              <p className="text-sm text-slate-500">Nothing waiting on you right now.</p>
-            ) : (
-              <div className="space-y-3">
-                {approvals.map((req) => (
-                  <Link key={req.id} to={`/agents/${req.agentId}`} className="block rounded-lg border border-slate-800 p-3 transition-colors hover:border-indigo-500/40">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium text-slate-100">{req.hostname}</p>
-                      <Badge variant={req.risk}>{req.risk} risk</Badge>
-                    </div>
-                    <p className="mt-1 text-xs text-slate-500 line-clamp-2">{req.title}</p>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
+        <Card title="Needs your attention" subtitle="Agents flagging a problem">
+          {attention.length === 0 ? (
+            <p className="text-sm text-slate-500">All agents are reporting normal status.</p>
+          ) : (
+            <div className="space-y-3">
+              {attention.map((agent) => (
+                <Link key={agent.id} to={`/agents/${agent.id}`} className="block rounded-lg border border-slate-800 p-3 transition-colors hover:border-amber-500/40">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-slate-100">{agent.hostname}</p>
+                    <Badge variant={agent.status}>{agent.statusLabel}</Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {agent.currentTask ?? 'Last seen ' + relativeTime(agent.lastPoll)}
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </Card>
       </div>
     </div>
   );

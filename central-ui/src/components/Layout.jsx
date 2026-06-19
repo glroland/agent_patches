@@ -12,16 +12,37 @@ const navItems = [
   { to: '/admin', label: 'Admin', icon: WrenchIcon },
 ];
 
+const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+// Returns 'old' | 'pending' | 'none' based on approval count and age.
+function approvalUrgency(summary) {
+  if (!summary || summary.pendingApprovalCount === 0) return 'none';
+  if (summary.oldestPendingApprovalTime) {
+    const age = Date.now() - new Date(summary.oldestPendingApprovalTime).getTime();
+    if (age >= ONE_WEEK_MS) return 'old';
+  }
+  return 'pending';
+}
+
 export default function Layout() {
   const { summary, connected } = useFleetSocket();
 
   const badgeFor = summary
     ? {
         '/agents': summary.attentionCount,
-        '/approvals': summary.pendingApprovalCount,
         '/issues': summary.criticalIssueCount,
       }
     : {};
+
+  const urgency = approvalUrgency(summary);
+
+  // Inactive style for the Approvals link varies by urgency.
+  const approvalInactiveClass =
+    urgency === 'old'
+      ? 'text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 hover:text-rose-300'
+      : urgency === 'pending'
+      ? 'text-amber-400 bg-amber-500/10 hover:bg-amber-500/20 hover:text-amber-300'
+      : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200';
 
   return (
     <div className="flex min-h-screen bg-slate-950">
@@ -33,6 +54,7 @@ export default function Layout() {
         <nav className="flex flex-col gap-1">
           {navItems.map(({ to, label, icon: Icon, exact }) => {
             const badge = badgeFor[to];
+            const isApprovals = to === '/approvals';
             return (
               <NavLink
                 key={to}
@@ -42,6 +64,8 @@ export default function Layout() {
                   `flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
                     isActive
                       ? 'bg-indigo-500/15 text-indigo-300'
+                      : isApprovals
+                      ? approvalInactiveClass
                       : 'text-slate-400 hover:bg-slate-800/60 hover:text-slate-200'
                   }`
                 }
@@ -50,11 +74,19 @@ export default function Layout() {
                   <Icon className="h-4.5 w-4.5" />
                   {label}
                 </span>
-                {!!badge && (
+                {isApprovals && summary?.pendingApprovalCount > 0 ? (
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+                    urgency === 'old'
+                      ? 'bg-rose-500/20 text-rose-300'
+                      : 'bg-amber-500/20 text-amber-300'
+                  }`}>
+                    {summary.pendingApprovalCount}
+                  </span>
+                ) : !!badge ? (
                   <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-xs font-semibold text-rose-300">
                     {badge}
                   </span>
-                )}
+                ) : null}
               </NavLink>
             );
           })}
