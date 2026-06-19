@@ -36,6 +36,20 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
                   key: AGENT_AUTH_TOKEN
+            {{- if .Values.intelligence.baseUrl }}
+            - name: INTELLIGENCE_BASE_URL
+              value: {{ .Values.intelligence.baseUrl | quote }}
+            - name: INTELLIGENCE_MODEL
+              value: {{ .Values.intelligence.model | quote }}
+            - name: INTELLIGENCE_INTERVAL_MINUTES
+              value: {{ .Values.intelligence.intervalMinutes | quote }}
+            - name: INTELLIGENCE_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: INTELLIGENCE_API_KEY
+                  optional: true
+            {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

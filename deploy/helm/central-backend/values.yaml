@@ -21,10 +21,11 @@ resources:
     cpu: 50m
     memory: 64Mi
 
-# Name of the pre-existing Secret that holds AGENT_AUTH_TOKEN.
-# Create it manually before first sync:
+# Name of the pre-existing Secret that holds sensitive credentials.
+# Create it manually before first sync (add INTELLIGENCE_API_KEY only if using fleet intelligence):
 #   kubectl -n agent-patches create secret generic central-backend-secrets \
-#     --from-literal=AGENT_AUTH_TOKEN=<token>
+#     --from-literal=AGENT_AUTH_TOKEN=<token> \
+#     --from-literal=INTELLIGENCE_API_KEY=<key>
 secret:
   name: central-backend-secrets
 
@@ -36,6 +37,17 @@ secret:
 inventory:
   configMapName: central-backend-inventory
   mountPath: /opt/inventory/inventory.csv
+
+# Fleet intelligence — periodic AI analysis of the whole fleet.
+# Set baseUrl to enable. The API key is stored in the secret above.
+intelligence:
+  # Base URL of an OpenAI-compatible API endpoint.
+  # e.g. https://api.openai.com/v1  or  http://my-ollama-host:11434/v1
+  baseUrl: ""
+  # Model name as the target API expects it.
+  model: "gpt-4o"
+  # How often to re-analyse the fleet (minutes). 0 = once on startup only.
+  intervalMinutes: 30
 
 env:
   HOST: "0.0.0.0"

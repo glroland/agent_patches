@@ -11,6 +11,7 @@ export function FleetSocketProvider({ children }) {
     agents: null,
     dashboard: null,
     summary: null,
+    intelligence: null,
     connected: false,
   });
 
@@ -37,12 +38,14 @@ export function FleetSocketProvider({ children }) {
         try {
           const msg = JSON.parse(event.data);
           if (msg.type === 'fleet_update') {
-            setState({
+            setState((prev) => ({
               agents: msg.agents,
               dashboard: msg.dashboard,
               summary: msg.summary,
+              // Only overwrite intelligence if the message includes it (may be null on older reports).
+              intelligence: msg.intelligence !== undefined ? msg.intelligence : prev.intelligence,
               connected: true,
-            });
+            }));
           }
         } catch {
           // ignore malformed messages

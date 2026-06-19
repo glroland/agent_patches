@@ -36,4 +36,15 @@ export const config = {
   logging: {
     level: process.env.LOG_LEVEL || 'info',
   },
+  intelligence: {
+    // Base URL of an OpenAI-compatible API (e.g. http://localhost:11434/v1 for Ollama).
+    // Required to enable fleet intelligence.
+    baseUrl: process.env.INTELLIGENCE_BASE_URL || '',
+    // API key for the endpoint (use a dummy value like "none" for local servers).
+    apiKey: process.env.INTELLIGENCE_API_KEY || 'none',
+    // Model name as recognised by the target API.
+    model: process.env.INTELLIGENCE_MODEL || 'gpt-4o',
+    // How often (in minutes) to re-analyse the fleet. 0 = once on startup only.
+    intervalMinutes: Number(process.env.INTELLIGENCE_INTERVAL_MINUTES) || 30,
+  },
 };

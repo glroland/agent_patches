@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { logger } from '../utils/logger.js';
-import { getFleet, subscribe } from './fleetCache.js';
+import { getFleet, subscribe as subscribeFleet } from './fleetCache.js';
+import { getReport, subscribe as subscribeIntelligence } from './intelligenceCache.js';
 import { pendingApprovals, recentActivity, concerns } from './activity.js';
 
 const PING_INTERVAL_MS = 30000;
@@ -16,9 +17,8 @@ let wss = null;
 function buildPayload(rawAgents) {
   const allApprovals = pendingApprovals(rawAgents);
   const attentionAgents = rawAgents.filter((a) => ATTENTION_STATUSES.includes(a.status));
-  const openRecommendations = rawAgents.flatMap((a) =>
-    a.timeline.filter((t) => t.type === 'recommendation')
-  ).length;
+  const openRecommendations = rawAgents
+    .flatMap((a) => a.timeline.filter((t) => t.type === 'recommendation')).length;
 
   const agents = rawAgents.map((agent) => {
     const latest = agent.timeline[0];
@@ -57,17 +57,24 @@ function buildPayload(rawAgents) {
       lastPoll: a.lastPoll,
     })),
     approvals: allApprovals.slice(0, APPROVAL_LIMIT),
-    activity: recentActivity(rawAgents, ACTIVITY_LIMIT),
+    activity: recentActivity(rawAgents, ACTIVITY_LIMIT).filter((e) => e.type !== 'approval'),
   };
+
+  const oldestPendingApprovalTime = allApprovals.length > 0
+    ? allApprovals.reduce((oldest, a) => (a.time < oldest ? a.time : oldest), allApprovals[0].time)
+    : null;
 
   const summary = {
     totalAgents: rawAgents.length,
     attentionCount: attentionAgents.length,
     pendingApprovalCount: allApprovals.length,
+    oldestPendingApprovalTime,
     criticalIssueCount: concerns(rawAgents).filter((c) => c.severity === 'critical').length,
   };
 
-  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary });
+  const intelligence = getReport();
+
+  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary, intelligence });
 }
 
 function broadcast(payload) {
@@ -104,8 +111,14 @@ export function attach(server) {
     });
   });
 
-  // Broadcast every time the poller updates the cache.
-  subscribe((agents) => broadcast(buildPayload(agents)));
+  // Broadcast every time the poller updates the fleet cache.
+  subscribeFleet((agents) => broadcast(buildPayload(agents)));
+
+  // Also broadcast when a new intelligence report arrives (may come independently).
+  subscribeIntelligence(() => {
+    const fleet = getFleet();
+    if (fleet) broadcast(buildPayload(fleet));
+  });
 
   logger.info('ws: hub attached at /ws');
 }
