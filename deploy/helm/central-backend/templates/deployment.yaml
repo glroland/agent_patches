@@ -27,10 +27,10 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            - name: AGENT_INVENTORY_FILE
-              value: {{ .Values.inventory.mountPath | quote }}
             - name: CORS_ORIGIN
               value: {{ printf "https://%s-ui.%s" .Release.Name .Values.global.clusterDomain | quote }}
+            - name: AGENT_INVENTORY_FILE
+              value: {{ .Values.inventory.mountPath | quote }}
             - name: AGENT_AUTH_TOKEN
               valueFrom:
                 secretKeyRef:
