@@ -2,6 +2,8 @@ FROM registry.access.redhat.com/ubi9/nodejs-24-minimal:9.8-1781562052 AS builder
 
 WORKDIR /app
 
+USER root
+
 COPY package*.json ./
 
 RUN npm ci
@@ -21,8 +23,14 @@ RUN find /usr/share/nginx/html -type d -exec chmod 755 {} + && \
     chown -R 1001:0 /usr/share/nginx/html && \
     chmod -R g=u /usr/share/nginx/html
 
+COPY nginx.conf.template /nginx.conf.template
+COPY entrypoint.sh /
+RUN chmod 755 /entrypoint.sh
+
+ENV ENABLE_IPV6=false
+
 USER 1001
 
 EXPOSE 8080
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["/entrypoint.sh"]
