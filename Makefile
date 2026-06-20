@@ -28,9 +28,9 @@ CENTRAL_UI_DIR := $(CURDIR)/central-ui
 # Directory for the central-backend Node app.
 CENTRAL_BACKEND_DIR := $(CURDIR)/central-backend
 
-# Ansible inventory used by `make deploy`.
+# Inventory and config shared between deploy and central-backend.
 INVENTORY_ROOT := $(CURDIR)/../home-utils/admin/agent_patches
-PLAYBOOK  := $(CURDIR)/deploy/linux/playbook.yml
+DEPLOY_SCRIPT  := $(CURDIR)/deploy/linux/deploy.sh
 
 .PHONY: install build build-server build-cli release release-server release-cli \
         test run run-cli run-central-ui run-central-backend deploy clean fmt vet help
@@ -98,14 +98,13 @@ run-central-backend:
 	cd $(CENTRAL_BACKEND_DIR) && [ -d node_modules ] || npm install
 	cd $(CENTRAL_BACKEND_DIR) && DOTENV_CONFIG_PATH=$(CURDIR)/.env AGENT_INVENTORY_FILE=$(CURDIR)/inventory.csv npm start
 
-## deploy: release and deploy to all hosts in the Ansible inventory
-deploy:
-	echo ""
-	echo "Updating Ubuntu environment...."
-	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -i $(INVENTORY_ROOT)/inventory-ubuntu.yaml -Kk $(PLAYBOOK) --ask-pass
-	echo ""
-	echo "Updating RHEL environment...."
-	ANSIBLE_CONFIG=$(CURDIR)/deploy/linux/ansible.cfg ansible-playbook -i $(INVENTORY_ROOT)/inventory-rhel.yaml -Kk $(PLAYBOOK) --ask-pass
+## deploy: cross-compile for Linux and deploy to all hosts in inventory.csv
+deploy: release-server
+	$(DEPLOY_SCRIPT) \
+		$(INVENTORY_ROOT)/inventory.csv \
+		$(LINUX_AMD64_DIR)/$(BINARY) \
+		$(CURDIR)/deploy/linux/agent_patches.service \
+		$(INVENTORY_ROOT)/endpoint-server-config.yaml
 
 ## fmt: format all Go source files
 fmt:
