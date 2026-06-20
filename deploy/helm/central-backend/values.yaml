@@ -43,9 +43,9 @@ inventory:
 intelligence:
   # Base URL of an OpenAI-compatible API endpoint.
   # e.g. https://api.openai.com/v1  or  http://my-ollama-host:11434/v1
-  baseUrl: ""
+  baseUrl: "http://evolvewired.home.glroland.com:8080/v1"
   # Model name as the target API expects it.
-  model: "gpt-4o"
+  model: "Qwen3-Coder-Next-GGUF"
   # How often to re-analyse the fleet (minutes). 0 = once on startup only.
   intervalMinutes: 30
 
