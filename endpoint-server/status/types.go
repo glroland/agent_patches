@@ -36,8 +36,11 @@ type TimelineEntry struct {
 
 // Response is the full GET /status response body.
 type Response struct {
-	Agent         AgentInfo       `json:"agent"`
-	Status        StatusBlock     `json:"status"`
-	Timeline      []TimelineEntry `json:"timeline"`
-	LastPatchedAt *string         `json:"lastPatchedAt,omitempty"`
+	Agent             AgentInfo       `json:"agent"`
+	Status            StatusBlock     `json:"status"`
+	Timeline          []TimelineEntry `json:"timeline"`
+	LastPatchedAt     *string         `json:"lastPatchedAt,omitempty"`
+	// StatusDescription is an AI-generated one-sentence summary of what
+	// needs operator attention. Only present when state is "attention".
+	StatusDescription string `json:"statusDescription,omitempty"`
 }

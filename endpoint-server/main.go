@@ -193,7 +193,7 @@ func main() {
 	loginMon := loginmonitor.New(mem)
 
 	lp := loop.New(cfg, registry, notify)
-	statusSvc := status.New(hostInfo, mem, lp)
+	statusSvc := status.New(hostInfo, mem, lp, cfg)
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem)
 

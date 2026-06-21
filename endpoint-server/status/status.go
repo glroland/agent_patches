@@ -9,6 +9,7 @@ import (
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/capture_system_info"
 	"agent_patches/endpoint-server/skillstate"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 // currentTasker reports the name of the responsibility currently in flight,
@@ -20,15 +21,16 @@ type currentTasker interface {
 // Service builds GET /status responses from cached system info,
 // memory-backed timeline, and the loop's running state.
 type Service struct {
-	info capture_system_info.Info
-	mem  *memory.Store
-	loop currentTasker
+	info       capture_system_info.Info
+	mem        *memory.Store
+	loop       currentTasker
+	summarizer *summarizer
 }
 
 // New creates a status Service. info is captured once at startup via
 // capture_system_info.Gather.
-func New(info capture_system_info.Info, mem *memory.Store, l currentTasker) *Service {
-	return &Service{info: info, mem: mem, loop: l}
+func New(info capture_system_info.Info, mem *memory.Store, l currentTasker, cfg *config.Settings) *Service {
+	return &Service{info: info, mem: mem, loop: l, summarizer: newSummarizer(cfg)}
 }
 
 // Handler returns the http.HandlerFunc for GET /status.
@@ -80,6 +82,11 @@ func (s *Service) build() Response {
 		lastPatchedAt = &patchTime
 	}
 
+	var statusDescription string
+	if state == "attention" {
+		statusDescription = s.summarizer.get(timeline)
+	}
+
 	return Response{
 		Agent: AgentInfo{
 			Hostname: s.info.Hostname,
@@ -91,8 +98,9 @@ func (s *Service) build() Response {
 			LastPoll:    time.Now().Format(time.RFC3339),
 			CurrentTask: currentTask,
 		},
-		Timeline:      timeline,
-		LastPatchedAt: lastPatchedAt,
+		Timeline:          timeline,
+		LastPatchedAt:     lastPatchedAt,
+		StatusDescription: statusDescription,
 	}
 }
 

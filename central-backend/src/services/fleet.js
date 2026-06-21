@@ -8,13 +8,53 @@ import { getFleet } from './fleetCache.js';
 
 const STATUS_META = {
   active: { label: 'Active', description: 'Currently working on a task' },
-  idle: { label: 'Idle', description: 'Healthy, nothing pending' },
-  attention: { label: 'Needs attention', description: 'Flagged something for review' },
-  offline: { label: 'Offline', description: 'Not responding to polls' },
+  idle:   { label: 'Idle',   description: 'Healthy, nothing pending' },
+  offline:{ label: 'Offline',description: 'Not responding to polls' },
 };
 
 function shortHost(fqdn) {
   return fqdn.split('.')[0].toLowerCase();
+}
+
+// Builds a human-readable attention summary from the timeline so the operator
+// knows exactly what needs review without opening the agent detail page.
+function attentionDescription(timeline) {
+  const parts = [];
+
+  const escalations = timeline.filter((e) => e.type === 'escalation');
+  if (escalations.length > 0) {
+    const first = escalations[0];
+    // Strip the "ESCALATION: " prefix the skill prepends for readability.
+    const title = first.title.replace(/^ESCALATION:\s*/i, '');
+    parts.push(`Escalation: ${title}`);
+  }
+
+  const criticals = timeline.filter(
+    (e) => e.severity === 'critical' && e.type !== 'escalation'
+  );
+  if (criticals.length > 0) {
+    const label = criticals.length === 1
+      ? criticals[0].title
+      : `${criticals.length} critical issues`;
+    parts.push(label);
+  }
+
+  const pendingApprovals = timeline.filter(
+    (e) => e.type === 'approval' && e.status === 'pending' &&
+           (e.risk === 'high' || e.risk === 'medium')
+  );
+  if (pendingApprovals.length > 0) {
+    const highCount  = pendingApprovals.filter((e) => e.risk === 'high').length;
+    const medCount   = pendingApprovals.filter((e) => e.risk === 'medium').length;
+    const riskLabels = [
+      highCount  ? `${highCount} high-risk`   : null,
+      medCount   ? `${medCount} medium-risk`  : null,
+    ].filter(Boolean).join(', ');
+    const noun = pendingApprovals.length === 1 ? 'approval' : 'approvals';
+    parts.push(`${riskLabels} ${noun} waiting`);
+  }
+
+  return parts.length > 0 ? parts.join(' · ') : 'Needs review';
 }
 
 async function toFleetAgent(inventoryAgent) {
@@ -32,6 +72,9 @@ async function toFleetAgent(inventoryAgent) {
   const timeline = data?.timeline ?? [];
   const state = data ? statusBlock.state : 'offline';
   const statusMeta = STATUS_META[state] ?? STATUS_META.offline;
+  const statusDescription = state === 'attention'
+    ? (data?.statusDescription || attentionDescription(timeline))
+    : statusMeta.description;
 
   return {
     id,
@@ -44,7 +87,7 @@ async function toFleetAgent(inventoryAgent) {
     tags: inventoryAgent.tags || [],
     status: state,
     statusLabel: statusMeta.label,
-    statusDescription: statusMeta.description,
+    statusDescription,
     lastPoll: statusBlock.lastPoll ?? null,
     currentTask: statusBlock.currentTask ?? null,
     lastPatchedAt: data?.lastPatchedAt ?? null,
