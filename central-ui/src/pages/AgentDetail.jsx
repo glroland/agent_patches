@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon, TrashIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, sendAgentMessage, clearAgentMemory } from '../api/client';
+import { fetchAgent, fetchAgentMemory, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
+import { useFleetSocket } from '../hooks/useFleetSocket';
+import { useChatHistory } from '../hooks/useChatHistory';
 import { relativeTime } from '../utils/time';
 
 const TABS = ['Activity', 'Recommendations & Approvals', 'Interact', 'Agent Memory', 'Admin'];
@@ -183,43 +185,152 @@ const SUGGESTIONS = [
 ];
 
 function InteractTab({ agent }) {
-  const [messages, setMessages] = useState([
-    { role: 'agent', text: `Hi, I'm the agent for ${agent.hostname}. Ask me about what I've seen, what I'm doing, or why I've made a recommendation.` },
-  ]);
+  const { messages, addMessage } = useChatHistory(agent.id);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  // Per-approval decision state: id -> { loading, decision, error }
+  const [approvalDecisions, setApprovalDecisions] = useState({});
+  const bottomRef = useRef(null);
+
+  // IDs of approvals that existed when this tab mounted — we only inject
+  // approvals that appear after the user sends a message.
+  const knownApprovalIds = useRef(
+    new Set(agent.timeline.filter((e) => e.type === 'approval').map((e) => e.id))
+  );
+
+  // Watch live approval count for this agent from the WebSocket.
+  const { agents: wsAgents } = useFleetSocket();
+  const wsApprovalCount = wsAgents?.find((a) => a.id === agent.id)?.pendingApprovalCount ?? 0;
+
+  // Greet on first visit only.
+  useEffect(() => {
+    if (messages.length === 0) {
+      addMessage({
+        role: 'agent',
+        text: `Hi, I'm the agent for ${agent.hostname}. Ask me about what I've seen, what I'm doing, or why I've made a recommendation.`,
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-scroll to latest message.
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, sending]);
+
+  // While waiting for an agent reply, watch for new pending approvals that
+  // appear in the WS fleet data and inject them inline so the user never has
+  // to leave the chat to resolve them.
+  useEffect(() => {
+    if (!sending) return;
+    fetchAgent(agent.id)
+      .then((fullAgent) => {
+        const newApprovals = (fullAgent.timeline ?? []).filter(
+          (e) =>
+            e.type === 'approval' &&
+            e.status === 'pending' &&
+            !knownApprovalIds.current.has(e.id)
+        );
+        newApprovals.forEach((entry) => {
+          knownApprovalIds.current.add(entry.id);
+          addMessage({ role: 'approval', entry });
+        });
+      })
+      .catch(() => {});
+  }, [sending, wsApprovalCount, agent.id, addMessage]);
 
   const send = async (text) => {
     const value = (text ?? input).trim();
     if (!value || sending) return;
-    setMessages((prev) => [...prev, { role: 'user', text: value }]);
+    addMessage({ role: 'user', text: value });
     setInput('');
     setSending(true);
     try {
       const { reply } = await sendAgentMessage(agent.id, value);
-      setMessages((prev) => [...prev, { role: 'agent', text: reply || '(no response)' }]);
+      addMessage({ role: 'agent', text: reply || '(no response)' });
     } catch (err) {
-      setMessages((prev) => [...prev, { role: 'agent', text: `Couldn't reach the agent: ${err.message}` }]);
+      addMessage({ role: 'agent', text: `Couldn't reach the agent: ${err.message}` });
     } finally {
       setSending(false);
     }
   };
 
+  const resolveApproval = async (entry, decision) => {
+    setApprovalDecisions((prev) => ({ ...prev, [entry.id]: { loading: true } }));
+    try {
+      await decideApproval(entry.id, decision, agent.id);
+      setApprovalDecisions((prev) => ({ ...prev, [entry.id]: { decision } }));
+    } catch (err) {
+      setApprovalDecisions((prev) => ({ ...prev, [entry.id]: { error: err.message } }));
+    }
+  };
+
   return (
     <Card title={`Talk to the ${agent.hostname} agent`} subtitle="Sends a message via the A2A JSON-RPC API">
-      <div className="flex h-96 flex-col">
+      <div className="flex h-[32rem] flex-col">
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-          {messages.map((m, i) => (
-            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-              <div
-                className={`max-w-[80%] rounded-xl px-3.5 py-2.5 text-sm whitespace-pre-wrap ${
-                  m.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-200'
-                }`}
-              >
-                {m.text}
+          {messages.map((m, i) => {
+            if (m.role === 'approval') {
+              const state = approvalDecisions[m.entry.id];
+              const decided = state?.decision;
+              return (
+                <div key={i} className="flex justify-start">
+                  <div className="w-full max-w-[92%] rounded-xl border border-amber-800/50 bg-amber-950/20 p-3 text-sm">
+                    <div className="mb-2 flex items-center gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-amber-400">
+                        Approval Required
+                      </span>
+                      <Badge variant={m.entry.risk}>{m.entry.risk} risk</Badge>
+                    </div>
+                    <p className="font-medium text-slate-200">{m.entry.title}</p>
+                    <p className="mt-1 text-xs text-slate-400">{m.entry.detail}</p>
+                    {m.entry.proposedAction && (
+                      <p className="mt-2 rounded bg-slate-900 px-2 py-1.5 font-mono text-xs text-slate-400">
+                        {m.entry.proposedAction}
+                      </p>
+                    )}
+                    {decided ? (
+                      <p className={`mt-2 text-xs font-medium ${decided === 'approved' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {decided === 'approved'
+                          ? '✓ Approved — agent will proceed'
+                          : '✗ Rejected — agent will not proceed'}
+                      </p>
+                    ) : state?.error ? (
+                      <p className="mt-2 text-xs text-rose-400">{state.error}</p>
+                    ) : (
+                      <div className="mt-3 flex gap-2">
+                        <button
+                          onClick={() => resolveApproval(m.entry, 'approved')}
+                          disabled={state?.loading}
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <CheckIcon className="h-3.5 w-3.5" /> Approve
+                        </button>
+                        <button
+                          onClick={() => resolveApproval(m.entry, 'rejected')}
+                          disabled={state?.loading}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-rose-500/50 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <XIcon className="h-3.5 w-3.5" /> Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  className={`max-w-[80%] rounded-xl px-3.5 py-2.5 text-sm whitespace-pre-wrap ${
+                    m.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-200'
+                  }`}
+                >
+                  {m.text}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
           {sending && (
             <div className="flex justify-start">
               <div className="max-w-[80%] rounded-xl bg-slate-800 px-3.5 py-2.5 text-sm text-slate-400">
@@ -227,6 +338,7 @@ function InteractTab({ agent }) {
               </div>
             </div>
           )}
+          <div ref={bottomRef} />
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">

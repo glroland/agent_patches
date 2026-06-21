@@ -8,9 +8,11 @@ import Issues from './pages/Issues';
 import FleetChat from './pages/FleetChat';
 import Admin from './pages/Admin';
 import { FleetSocketProvider } from './hooks/useFleetSocket';
+import { ChatHistoryProvider } from './hooks/useChatHistory';
 
 export default function App() {
   return (
+    <ChatHistoryProvider>
     <FleetSocketProvider>
       <Routes>
         <Route element={<Layout />}>
@@ -24,5 +26,6 @@ export default function App() {
         </Route>
       </Routes>
     </FleetSocketProvider>
+    </ChatHistoryProvider>
   );
 }
