@@ -73,10 +73,18 @@ echo ""
 # ---------------------------------------------------------------------------
 # SSH / sshpass setup
 # ---------------------------------------------------------------------------
+
+# ControlMaster keeps one authenticated connection open per host so that the
+# multiple SSH/SCP steps inside deploy_host never re-prompt for a password.
+CTRL_DIR=$(mktemp -d /tmp/agent_patches_ssh.XXXXXX)
+
 SSH_BASE_OPTS=(
     -o StrictHostKeyChecking=accept-new
     -o ConnectTimeout=10
     -o BatchMode=no
+    -o ControlMaster=auto
+    -o "ControlPath=$CTRL_DIR/%h-%p-%r"
+    -o ControlPersist=120s
     -p "$SSH_PORT"
 )
 [[ -n "${SSH_KEY:-}" ]] && SSH_BASE_OPTS+=(-i "$SSH_KEY")
@@ -106,7 +114,7 @@ SCP_OPTS=(-P "$SSH_PORT" -o StrictHostKeyChecking=accept-new)
 # Remote setup script (written to a local tempfile, scp'd and executed)
 # ---------------------------------------------------------------------------
 SETUP_SCRIPT=$(mktemp /tmp/agent_patches_setup.XXXXXX.sh)
-trap 'rm -f "$SETUP_SCRIPT"' EXIT
+trap 'rm -f "$SETUP_SCRIPT"; rm -rf "$CTRL_DIR"' EXIT
 
 cat > "$SETUP_SCRIPT" << 'REMOTE_SCRIPT'
 #!/bin/bash
@@ -277,6 +285,11 @@ deploy_host() {
     else
         echo "└─ ✗ $host — FAILED (exit $rc)"
     fi
+
+    # Close the ControlMaster socket for this host now that we're done with it.
+    "${SSH_CMD[@]}" -O exit -o "ControlPath=$CTRL_DIR/%h-%p-%r" \
+        "${host_user}@${host}" 2>/dev/null || true
+
     return $rc
 }
 
