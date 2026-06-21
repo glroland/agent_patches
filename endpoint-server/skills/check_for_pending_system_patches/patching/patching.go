@@ -127,6 +127,50 @@ func (p *Patcher) Run(ctx context.Context) (string, error) {
 	return sb.String(), nil
 }
 
+// LastUpdated returns the approximate time the OS package database was last
+// modified, which indicates when software was last installed or updated by
+// any means (not only through this application).
+//
+// On Debian/Ubuntu it stats /var/lib/dpkg/status.
+// On Fedora/RHEL it stats the RPM database file.
+// On Windows it queries the most recent installed hotfix via PowerShell.
+// On macOS it stats /Library/Receipts.
+func (p *Patcher) LastUpdated(ctx context.Context) (*time.Time, error) {
+	switch p.os {
+	case OSDebian:
+		return statMtime("/var/lib/dpkg/status")
+	case OSFedora:
+		// RHEL 9+ uses rpmdb.sqlite; older systems use Packages.
+		if t, err := statMtime("/var/lib/rpm/rpmdb.sqlite"); err == nil {
+			return t, nil
+		}
+		return statMtime("/var/lib/rpm/Packages")
+	case OSDarwin:
+		return statMtime("/Library/Receipts")
+	case OSWindows:
+		out, err := p.commander.Run(ctx, "powershell.exe", "-NoProfile", "-Command",
+			`(Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 1).InstalledOn.ToString("o")`)
+		if err != nil {
+			return nil, fmt.Errorf("LastUpdated windows: %w", err)
+		}
+		t, err := time.Parse(time.RFC3339, strings.TrimSpace(out))
+		if err != nil {
+			return nil, fmt.Errorf("LastUpdated windows: parse %q: %w", strings.TrimSpace(out), err)
+		}
+		return &t, nil
+	}
+	return nil, fmt.Errorf("LastUpdated: unsupported OS: %s", p.os)
+}
+
+func statMtime(path string) (*time.Time, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	t := info.ModTime()
+	return &t, nil
+}
+
 // CheckDistUpgrade reports whether Ubuntu's update infrastructure has flagged
 // a new distribution release on this host. It reads only the well-known
 // notification file that Ubuntu's update-notifier writes when a new release is

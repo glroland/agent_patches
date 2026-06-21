@@ -1,13 +1,16 @@
 package status
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/capture_system_info"
+	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
 	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/utils/config"
 )
@@ -25,12 +28,17 @@ type Service struct {
 	mem        *memory.Store
 	loop       currentTasker
 	summarizer *summarizer
+	patcher    *patching.Patcher
 }
 
 // New creates a status Service. info is captured once at startup via
 // capture_system_info.Gather.
 func New(info capture_system_info.Info, mem *memory.Store, l currentTasker, cfg *config.Settings) *Service {
-	return &Service{info: info, mem: mem, loop: l, summarizer: newSummarizer(cfg)}
+	p, err := patching.New()
+	if err != nil {
+		slog.Warn("status: OS detection failed — last-updated fallback disabled", "error", err)
+	}
+	return &Service{info: info, mem: mem, loop: l, summarizer: newSummarizer(cfg), patcher: p}
 }
 
 // Handler returns the http.HandlerFunc for GET /status.
@@ -79,7 +87,15 @@ func (s *Service) build() Response {
 	var lastPatchedAt *string
 	var patchTime string
 	if err := s.mem.Attrs().Get("last_patched_at", &patchTime); err == nil && patchTime != "" {
+		// Application-managed patch record takes precedence.
 		lastPatchedAt = &patchTime
+	} else if s.patcher != nil {
+		// Fall back to OS-native package database mtime so the dashboard shows
+		// accurate dates even before this application has ever applied updates.
+		if t, err := s.patcher.LastUpdated(context.Background()); err == nil {
+			ts := t.UTC().Format(time.RFC3339)
+			lastPatchedAt = &ts
+		}
 	}
 
 	var statusDescription string
