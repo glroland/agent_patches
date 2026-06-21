@@ -30,6 +30,7 @@ import (
 	"agent_patches/endpoint-server/skills/check_drives"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
+	"agent_patches/endpoint-server/skills/check_reboot_required"
 	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/skills/read_agent_memory"
 	"agent_patches/endpoint-server/skills/report_findings"
@@ -79,6 +80,13 @@ func main() {
 		return
 	}
 	registry.Register(patchTool)
+
+	rebootCheckTool, err := check_reboot_required.NewCheckRebootRequiredTool()
+	if err != nil {
+		slog.Error("failed to create check_reboot_required tool", "error", err)
+		return
+	}
+	registry.Register(rebootCheckTool)
 
 	diskUsageTool, err := check_drives.NewDiskUsageTool(mem)
 	if err != nil {

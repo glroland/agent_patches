@@ -102,7 +102,7 @@ func (p *Patcher) Run(ctx context.Context) (string, error) {
 	}
 	slog.Info("patching: update complete")
 
-	needs, err := p.needsReboot(ctx)
+	needs, err := p.NeedsReboot(ctx)
 	if err != nil {
 		logf("Warning: reboot check failed: %v", err)
 		slog.Warn("patching: reboot check failed", "error", err)
@@ -334,8 +334,9 @@ func (p *Patcher) patchDarwin(ctx context.Context) (string, error) {
 	return out, nil
 }
 
-// needsReboot returns true when the OS signals that a reboot is required.
-func (p *Patcher) needsReboot(ctx context.Context) (bool, error) {
+// NeedsReboot returns true when the OS signals that a reboot is required,
+// without applying any updates. Safe to call at any time.
+func (p *Patcher) NeedsReboot(ctx context.Context) (bool, error) {
 	slog.Debug("patching: checking whether a reboot is required", "os", p.os)
 	switch p.os {
 	case OSDebian:
