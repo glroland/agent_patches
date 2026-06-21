@@ -163,6 +163,12 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 				return fmt.Sprintf("%serror: %v", log, err), nil
 			}
 
+			// Record when patches were last successfully applied so the
+			// central dashboard can surface patch currency per agent.
+			if err := mem.Attrs().Set("last_patched_at", time.Now().Format(time.RFC3339)); err != nil {
+				slog.Warn("check_for_pending_system_patches: failed to write last_patched_at", "error", err)
+			}
+
 			result := log
 			if distUpgrade != "" {
 				result += "\n\nDistribution upgrade: " + distUpgrade

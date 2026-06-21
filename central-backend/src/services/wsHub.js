@@ -34,6 +34,7 @@ function buildPayload(rawAgents) {
       statusDescription: agent.statusDescription,
       currentTask: agent.currentTask,
       lastPoll: agent.lastPoll,
+      lastPatchedAt: agent.lastPatchedAt ?? null,
       latestActivity: latest ? { title: latest.title, time: latest.time, type: latest.type } : null,
       pendingApprovalCount: pendingApprovals([agent]).length,
     };

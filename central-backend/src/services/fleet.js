@@ -47,6 +47,7 @@ async function toFleetAgent(inventoryAgent) {
     statusDescription: statusMeta.description,
     lastPoll: statusBlock.lastPoll ?? null,
     currentTask: statusBlock.currentTask ?? null,
+    lastPatchedAt: data?.lastPatchedAt ?? null,
     timeline,
   };
 }

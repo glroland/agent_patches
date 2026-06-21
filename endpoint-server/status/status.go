@@ -74,6 +74,12 @@ func (s *Service) build() Response {
 		state = "attention"
 	}
 
+	var lastPatchedAt *string
+	var patchTime string
+	if err := s.mem.Attrs().Get("last_patched_at", &patchTime); err == nil && patchTime != "" {
+		lastPatchedAt = &patchTime
+	}
+
 	return Response{
 		Agent: AgentInfo{
 			Hostname: s.info.Hostname,
@@ -85,7 +91,8 @@ func (s *Service) build() Response {
 			LastPoll:    time.Now().Format(time.RFC3339),
 			CurrentTask: currentTask,
 		},
-		Timeline: timeline,
+		Timeline:      timeline,
+		LastPatchedAt: lastPatchedAt,
 	}
 }
 

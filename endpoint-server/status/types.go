@@ -36,7 +36,8 @@ type TimelineEntry struct {
 
 // Response is the full GET /status response body.
 type Response struct {
-	Agent    AgentInfo       `json:"agent"`
-	Status   StatusBlock     `json:"status"`
-	Timeline []TimelineEntry `json:"timeline"`
+	Agent         AgentInfo       `json:"agent"`
+	Status        StatusBlock     `json:"status"`
+	Timeline      []TimelineEntry `json:"timeline"`
+	LastPatchedAt *string         `json:"lastPatchedAt,omitempty"`
 }
