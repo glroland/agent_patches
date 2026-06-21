@@ -25,6 +25,13 @@ backend:
   serviceName: central-backend
   servicePort: 8080
 
+# HAProxy route timeout and nginx proxy read timeout for long-running API calls
+# (agent chat, tool-use loops with operator approval). Both must exceed
+# AGENT_MESSAGE_TIMEOUT_MS on the backend (currently 180s).
+route:
+  timeout: "300s"
+  proxyReadTimeout: "300s"
+
 nodeSelector: {}
 
 tolerations: []
