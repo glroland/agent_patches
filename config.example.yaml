@@ -89,6 +89,21 @@ responsibilities:
       - check_drives
       - run_approved_command
     when_to_notify: "on error"
+  - name: cpu-utilization-check
+    frequency: "30m"
+    instruction: |
+      Check CPU utilization on this host. Report overall CPU usage percentage,
+      logical CPU count, and load averages. If CPU usage is above 80% or any
+      load average exceeds the number of logical CPUs, investigate whether the
+      pressure is sustained. For critical CPU usage above 90%, propose a
+      diagnostic command to identify the top CPU consumers — for example
+      (ps aux --sort=-%cpu | head -20) — and submit it via run_approved_command
+      for operator approval before running anything. Do not act if CPU usage is
+      within normal bounds.
+    tools:
+      - analyze_cpu_utilization
+      - run_approved_command
+    when_to_notify: "on error"
   - name: memory-utilization-check
     frequency: "30m"
     instruction: |

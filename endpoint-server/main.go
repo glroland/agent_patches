@@ -24,6 +24,7 @@ import (
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/memoryapi"
+	"agent_patches/endpoint-server/skills/analyze_cpu_utilization"
 	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
 	"agent_patches/endpoint-server/skills/analyze_network_utilization"
 	"agent_patches/endpoint-server/skills/capture_system_info"
@@ -94,6 +95,13 @@ func main() {
 		return
 	}
 	registry.Register(diskUsageTool)
+
+	cpuUsageTool, err := analyze_cpu_utilization.NewCPUUsageTool(mem)
+	if err != nil {
+		slog.Error("failed to create analyze_cpu_utilization tool", "error", err)
+		return
+	}
+	registry.Register(cpuUsageTool)
 
 	memoryUsageTool, err := analyze_memory_utilization.NewMemoryUsageTool(mem)
 	if err != nil {
