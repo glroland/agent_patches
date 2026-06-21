@@ -4,6 +4,8 @@ metadata:
   name: {{ .Chart.Name }}
   labels:
     app: {{ .Chart.Name }}
+  annotations:
+    haproxy.router.openshift.io/timeout: {{ .Values.route.timeout | quote }}
 spec:
   host: {{ printf "%s-backend.%s" .Release.Name .Values.global.clusterDomain }}
   to:

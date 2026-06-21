@@ -49,6 +49,11 @@ intelligence:
   # How often to re-analyse the fleet (minutes). 0 = once on startup only.
   intervalMinutes: 30
 
+# HAProxy route timeout — must be >= AGENT_MESSAGE_TIMEOUT_MS.
+# Covers the full agent tool-use loop including waiting for operator approval.
+route:
+  timeout: "300s"
+
 env:
   HOST: "0.0.0.0"
   PORT: "8080"
