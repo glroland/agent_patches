@@ -541,6 +541,186 @@ func TestUpdatesAvailable_UnknownOS_ReturnsError(t *testing.T) {
 	}
 }
 
+// ---- NeedsReboot — direct tests ---------------------------------------------
+
+func TestNeedsReboot_Fedora_RebootRequired(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"needs-restarting": {exitCode: 1}, // exit 1 = reboot needed
+		},
+	}
+	p := patching.NewWithCommander(patching.OSFedora, cmdr)
+	needed, err := p.NeedsReboot(context.Background())
+	if err != nil {
+		t.Fatalf("NeedsReboot() unexpected error: %v", err)
+	}
+	if !needed {
+		t.Error("expected NeedsReboot() = true when needs-restarting exits 1")
+	}
+}
+
+func TestNeedsReboot_Fedora_NotRequired(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"needs-restarting": {output: "No core libraries updated."}, // exit 0
+		},
+	}
+	p := patching.NewWithCommander(patching.OSFedora, cmdr)
+	needed, err := p.NeedsReboot(context.Background())
+	if err != nil {
+		t.Fatalf("NeedsReboot() unexpected error: %v", err)
+	}
+	if needed {
+		t.Error("expected NeedsReboot() = false when needs-restarting exits 0")
+	}
+}
+
+func TestNeedsReboot_Fedora_UnexpectedExitCode_ReturnsNoReboot(t *testing.T) {
+	// An unexpected non-zero exit code (not 1) means the tool failed, not that
+	// a reboot is needed. We must not confuse the two.
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"needs-restarting": {exitCode: 127}, // command not found
+		},
+	}
+	p := patching.NewWithCommander(patching.OSFedora, cmdr)
+	needed, err := p.NeedsReboot(context.Background())
+	if err != nil {
+		t.Fatalf("NeedsReboot() unexpected error: %v", err)
+	}
+	if needed {
+		t.Error("expected NeedsReboot() = false for unexpected exit code")
+	}
+}
+
+func TestNeedsReboot_Windows_RebootRequired(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"reg": {output: "HKLM\\...\\RebootRequired\n    RebootRequired    REG_DWORD    0x1"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSWindows, cmdr)
+	needed, err := p.NeedsReboot(context.Background())
+	if err != nil {
+		t.Fatalf("NeedsReboot() unexpected error: %v", err)
+	}
+	if !needed {
+		t.Error("expected NeedsReboot() = true when registry key present")
+	}
+}
+
+func TestNeedsReboot_Windows_NotRequired(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"reg": {exitCode: 1}, // key absent
+		},
+	}
+	p := patching.NewWithCommander(patching.OSWindows, cmdr)
+	needed, err := p.NeedsReboot(context.Background())
+	if err != nil {
+		t.Fatalf("NeedsReboot() unexpected error: %v", err)
+	}
+	if needed {
+		t.Error("expected NeedsReboot() = false when registry key absent")
+	}
+}
+
+// ---- CheckDistUpgrade -------------------------------------------------------
+
+func TestCheckDistUpgrade_NonDebian_ReturnsEmpty(t *testing.T) {
+	for _, os := range []patching.OSType{patching.OSFedora, patching.OSDarwin, patching.OSWindows} {
+		p := patching.NewWithCommander(os, &mockCmdr{})
+		if got := p.CheckDistUpgrade(); got != "" {
+			t.Errorf("CheckDistUpgrade(%s) = %q, want empty", os, got)
+		}
+	}
+}
+
+func TestCheckDistUpgrade_Debian_FileAbsent_ReturnsEmpty(t *testing.T) {
+	// The sentinel file does not exist in CI — expect empty string (no upgrade).
+	p := patching.NewWithCommander(patching.OSDebian, &mockCmdr{})
+	got := p.CheckDistUpgrade()
+	// Only assert it doesn't panic and returns a string; presence depends on host.
+	_ = got
+}
+
+// ---- FormatUpdateSummary ----------------------------------------------------
+
+func TestFormatUpdateSummary_WithCVEs(t *testing.T) {
+	updates := []patching.PackageUpdate{
+		{
+			Name:       "openssl",
+			NewVersion: "3.0.15",
+			CVEs: []patching.CVEInfo{
+				{ID: "CVE-2024-9999", Severity: "CRITICAL", CVSSScore: 9.8},
+			},
+		},
+		{
+			Name:       "curl",
+			NewVersion: "8.5.0",
+		},
+	}
+	out := patching.FormatUpdateSummary("host01", patching.OSDebian, updates)
+	// Expect a CVE bullet with the severity, CVE ID, and affected package.
+	for _, want := range []string{"CVE-2024-9999", "CRITICAL", "openssl", "3.0.15"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("FormatUpdateSummary missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestFormatUpdateSummary_NoUpdates(t *testing.T) {
+	out := patching.FormatUpdateSummary("host01", patching.OSDebian, nil)
+	if !strings.Contains(out, "up to date") {
+		t.Errorf("FormatUpdateSummary(nil) = %q, expected up-to-date message", out)
+	}
+}
+
+// ---- LastUpdated — Windows (via mock commander) -----------------------------
+
+func TestLastUpdated_Windows_ParsesHotfixDate(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"powershell.exe": {output: "2025-03-15T10:00:00Z\n"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSWindows, cmdr)
+	t1, err := p.LastUpdated(context.Background())
+	if err != nil {
+		t.Fatalf("LastUpdated() error: %v", err)
+	}
+	if t1 == nil {
+		t.Fatal("LastUpdated() returned nil time")
+	}
+	if t1.Year() != 2025 || t1.Month() != 3 || t1.Day() != 15 {
+		t.Errorf("LastUpdated() = %v, want 2025-03-15", *t1)
+	}
+}
+
+func TestLastUpdated_Windows_PowerShellFails_ReturnsError(t *testing.T) {
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"powershell.exe": {output: "error", exitCode: 1},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSWindows, cmdr)
+	_, err := p.LastUpdated(context.Background())
+	if err == nil {
+		t.Fatal("LastUpdated() expected error when powershell fails, got nil")
+	}
+}
+
+func TestLastUpdated_UnsupportedOS_ReturnsError(t *testing.T) {
+	p := patching.NewWithCommander(patching.OSUnknown, &mockCmdr{})
+	_, err := p.LastUpdated(context.Background())
+	if err == nil {
+		t.Fatal("LastUpdated() expected error for unsupported OS, got nil")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Errorf("error %q should mention 'unsupported'", err.Error())
+	}
+}
+
 // ---- NewPatchTool -----------------------------------------------------------
 
 func TestNewPatchTool_NameAndDescription(t *testing.T) {

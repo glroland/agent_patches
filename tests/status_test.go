@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"agent_patches/endpoint-server/memory"
@@ -29,7 +30,7 @@ func newStatusService(t *testing.T, task string) (*status.Service, *memory.Store
 		Distribution: "Ubuntu",
 		Version:      "22.04",
 	}
-	return status.New(info, mem, fakeCurrentTasker{task: task}), mem
+	return status.New(info, mem, fakeCurrentTasker{task: task}, &config.Settings{}), mem
 }
 
 func doStatusRequest(t *testing.T, svc *status.Service) status.Response {
@@ -107,12 +108,12 @@ func TestStatusHandler_AttentionFromCriticalSeverity(t *testing.T) {
 	}
 }
 
-func TestStatusHandler_AttentionFromPendingApproval(t *testing.T) {
+func TestStatusHandler_AttentionFromPendingApprovalHighRisk(t *testing.T) {
 	svc, mem := newStatusService(t, "")
 
 	pending := "pending"
 	entries := []status.TimelineEntry{
-		{ID: "1", Type: "approval", Title: "apply patches", Status: &pending},
+		{ID: "1", Type: "approval", Title: "apply patches", Status: &pending, Risk: "high"},
 	}
 	if err := mem.Domain("timeline").Write(entries); err != nil {
 		t.Fatalf("write timeline: %v", err)
@@ -122,6 +123,141 @@ func TestStatusHandler_AttentionFromPendingApproval(t *testing.T) {
 
 	if resp.Status.State != "attention" {
 		t.Errorf("Status.State = %q, want %q", resp.Status.State, "attention")
+	}
+}
+
+func TestStatusHandler_AttentionFromPendingApprovalMediumRisk(t *testing.T) {
+	svc, mem := newStatusService(t, "")
+
+	pending := "pending"
+	entries := []status.TimelineEntry{
+		{ID: "1", Type: "approval", Title: "apply patches", Status: &pending, Risk: "medium"},
+	}
+	if err := mem.Domain("timeline").Write(entries); err != nil {
+		t.Fatalf("write timeline: %v", err)
+	}
+
+	resp := doStatusRequest(t, svc)
+
+	if resp.Status.State != "attention" {
+		t.Errorf("Status.State = %q, want %q", resp.Status.State, "attention")
+	}
+}
+
+// Low-risk pending approvals (routine patches with no CVEs) must NOT flip the
+// agent to "attention" — available updates alone do not make a server unhealthy.
+func TestStatusHandler_LowRiskApprovalDoesNotTriggerAttention(t *testing.T) {
+	svc, mem := newStatusService(t, "")
+
+	pending := "pending"
+	entries := []status.TimelineEntry{
+		{ID: "1", Type: "approval", Title: "apply patches", Status: &pending, Risk: "low"},
+	}
+	if err := mem.Domain("timeline").Write(entries); err != nil {
+		t.Fatalf("write timeline: %v", err)
+	}
+
+	resp := doStatusRequest(t, svc)
+
+	if resp.Status.State != "idle" {
+		t.Errorf("Status.State = %q, want %q (low-risk approval should not trigger attention)", resp.Status.State, "idle")
+	}
+}
+
+// An already-decided (approved/rejected) approval must not re-trigger attention.
+func TestStatusHandler_ResolvedApprovalDoesNotTriggerAttention(t *testing.T) {
+	svc, mem := newStatusService(t, "")
+
+	approved := "approved"
+	entries := []status.TimelineEntry{
+		{ID: "1", Type: "approval", Title: "apply patches", Status: &approved, Risk: "high"},
+	}
+	if err := mem.Domain("timeline").Write(entries); err != nil {
+		t.Fatalf("write timeline: %v", err)
+	}
+
+	resp := doStatusRequest(t, svc)
+
+	if resp.Status.State != "idle" {
+		t.Errorf("Status.State = %q, want idle (resolved approval should not trigger attention)", resp.Status.State)
+	}
+}
+
+func TestStatusHandler_LastPatchedAt_FromAttrs(t *testing.T) {
+	svc, mem := newStatusService(t, "")
+
+	const ts = "2025-03-15T10:00:00Z"
+	if err := mem.Attrs().Set("last_patched_at", ts); err != nil {
+		t.Fatalf("Set last_patched_at: %v", err)
+	}
+
+	resp := doStatusRequest(t, svc)
+
+	if resp.LastPatchedAt == nil {
+		t.Fatal("LastPatchedAt is nil, want non-nil")
+	}
+	if *resp.LastPatchedAt != ts {
+		t.Errorf("LastPatchedAt = %q, want %q", *resp.LastPatchedAt, ts)
+	}
+}
+
+func TestStatusHandler_OsLabel_WithDistribAndVersion(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	info := capture_system_info.Info{Hostname: "h", OS: "linux", Distribution: "Ubuntu", Version: "24.04"}
+	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{})
+
+	resp := doStatusRequest(t, svc)
+	if resp.Agent.OS != "Ubuntu 24.04" {
+		t.Errorf("Agent.OS = %q, want %q", resp.Agent.OS, "Ubuntu 24.04")
+	}
+}
+
+func TestStatusHandler_OsLabel_DistribOnly(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	info := capture_system_info.Info{Hostname: "h", OS: "linux", Distribution: "Debian"}
+	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{})
+
+	resp := doStatusRequest(t, svc)
+	if resp.Agent.OS != "Debian" {
+		t.Errorf("Agent.OS = %q, want %q", resp.Agent.OS, "Debian")
+	}
+}
+
+func TestStatusHandler_OsLabel_FallsBackToGOOS(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	info := capture_system_info.Info{Hostname: "h", OS: "windows"}
+	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{})
+
+	resp := doStatusRequest(t, svc)
+	if resp.Agent.OS != "windows" {
+		t.Errorf("Agent.OS = %q, want %q", resp.Agent.OS, "windows")
+	}
+}
+
+func TestStatusHandler_SkillStateWarningDoesNotTriggerAttention(t *testing.T) {
+	svc, mem := newStatusService(t, "")
+
+	if err := skillstate.Save(mem, "analyze_memory_utilization", skillstate.HealthWarning, "RAM used: 82%"); err != nil {
+		t.Fatalf("skillstate.Save: %v", err)
+	}
+
+	resp := doStatusRequest(t, svc)
+
+	// Warning-level skill state must appear in the timeline but not flip to attention.
+	if resp.Status.State != "idle" {
+		t.Errorf("Status.State = %q, want idle (warning skill state should not trigger attention)", resp.Status.State)
+	}
+	found := false
+	for _, e := range resp.Timeline {
+		if strings.Contains(e.ID, "analyze_memory_utilization") {
+			found = true
+			if e.Severity != "warning" {
+				t.Errorf("timeline entry severity = %q, want warning", e.Severity)
+			}
+		}
+	}
+	if !found {
+		t.Error("warning skill state should appear in timeline even though it does not trigger attention")
 	}
 }
 
