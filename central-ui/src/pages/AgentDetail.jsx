@@ -4,19 +4,19 @@ import Badge from '../components/Badge';
 import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
-import { ChatIcon, CheckIcon, XIcon, TrashIcon } from '../components/icons';
+import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon } from '../components/icons';
 import { fetchAgent, fetchAgentMemory, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { useChatHistory } from '../hooks/useChatHistory';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Activity', 'Recommendations & Approvals', 'Interact', 'Agent Memory', 'Admin'];
+const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Admin'];
 
 export default function AgentDetail() {
   const { id } = useParams();
   const { data: agent, loading, error } = useApi(() => fetchAgent(id), [id]);
-  const [tab, setTab] = useState('Activity');
+  const [tab, setTab] = useState('Interact');
   const [approvalState, setApprovalState] = useState({});
 
   if (loading) {
@@ -100,8 +100,6 @@ export default function AgentDetail() {
       )}
 
       {tab === 'Interact' && <InteractTab agent={agent} />}
-
-      {tab === 'Agent Memory' && <AgentMemoryTab agent={agent} />}
 
       {tab === 'Admin' && <AgentAdminTab agent={agent} />}
     </div>
@@ -379,116 +377,141 @@ function InteractTab({ agent }) {
   );
 }
 
-function AgentAdminTab({ agent }) {
-  const [state, setState] = useState('idle'); // idle | confirm | working | done | error
-  const [errorMsg, setErrorMsg] = useState('');
-
-  const doClear = async () => {
-    setState('working');
-    try {
-      await clearAgentMemory(agent.id);
-      setState('done');
-      setTimeout(() => setState('idle'), 3000);
-    } catch (err) {
-      setErrorMsg(err.message);
-      setState('error');
-      setTimeout(() => setState('idle'), 4000);
-    }
-  };
-
+function CollapsibleSection({ title, subtitle, children }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Card title="Agent administration" subtitle="Destructive actions for this agent">
-      <div className="flex items-center justify-between rounded-lg border border-slate-800 p-4">
-        <div>
-          <p className="text-sm font-medium text-slate-200">Clear agent memory</p>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Removes all cached timeline snapshots, skill state, and attrs. The agent rebuilds memory on its next run cycle.
-          </p>
+    <div className="rounded-lg border border-slate-800">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors rounded-lg"
+      >
+        <ChevronRightIcon
+          className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-medium text-slate-200">{title}</p>
+          {subtitle && <p className="mt-0.5 text-xs text-slate-500 truncate">{subtitle}</p>}
         </div>
-        <div className="shrink-0 pl-4">
-          {state === 'idle' && (
-            <button
-              onClick={() => setState('confirm')}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-800/60 px-3 py-1.5 text-xs font-semibold text-rose-400 transition-colors hover:border-rose-600 hover:bg-rose-600/10"
-            >
-              <TrashIcon className="h-3.5 w-3.5" />
-              Clear memory
-            </button>
-          )}
-          {state === 'confirm' && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-400">Are you sure?</span>
-              <button
-                onClick={doClear}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500"
-              >
-                Yes, clear
-              </button>
-              <button
-                onClick={() => setState('idle')}
-                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
-              >
-                Cancel
-              </button>
-            </div>
-          )}
-          {state === 'working' && <span className="text-xs text-slate-500">Clearing...</span>}
-          {state === 'done' && <span className="text-xs text-emerald-400">Memory cleared</span>}
-          {state === 'error' && <span className="text-xs text-rose-400">{errorMsg}</span>}
+      </button>
+      {open && (
+        <div className="border-t border-slate-800 px-4 pb-4 pt-3">
+          {children}
         </div>
-      </div>
-    </Card>
+      )}
+    </div>
   );
 }
 
-function AgentMemoryTab({ agent }) {
-  const { data, loading, error } = useApi(() => fetchAgentMemory(agent.id), [agent.id]);
+function AgentAdminTab({ agent }) {
+  const { data: memData, loading: memLoading, error: memError } = useApi(
+    () => fetchAgentMemory(agent.id), [agent.id]
+  );
+  const [clearState, setClearState] = useState('idle');
+  const [errorMsg, setErrorMsg] = useState('');
 
-  if (loading) {
-    return <AsyncState loading loadingLabel="Loading agent memory..." />;
-  }
+  const doClear = async () => {
+    setClearState('working');
+    try {
+      await clearAgentMemory(agent.id);
+      setClearState('done');
+      setTimeout(() => setClearState('idle'), 3000);
+    } catch (err) {
+      setErrorMsg(err.message);
+      setClearState('error');
+      setTimeout(() => setClearState('idle'), 4000);
+    }
+  };
 
-  if (error) {
-    return <AsyncState error={error} />;
-  }
-
-  const domains = Object.entries(data?.domains ?? {});
-  const attrs = Object.entries(data?.attrs ?? {});
+  const domains = Object.entries(memData?.domains ?? {});
+  const attrs = Object.entries(memData?.attrs ?? {});
 
   return (
     <div className="space-y-4">
-      <Card title="Memory domains" subtitle="Most recent snapshot from each memory domain, via read_agent_memory">
-        {domains.length === 0 ? (
-          <p className="text-sm text-slate-500">This agent has no memory domains recorded yet.</p>
-        ) : (
-          <div className="space-y-4">
-            {domains.map(([name, value]) => (
-              <div key={name} className="rounded-lg border border-slate-800 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{name}</p>
-                <pre className="mt-2 overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
-                  {JSON.stringify(value, null, 2)}
-                </pre>
-              </div>
-            ))}
+      {/* ── Memory ── */}
+      <Card title="Agent memory" subtitle="Cached snapshots and attributes stored by this agent's skills">
+        {memLoading && <AsyncState loading loadingLabel="Loading memory..." />}
+        {memError && <AsyncState error={memError} />}
+        {!memLoading && !memError && (
+          <div className="space-y-2">
+            {domains.length === 0 && attrs.length === 0 ? (
+              <p className="text-sm text-slate-500">No memory recorded yet.</p>
+            ) : (
+              <>
+                {domains.map(([name, value]) => (
+                  <CollapsibleSection
+                    key={name}
+                    title={name}
+                    subtitle={Array.isArray(value) ? `${value.length} entr${value.length === 1 ? 'y' : 'ies'}` : 'domain snapshot'}
+                  >
+                    <pre className="overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
+                      {JSON.stringify(value, null, 2)}
+                    </pre>
+                  </CollapsibleSection>
+                ))}
+                {attrs.length > 0 && (
+                  <CollapsibleSection
+                    title="Attributes"
+                    subtitle={`${attrs.length} key${attrs.length === 1 ? '' : 's'} · skill health, last-run state`}
+                  >
+                    <div className="space-y-2">
+                      {attrs.map(([key, value]) => (
+                        <div key={key}>
+                          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{key}</p>
+                          <pre className="overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
+                            {JSON.stringify(value, null, 2)}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  </CollapsibleSection>
+                )}
+              </>
+            )}
           </div>
         )}
       </Card>
 
-      <Card title="Attributes" subtitle="Key/value attributes recorded by skills (e.g. last-known skill health)">
-        {attrs.length === 0 ? (
-          <p className="text-sm text-slate-500">No attributes recorded yet.</p>
-        ) : (
-          <div className="space-y-4">
-            {attrs.map(([key, value]) => (
-              <div key={key} className="rounded-lg border border-slate-800 p-3">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{key}</p>
-                <pre className="mt-2 overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
-                  {JSON.stringify(value, null, 2)}
-                </pre>
-              </div>
-            ))}
+      {/* ── Danger zone ── */}
+      <Card title="Danger zone" subtitle="Destructive actions for this agent">
+        <div className="flex items-center justify-between rounded-lg border border-slate-800 p-4">
+          <div>
+            <p className="text-sm font-medium text-slate-200">Clear agent memory</p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Removes all cached timeline snapshots, skill state, and attrs. The agent rebuilds memory on its next run cycle.
+            </p>
           </div>
-        )}
+          <div className="shrink-0 pl-4">
+            {clearState === 'idle' && (
+              <button
+                onClick={() => setClearState('confirm')}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-800/60 px-3 py-1.5 text-xs font-semibold text-rose-400 transition-colors hover:border-rose-600 hover:bg-rose-600/10"
+              >
+                <TrashIcon className="h-3.5 w-3.5" />
+                Clear memory
+              </button>
+            )}
+            {clearState === 'confirm' && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-400">Are you sure?</span>
+                <button
+                  onClick={doClear}
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500"
+                >
+                  Yes, clear
+                </button>
+                <button
+                  onClick={() => setClearState('idle')}
+                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
+            {clearState === 'working' && <span className="text-xs text-slate-500">Clearing...</span>}
+            {clearState === 'done' && <span className="text-xs text-emerald-400">Memory cleared</span>}
+            {clearState === 'error' && <span className="text-xs text-rose-400">{errorMsg}</span>}
+          </div>
+        </div>
       </Card>
     </div>
   );

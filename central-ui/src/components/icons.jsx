@@ -141,3 +141,9 @@ export const TrashIcon = (props) => (
     <path d="M10 11v6M14 11v6" strokeLinecap="round" />
   </svg>
 );
+
+export const ChevronRightIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={base} {...props}>
+    <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
