@@ -129,14 +129,14 @@ func main() {
 	}
 	registry.Register(reportFindingsTool)
 
-	requestApprovalTool, err := request_approval.NewRequestApprovalTool(mem)
+	requestApprovalTool, err := request_approval.NewRequestApprovalTool(mem, notify)
 	if err != nil {
 		slog.Error("failed to create request_approval tool", "error", err)
 		return
 	}
 	registry.Register(requestApprovalTool)
 
-	runApprovedCommandTool, err := run_approved_command.NewRunApprovedCommandTool(mem)
+	runApprovedCommandTool, err := run_approved_command.NewRunApprovedCommandTool(mem, notify)
 	if err != nil {
 		slog.Error("failed to create run_approved_command tool", "error", err)
 		return

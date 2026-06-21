@@ -30,6 +30,8 @@ type TimelineEntry struct {
 	Risk           string  `json:"risk,omitempty"`
 	ProposedAction *string `json:"proposedAction,omitempty"`
 	Status         *string `json:"status,omitempty"`
+	RetryCount     int     `json:"retryCount,omitempty"`
+	ParentID       string  `json:"parentId,omitempty"`
 }
 
 // Response is the full GET /status response body.

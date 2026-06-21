@@ -17,6 +17,10 @@ export const config = {
     pollIntervalSeconds: Number(process.env.AGENT_POLL_INTERVAL_SECONDS) || 60,
     inventoryFile: process.env.AGENT_INVENTORY_FILE,
     authToken: process.env.AGENT_AUTH_TOKEN,
+    // Timeout for lightweight polling calls (status, memory, approvals).
+    pollTimeoutMs: Number(process.env.AGENT_POLL_TIMEOUT_MS) || 3000,
+    // Timeout for message/send calls that run the full agent tool-use loop.
+    messageTimeoutMs: Number(process.env.AGENT_MESSAGE_TIMEOUT_MS) || 60000,
   },
   email: {
     // Set EMAIL_ENABLED=true and fill in the remaining vars to enable.

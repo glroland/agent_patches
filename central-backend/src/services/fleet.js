@@ -23,6 +23,7 @@ async function toFleetAgent(inventoryAgent) {
     fqdn: inventoryAgent.fqdn,
     port: inventoryAgent.port,
     authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
   });
   const data = await client.getStatus();
 
@@ -81,6 +82,7 @@ export async function getAgentMemory(id) {
     fqdn: inventoryAgent.fqdn,
     port: inventoryAgent.port,
     authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
   });
   return client.getMemory();
 }
@@ -95,8 +97,9 @@ export async function sendAgentMessage(id, text) {
     fqdn: inventoryAgent.fqdn,
     port: inventoryAgent.port,
     authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
   });
-  return client.sendMessage(text);
+  return client.sendMessage(text, { timeoutMs: config.agents.messageTimeoutMs });
 }
 
 export async function resolveApproval(agentId, approvalId, decision, reason = '') {
@@ -108,6 +111,7 @@ export async function resolveApproval(agentId, approvalId, decision, reason = ''
     fqdn: inventoryAgent.fqdn,
     port: inventoryAgent.port,
     authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
   });
   return client.resolveApproval(approvalId, decision, reason);
 }
@@ -121,6 +125,7 @@ export async function clearAgentMemory(id) {
     fqdn: inventoryAgent.fqdn,
     port: inventoryAgent.port,
     authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
   });
   return client.clearMemory();
 }
@@ -135,6 +140,7 @@ export async function clearAllAgentsMemory() {
         fqdn: inventoryAgent.fqdn,
         port: inventoryAgent.port,
         authToken: config.agents.authToken,
+        timeoutMs: config.agents.pollTimeoutMs,
       });
       const result = await client.clearMemory();
       return { id, hostname: inventoryAgent.fqdn, ok: result !== null, error: result === null ? 'unreachable' : undefined };
@@ -150,9 +156,10 @@ export async function broadcastMessage(text) {
         fqdn: inventoryAgent.fqdn,
         port: inventoryAgent.port,
         authToken: config.agents.authToken,
+        timeoutMs: config.agents.pollTimeoutMs,
       });
       try {
-        const reply = await client.sendMessage(text);
+        const reply = await client.sendMessage(text, { timeoutMs: config.agents.messageTimeoutMs });
         return { id, hostname: inventoryAgent.fqdn, displayName: inventoryAgent.displayName, reply };
       } catch (err) {
         return { id, hostname: inventoryAgent.fqdn, displayName: inventoryAgent.displayName, error: err.message };

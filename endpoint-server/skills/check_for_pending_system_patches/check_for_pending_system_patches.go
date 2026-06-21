@@ -109,7 +109,7 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 				"host", host, "packages", len(updates), "risk", risk)
 
 			decision, err := reqapproval.RequestApproval(
-				ctx, mem,
+				ctx, mem, n,
 				fmt.Sprintf("Apply system patches to %s", host),
 				approvalDetail,
 				proposedAction,

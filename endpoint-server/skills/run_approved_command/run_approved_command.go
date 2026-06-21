@@ -17,6 +17,7 @@ import (
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
 	reqapproval "agent_patches/endpoint-server/skills/request_approval"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 // commandTimeout bounds how long an approved command may run.
@@ -33,7 +34,7 @@ type runCommandInput struct {
 // command to the operator for approval, then executes it if approved.
 // The command is run via sh -c so pipelines and shell builtins work.
 // Nothing is executed unless the operator explicitly approves.
-func NewRunApprovedCommandTool(mem *memory.Store) (tool.Tool, error) {
+func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (tool.Tool, error) {
 	return tool.New(
 		"run_approved_command",
 		"Propose a shell command to the operator for approval, then execute it only if approved. "+
@@ -52,7 +53,7 @@ func NewRunApprovedCommandTool(mem *memory.Store) (tool.Tool, error) {
 			}
 
 			decision, err := reqapproval.RequestApproval(
-				ctx, mem,
+				ctx, mem, notify,
 				title,
 				fmt.Sprintf("Host: %s\n\nReason: %s", host, in.Reason),
 				in.Command,
