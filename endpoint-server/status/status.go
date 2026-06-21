@@ -110,13 +110,16 @@ func osLabel(info capture_system_info.Info) string {
 }
 
 // hasAttention reports whether the timeline contains a critical entry or a
-// pending approval request.
+// pending approval that carries meaningful risk (medium or high). Routine
+// low-risk patch approvals do not count — available updates alone do not
+// make a server unhealthy.
 func hasAttention(timeline []TimelineEntry) bool {
 	for _, e := range timeline {
 		if e.Severity == "critical" {
 			return true
 		}
-		if e.Type == "approval" && e.Status != nil && *e.Status == "pending" {
+		if e.Type == "approval" && e.Status != nil && *e.Status == "pending" &&
+			(e.Risk == "high" || e.Risk == "medium") {
 			return true
 		}
 	}

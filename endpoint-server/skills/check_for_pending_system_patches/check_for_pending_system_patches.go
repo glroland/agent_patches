@@ -184,18 +184,22 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 	)
 }
 
-// riskFromUpdates returns "high" when any CVE is critical, otherwise "medium".
-// Patching always carries some risk (service restarts, potential reboot) so
-// the floor is "medium" rather than "low".
+// riskFromUpdates returns "high" for critical CVEs, "medium" for any other CVE,
+// and "low" for routine updates that carry no CVEs.
 func riskFromUpdates(updates []patching.PackageUpdate) string {
+	hasCVE := false
 	for _, u := range updates {
 		for _, c := range u.CVEs {
 			if strings.EqualFold(c.Severity, "critical") {
 				return "high"
 			}
+			hasCVE = true
 		}
 	}
-	return "medium"
+	if hasCVE {
+		return "medium"
+	}
+	return "low"
 }
 
 // proposedActionFor returns a human-readable string describing what will run.
