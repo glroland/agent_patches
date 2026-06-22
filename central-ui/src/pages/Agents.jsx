@@ -102,9 +102,14 @@ export default function Agents() {
 
               <div className="mt-4 flex flex-wrap items-center gap-2 text-xs">
                 {agent.pendingApprovalCount > 0 && (
-                  <Badge variant="pending">
-                    <HandIcon className="h-3 w-3" /> {agent.pendingApprovalCount} awaiting approval
-                  </Badge>
+                  <Link
+                    to={`/agents/${agent.id}?tab=approvals`}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Badge variant="pending">
+                      <HandIcon className="h-3 w-3" /> {agent.pendingApprovalCount} awaiting approval
+                    </Badge>
+                  </Link>
                 )}
                 {agent.tags.map((t) => (
                   <span key={t} className="rounded-full bg-slate-800 px-2 py-1 text-slate-400">{t}</span>

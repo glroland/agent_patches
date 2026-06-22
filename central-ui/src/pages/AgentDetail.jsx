@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
@@ -15,8 +15,11 @@ const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibi
 
 export default function AgentDetail() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
   const { data: agent, loading, error } = useApi(() => fetchAgent(id), [id]);
-  const [tab, setTab] = useState('Interact');
+  const [tab, setTab] = useState(
+    searchParams.get('tab') === 'approvals' ? 'Recommendations & Approvals' : 'Interact'
+  );
   const [approvalState, setApprovalState] = useState({});
 
   if (loading) {
