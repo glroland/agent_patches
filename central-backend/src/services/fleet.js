@@ -4,7 +4,7 @@
 import * as inventory from './inventory.js';
 import { AgentClient } from './agentClient.js';
 import { config } from '../config/index.js';
-import { getFleet } from './fleetCache.js';
+import { getFleet, setFleet } from './fleetCache.js';
 
 const STATUS_META = {
   active: { label: 'Active', description: 'Currently working on a task' },
@@ -99,6 +99,14 @@ async function toFleetAgent(inventoryAgent) {
 // a fallback by listFleet() before the first poll cycle completes.
 export async function fetchAllAgents() {
   return Promise.all(inventory.listAgents().map(toFleetAgent));
+}
+
+// Polls all agents immediately and updates the fleet cache. Used to force a
+// cache refresh after a destructive operation (e.g. clearing agent memory).
+export async function refreshFleet() {
+  const agents = await fetchAllAgents();
+  setFleet(agents);
+  return agents;
 }
 
 // Returns the full fleet from the cache populated by the poller. Falls back

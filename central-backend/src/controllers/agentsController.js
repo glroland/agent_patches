@@ -77,6 +77,8 @@ export async function clearAgentMemory(req, res, next) {
     if (result === null) {
       return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to DELETE /memory' });
     }
+    // Re-poll in the background to flush stale timeline data from the fleet cache.
+    fleet.refreshFleet().catch(() => {});
     res.json({ cleared: true });
   } catch (err) {
     next(err);
