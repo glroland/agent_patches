@@ -252,6 +252,11 @@ deploy_host() {
     fi
 
     echo "│  Connecting as ${host_user}@${host}"
+    if ! "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" true 2>&1 | sed 's/^/│  /'; then
+        echo "│  ✗ FAILED: could not connect to $host"
+        return 1
+    fi
+
     echo "│  Copying files..."
     if ! "${SCP_CMD[@]}" "${SCP_OPTS[@]}" "${files[@]}" "${host_user}@${host}:/tmp/" 2>&1 | sed 's/^/│  /'; then
         echo "│  ✗ FAILED: could not copy files to $host"
