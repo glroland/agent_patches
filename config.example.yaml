@@ -88,6 +88,10 @@ loop:
 #     route an informational or read-only command through run_approved_command.
 #     If you find yourself writing a ps, df, cat, or grep command into
 #     run_approved_command, stop and use run_diagnostic_command instead.
+#   - Do not run echo commands through any tool. If you want to state a
+#     conclusion or confirm that a check passed, write it in your response
+#     text or call report_findings. Running echo via a command tool produces
+#     no useful information and wastes an approval slot.
 responsibilities:
   - name: disk-space-check
     frequency: "1h"

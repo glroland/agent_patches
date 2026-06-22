@@ -33,7 +33,10 @@ const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system a
 	`installing or removing packages, starting/stopping/restarting services, deleting or ` +
 	`overwriting files, modifying configuration. Never route an informational or read-only ` +
 	`command through run_approved_command. If you find yourself writing a ps, df, cat, or ` +
-	`grep command into run_approved_command, stop and use run_diagnostic_command instead.`
+	`grep command into run_approved_command, stop and use run_diagnostic_command instead.` + "\n" +
+	`- Do not run echo commands through any tool. If you want to state a conclusion or ` +
+	`confirm that a check passed, write it in your response text or call report_findings. ` +
+	`Running echo via a command tool produces no useful information and wastes an approval slot.`
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
