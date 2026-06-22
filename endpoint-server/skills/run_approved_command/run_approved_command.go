@@ -37,8 +37,11 @@ type runCommandInput struct {
 func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (tool.Tool, error) {
 	return tool.New(
 		"run_approved_command",
-		"Propose a shell command to the operator for approval, then execute it only if approved. "+
-			"Always use this tool instead of running commands directly. "+
+		"Propose a state-modifying shell command to the operator for approval, then execute it only "+
+			"if approved. Use this tool ONLY for commands that change system state: installing or "+
+			"removing packages, restarting or reconfiguring services, deleting or overwriting files, "+
+			"modifying users or permissions, or applying updates. "+
+			"For read-only investigation (ps, du, ss, journalctl, etc.) use run_diagnostic_command instead. "+
 			"The operator sees the full command, reason, and risk level before deciding. "+
 			"Returns the command output on approval, or a cancellation message on rejection.",
 		func(ctx context.Context, in runCommandInput) (string, error) {

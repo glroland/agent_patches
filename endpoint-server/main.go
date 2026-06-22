@@ -37,6 +37,7 @@ import (
 	"agent_patches/endpoint-server/skills/report_findings"
 	"agent_patches/endpoint-server/skills/request_approval"
 	"agent_patches/endpoint-server/skills/run_approved_command"
+	"agent_patches/endpoint-server/skills/run_diagnostic_command"
 	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/logger"
@@ -158,6 +159,13 @@ func main() {
 		return
 	}
 	registry.Register(runApprovedCommandTool)
+
+	runDiagnosticCommandTool, err := run_diagnostic_command.NewRunDiagnosticCommandTool()
+	if err != nil {
+		slog.Error("failed to create run_diagnostic_command tool", "error", err)
+		return
+	}
+	registry.Register(runDiagnosticCommandTool)
 
 	hostInfo, err := capture_system_info.Gather()
 	if err != nil {

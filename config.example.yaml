@@ -79,14 +79,15 @@ responsibilities:
     instruction: |
       Check disk usage on all mounted filesystems. Review disk space usage,
       SMART health, and the largest directories and files on each disk.
-      If any filesystem is above 90% capacity or a SMART failure is detected,
-      identify the root cause. For space issues, propose a specific shell
-      command that could help resolve the problem (e.g. clearing old logs,
-      temporary files, or unused packages) and use run_approved_command to
-      submit it for operator approval before running it. Do not propose
-      commands for SMART hardware failures — report those findings only.
+      If any filesystem is above 90% capacity, use run_diagnostic_command to
+      investigate the root cause (e.g. du -sh /var/log/* or find /var -name
+      "*.log" -size +100M). Once you have identified a safe remediation (e.g.
+      clearing old logs or temporary files), submit that command via
+      run_approved_command for operator approval before executing it. Do not
+      propose commands for SMART hardware failures — report those findings only.
     tools:
       - check_drives
+      - run_diagnostic_command
       - run_approved_command
     when_to_notify: "on error"
   - name: cpu-utilization-check
@@ -94,45 +95,44 @@ responsibilities:
     instruction: |
       Check CPU utilization on this host. Report overall CPU usage percentage,
       logical CPU count, and load averages. If CPU usage is above 80% or any
-      load average exceeds the number of logical CPUs, investigate whether the
-      pressure is sustained. For critical CPU usage above 90%, propose a
-      diagnostic command to identify the top CPU consumers — for example
-      (ps aux --sort=-%cpu | head -20) — and submit it via run_approved_command
-      for operator approval before running anything. Do not act if CPU usage is
-      within normal bounds.
+      load average exceeds the number of logical CPUs, use run_diagnostic_command
+      to investigate — for example (ps aux --sort=-%cpu | head -20) to identify
+      the top consumers. Report your findings. Only use run_approved_command if
+      you determine a specific remediation action is warranted and safe to propose.
+      Do not act if CPU usage is within normal bounds.
     tools:
       - analyze_cpu_utilization
+      - run_diagnostic_command
       - run_approved_command
     when_to_notify: "on error"
   - name: memory-utilization-check
     frequency: "30m"
     instruction: |
       Check memory utilization on this host. Report total RAM, used memory,
-      available memory, and swap usage. If memory usage is above 80%, consider
-      whether the pressure is persistent and whether action is warranted. For
-      critical memory pressure above 90%, propose a specific shell command to
-      help relieve it — for example, clearing the page cache
-      (sync; echo 1 > /proc/sys/vm/drop_caches) or listing top memory consumers
-      (ps aux --sort=-%mem | head -20) — and submit it via run_approved_command
-      for operator approval before running anything. Do not act if memory is
-      within normal bounds.
+      available memory, and swap usage. If memory usage is above 80%, use
+      run_diagnostic_command to investigate — for example
+      (ps aux --sort=-%mem | head -20) to identify top consumers. Report your
+      findings. For sustained critical memory pressure above 90% where a specific
+      safe remediation exists, propose it via run_approved_command for operator
+      approval. Do not act if memory is within normal bounds.
     tools:
       - analyze_memory_utilization
+      - run_diagnostic_command
       - run_approved_command
     when_to_notify: "on error"
   - name: network-utilization-check
     frequency: "1h"
     instruction: |
       Check network utilization on all active interfaces. Report upload and
-      download rates. If any interface shows unusually high or unexpected
-      traffic, investigate. When excessive or suspicious network activity is
-      detected, propose a diagnostic command — for example, listing active
-      connections and the processes behind them
-      (ss -tunap | head -40) — and submit it via run_approved_command for
-      operator approval before running anything. Report findings even when no
-      action is needed; only propose a command when traffic is clearly anomalous.
+      download rates. If any interface shows unusually high or unexpected traffic,
+      use run_diagnostic_command to investigate — for example
+      (ss -tunap | head -40) to list active connections and the processes behind
+      them. Report findings even when no action is needed. Only use
+      run_approved_command if a specific remediation is warranted; do not propose
+      commands unless traffic is clearly anomalous.
     tools:
       - analyze_network_utilization
+      - run_diagnostic_command
       - run_approved_command
     when_to_notify: "on error"
   - name: daily-summary
