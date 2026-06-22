@@ -107,7 +107,18 @@ else
     SCP_CMD=(scp)
 fi
 
-SCP_OPTS=(-P "$SSH_PORT" -o StrictHostKeyChecking=accept-new)
+# -O forces the legacy SCP protocol (not SFTP) so the SFTP subsystem's
+# SELinux context cannot block writes to /tmp on RHEL hosts.
+# ControlPath reuses the already-authenticated ControlMaster socket so SCP
+# never needs to re-authenticate.
+SCP_OPTS=(
+    -O
+    -P "$SSH_PORT"
+    -o StrictHostKeyChecking=accept-new
+    -o ControlMaster=auto
+    -o "ControlPath=$CTRL_DIR/%h-%p-%r"
+    -o ControlPersist=120s
+)
 [[ -n "${SSH_KEY:-}" ]] && SCP_OPTS+=(-i "$SSH_KEY")
 
 # ---------------------------------------------------------------------------
