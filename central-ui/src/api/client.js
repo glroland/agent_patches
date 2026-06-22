@@ -57,6 +57,12 @@ export function fetchAgentMemory(id) {
   return getJSON(`/agents/${id}/memory`);
 }
 
+// A single agent's enabled responsibilities with schedule, last-run state, and
+// next scheduled run time.
+export function fetchAgentResponsibilities(id) {
+  return getJSON(`/agents/${id}/responsibilities`);
+}
+
 // Pending approval requests across the fleet.
 export function fetchApprovals() {
   return getJSON('/approvals');

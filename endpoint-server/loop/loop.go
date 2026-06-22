@@ -13,11 +13,26 @@ import (
 	"agent_patches/endpoint-server/a2a/agent"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
 
-const defaultHeartbeat = time.Second
+const (
+	defaultHeartbeat = time.Second
+	maxSummaryLen    = 300
+
+	// AttrRunPrefix is the attrs key prefix for responsibility run state.
+	// Full key: AttrRunPrefix + responsibility name.
+	AttrRunPrefix = "responsibility_run:"
+)
+
+// RunState is the persisted outcome of a single responsibility execution.
+type RunState struct {
+	LastRunAt string `json:"lastRunAt"`
+	Status    string `json:"status"` // "ok" or "error"
+	Summary   string `json:"summary,omitempty"`
+}
 
 // Loop wakes up on a configurable interval, runs a tick handler, and
 // dispatches any configured responsibilities that are due.
@@ -25,11 +40,12 @@ type Loop struct {
 	cfg              *config.Settings
 	registry         *tasks.Registry
 	notify           *notifier.Notifier
+	mem              *memory.Store
 	responsibilities []*Responsibility
 }
 
 // New creates a Loop. Call Start to launch the background goroutine.
-func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifier) *Loop {
+func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifier, mem *memory.Store) *Loop {
 	resp := make([]*Responsibility, 0, len(cfg.Responsibilities))
 	for _, rc := range cfg.Responsibilities {
 		r, err := NewResponsibility(rc)
@@ -39,8 +55,11 @@ func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifi
 		}
 		resp = append(resp, r)
 	}
-	return &Loop{cfg: cfg, registry: registry, notify: notify, responsibilities: resp}
+	return &Loop{cfg: cfg, registry: registry, notify: notify, mem: mem, responsibilities: resp}
 }
+
+// Responsibilities returns the live list of scheduled responsibilities.
+func (l *Loop) Responsibilities() []*Responsibility { return l.responsibilities }
 
 // CurrentTask returns the name of the responsibility currently in flight, or
 // "" if none is running. If multiple are running concurrently, the first one
@@ -116,7 +135,35 @@ func (l *Loop) execute(ctx context.Context, r *Responsibility) {
 		log.Debug("loop: responsibility output", "output", result)
 	}
 
+	l.persistRunState(r, result, err)
 	l.maybeNotify(ctx, r, result, err)
+}
+
+// persistRunState writes the outcome of a responsibility run to attrs so it
+// survives restarts and is readable by the responsibilities API.
+func (l *Loop) persistRunState(r *Responsibility, result string, err error) {
+	status := "ok"
+	if err != nil {
+		status = "error"
+	}
+	summary := result
+	if len(summary) > maxSummaryLen {
+		summary = summary[:maxSummaryLen] + "..."
+	}
+	if err != nil && summary == "" {
+		summary = err.Error()
+		if len(summary) > maxSummaryLen {
+			summary = summary[:maxSummaryLen] + "..."
+		}
+	}
+	state := RunState{
+		LastRunAt: time.Now().UTC().Format(time.RFC3339),
+		Status:    status,
+		Summary:   summary,
+	}
+	if writeErr := l.mem.Attrs().Set(AttrRunPrefix+r.cfg.Name, state); writeErr != nil {
+		slog.Warn("loop: failed to persist run state", "responsibility", r.cfg.Name, "error", writeErr)
+	}
 }
 
 // filterTools returns the subset of the registry's tools named in names, in

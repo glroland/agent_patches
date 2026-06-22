@@ -83,6 +83,23 @@ export async function clearAgentMemory(req, res, next) {
   }
 }
 
+// GET /api/agents/:id/responsibilities — scheduled responsibilities with live
+// scheduling state and last-run outcome from the agent.
+export async function getAgentResponsibilities(req, res, next) {
+  try {
+    const responsibilities = await fleet.getAgentResponsibilities(req.params.id);
+    if (responsibilities === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+    if (responsibilities === null) {
+      return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to GET /responsibilities' });
+    }
+    res.json(responsibilities);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /api/agents/:id/messages — relay an operator chat message to the
 // agent and return its reply.
 export async function sendAgentMessage(req, res, next) {

@@ -76,3 +76,39 @@ func (r *Responsibility) Schedule(now time.Time) {
 	}
 	r.lastRunDate = now.Format("2006-01-02")
 }
+
+// NextRunAt returns the wall-clock time this responsibility is next scheduled
+// to fire. For frequency-based responsibilities this reads the in-memory
+// nextRun field. For time-of-day responsibilities it computes the next
+// occurrence from now.
+func (r *Responsibility) NextRunAt() *time.Time {
+	if r.Freq > 0 {
+		t := r.nextRun
+		return &t
+	}
+	now := time.Now()
+	candidate, err := time.ParseInLocation(
+		"2006-01-02 "+timeOfDayFormat,
+		now.Format("2006-01-02")+" "+r.TimeOfDay,
+		now.Location(),
+	)
+	if err != nil {
+		return nil
+	}
+	if candidate.After(now) {
+		return &candidate
+	}
+	next := candidate.Add(24 * time.Hour)
+	return &next
+}
+
+// ScheduleLabel returns a human-readable schedule description.
+func (r *Responsibility) ScheduleLabel() string {
+	if r.Freq > 0 {
+		return "every " + r.cfg.Frequency
+	}
+	return "daily at " + r.TimeOfDay
+}
+
+// Config returns the underlying responsibility configuration.
+func (r *Responsibility) Config() config.ResponsibilitySettings { return r.cfg }

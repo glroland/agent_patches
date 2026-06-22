@@ -5,13 +5,13 @@ import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
+import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { useChatHistory } from '../hooks/useChatHistory';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Admin'];
+const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Admin'];
 
 export default function AgentDetail() {
   const { id } = useParams();
@@ -100,6 +100,8 @@ export default function AgentDetail() {
       )}
 
       {tab === 'Interact' && <InteractTab agent={agent} />}
+
+      {tab === 'Responsibilities' && <ResponsibilitiesTab agentId={agent.id} />}
 
       {tab === 'Admin' && <AgentAdminTab agent={agent} />}
     </div>
@@ -399,6 +401,91 @@ function CollapsibleSection({ title, subtitle, children }) {
         </div>
       )}
     </div>
+  );
+}
+
+const STATUS_STYLES = {
+  never:   'bg-slate-800 text-slate-400',
+  ok:      'bg-emerald-900/50 text-emerald-300',
+  error:   'bg-rose-900/50 text-rose-300',
+  running: 'bg-amber-900/50 text-amber-300',
+};
+
+function ResponsibilitiesTab({ agentId }) {
+  const [responsibilities, setResponsibilities] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [expanded, setExpanded] = useState({});
+
+  const load = () => {
+    fetchAgentResponsibilities(agentId)
+      .then((data) => { setResponsibilities(data); setLoading(false); })
+      .catch((err) => { setError(err); setLoading(false); });
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
+  }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = (name) => setExpanded((prev) => ({ ...prev, [name]: !prev[name] }));
+
+  if (loading) return <AsyncState loading loadingLabel="Loading responsibilities..." />;
+  if (error) return <AsyncState error={error} />;
+
+  if (!responsibilities || responsibilities.length === 0) {
+    return (
+      <Card title="Responsibilities" subtitle="Recurring duties assigned to this agent">
+        <p className="text-sm text-slate-500">No responsibilities configured.</p>
+      </Card>
+    );
+  }
+
+  return (
+    <Card title="Responsibilities" subtitle="Recurring duties assigned to this agent — refreshes every 30s">
+      <div className="space-y-3">
+        {responsibilities.map((r) => (
+          <div key={r.name} className="rounded-lg border border-slate-800">
+            <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm font-medium text-slate-200">{r.name}</p>
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] ?? STATUS_STYLES.never}`}>
+                    {r.status}
+                  </span>
+                  <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-xs text-slate-400">{r.schedule}</span>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-4 text-xs text-slate-500">
+                  <span>Last run: {r.lastRunAt ? relativeTime(r.lastRunAt) : 'never'}</span>
+                  <span>Next run: {r.nextRunAt ? relativeTime(r.nextRunAt) : '—'}</span>
+                  {r.tools && r.tools.length > 0 && (
+                    <span>Tools: {r.tools.join(', ')}</span>
+                  )}
+                </div>
+                {r.summary && (
+                  <p className="mt-1.5 text-xs text-slate-400 line-clamp-2">{r.summary}</p>
+                )}
+              </div>
+              <button
+                onClick={() => toggle(r.name)}
+                className="shrink-0 rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-400 hover:border-indigo-500/50 hover:text-indigo-300 transition-colors"
+              >
+                {expanded[r.name] ? 'Hide' : 'Show'} instruction
+              </button>
+            </div>
+            {expanded[r.name] && (
+              <div className="border-t border-slate-800 px-4 pb-4 pt-3">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Instruction</p>
+                <pre className="whitespace-pre-wrap rounded-md bg-slate-950/60 p-3 text-xs text-slate-300 leading-relaxed">
+                  {r.instruction}
+                </pre>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
