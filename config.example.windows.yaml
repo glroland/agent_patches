@@ -1,0 +1,177 @@
+agent:
+  model: gpt-4o
+  max_tokens: 4096
+  max_iterations: 10
+  system_prompt: |
+    You are agent_patches, an AI agent that handles server administration tasks.
+    Use the available tools to carry out the user's request. Be concise and direct.
+  # api_key: change-me        # defaults to OPENAI_API_KEY env var when omitted
+  # base_url: https://api.openai.com/v1  # override for Azure, local models, etc.
+
+logging:
+  level: info
+  file: C:/ProgramData/agent_patches/logs/agent_patches.log
+
+storage:
+  tasks_file: C:/ProgramData/agent_patches/data/tasks.jsonl
+
+server:
+  host: 0.0.0.0
+  port: 8080
+  # public_url: http://server.home.example.com:8080  # URL embedded in the agent card; if unset, derived from the host's FQDN (via reverse DNS) or hostname
+
+# security.scheme: "none" | "bearer"
+# When scheme is "bearer", callers must supply: Authorization: Bearer <token>
+security:
+  scheme: bearer
+  token: change-me
+
+# memory configures the file-backed agent memory store.
+# Snapshots are retained for 60 minutes (one per 5-minute bucket); older files
+# are automatically deleted on each write. attrs.json stores general attributes
+# without history.
+memory:
+  root: C:/ProgramData/agent_patches/agent_memory
+
+# loop is a generic background loop that wakes up on a fixed interval for the
+# lifetime of the server. It always starts automatically; the interval is
+# the only configurable setting.
+loop:
+  heartbeat: "1s"   # how often the loop wakes up; any Go duration string (default: 1s)
+
+# responsibilities is a dynamic list of recurring duties for the agent. Each
+# is run on its own schedule, in its own goroutine; if a previous run of a
+# responsibility is still in flight when it comes due again, that run is
+# skipped and an error is logged.
+#
+# Each entry must set exactly one of "frequency" (a Go duration string for
+# recurring runs, e.g. "1h") or "time" (a local HH:MM wall-clock time for a
+# once-daily run). "tools" optionally names the skills/tools to make available
+# while carrying out the instruction, e.g. disk_usage, memory_usage,
+# network_usage, login_sessions, patch, read_memory, system_info,
+# report_findings. Include report_findings to let the agent record
+# observations, actions, recommendations, or approval requests that are
+# surfaced via GET /status.
+#
+# "when_to_notify" controls when a notification is stored to agent memory
+# after a run: "always" (every run), "on_error"/"on error" (failures only,
+# the default), or "never".
+#
+# Every responsibility run uses responsibility_system_prompt (below) as the
+# system prompt; the responsibility's "instruction" is sent as the user prompt.
+# On startup, the server runs the system_info skill once and appends a report
+# of the host's static metadata (OS, CPU, memory, disks, network interfaces)
+# to responsibility_system_prompt, so every responsibility has that context.
+# responsibility_system_prompt: |
+#   You are agent_patches, an AI system administrator. You are responsible for
+#   the health, security, and upkeep of this system. You will be given one
+#   specific responsibility to carry out using the tools available to you.
+#   Investigate thoroughly, take corrective action when it is safe and
+#   appropriate to do so, and report what you found and did clearly and
+#   concisely. If report_findings is available to you, call it whenever you
+#   observe something noteworthy, take an action, have a recommendation, or
+#   need operator approval before proceeding.
+#
+#   TOOL SELECTION RULES (follow these exactly):
+#   - run_diagnostic_command: use this for ALL read-only PowerShell or cmd
+#     commands — Get-Process, Get-Service, Get-EventLog, netstat, ipconfig,
+#     Get-PSDrive, Get-CimInstance, dir, type, findstr, and any other command
+#     that only reads or reports. These execute immediately with no operator
+#     involvement. This is the default tool for investigation.
+#   - run_approved_command: use this ONLY when you intend to change system
+#     state — installing or removing software, starting/stopping/restarting
+#     services, deleting or overwriting files, modifying configuration or the
+#     registry. Never route an informational or read-only command through
+#     run_approved_command. If you find yourself writing a Get-Process,
+#     Get-Service, or dir command into run_approved_command, stop and use
+#     run_diagnostic_command instead.
+#   - Do not run echo or Write-Output commands through any tool. If you want
+#     to state a conclusion or confirm that a check passed, write it in your
+#     response text or call report_findings. Running echo via a command tool
+#     produces no useful information and wastes an approval slot.
+responsibilities:
+  - name: disk-space-check
+    frequency: "1h"
+    instruction: |
+      Check disk usage on all drives. Review disk space usage, SMART health,
+      and the largest directories on each drive.
+      If any drive is above 90% capacity, use run_diagnostic_command to
+      investigate the root cause — for example:
+        Get-ChildItem C:\ -Recurse -ErrorAction SilentlyContinue |
+          Sort-Object Length -Descending | Select-Object -First 20 FullName, Length
+      Once you have identified a safe remediation (e.g. clearing old logs or
+      temp files under C:\Windows\Temp), submit that command via
+      run_approved_command for operator approval before executing it. Do not
+      propose commands for SMART hardware failures — report those findings only.
+    tools:
+      - check_drives
+      - run_diagnostic_command
+      - run_approved_command
+    when_to_notify: "on error"
+  - name: cpu-utilization-check
+    frequency: "30m"
+    instruction: |
+      Check CPU utilization on this host. Report overall CPU usage percentage
+      and the top consuming processes. If CPU usage is above 80%, use
+      run_diagnostic_command to investigate — for example:
+        Get-Process | Sort-Object CPU -Descending | Select-Object -First 20 Name, CPU, Id
+      Report your findings. Only use run_approved_command if you determine a
+      specific remediation action is warranted and safe to propose.
+      Do not act if CPU usage is within normal bounds.
+    tools:
+      - analyze_cpu_utilization
+      - run_diagnostic_command
+      - run_approved_command
+    when_to_notify: "on error"
+  - name: memory-utilization-check
+    frequency: "30m"
+    instruction: |
+      Check memory utilization on this host. Report total RAM, used memory,
+      and available memory. Use run_diagnostic_command to gather details — for
+      example:
+        Get-CimInstance Win32_OperatingSystem |
+          Select-Object TotalVisibleMemorySize, FreePhysicalMemory
+        Get-Process | Sort-Object WorkingSet -Descending |
+          Select-Object -First 20 Name, WorkingSet, Id
+      If memory usage is above 80%, report the top consumers. For sustained
+      critical pressure above 90% where a specific safe remediation exists,
+      propose it via run_approved_command for operator approval.
+      Do not act if memory is within normal bounds.
+    tools:
+      - analyze_memory_utilization
+      - run_diagnostic_command
+      - run_approved_command
+    when_to_notify: "on error"
+  - name: network-utilization-check
+    frequency: "1h"
+    instruction: |
+      Check network utilization on all active interfaces. Report upload and
+      download rates. If any interface shows unusually high or unexpected
+      traffic, use run_diagnostic_command to investigate — for example:
+        netstat -ano | Select-String ESTABLISHED | Select-Object -First 40
+        Get-NetTCPConnection -State Established |
+          Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, OwningProcess
+      Report findings even when no action is needed. Only use run_approved_command
+      if a specific remediation is warranted; do not propose commands unless
+      traffic is clearly anomalous.
+    tools:
+      - analyze_network_utilization
+      - run_diagnostic_command
+      - run_approved_command
+    when_to_notify: "on error"
+  - name: daily-summary
+    time: "07:00"
+    instruction: |
+      Summarize overnight system activity, including any errors, service
+      restarts, or completed patch runs, and produce a short report.
+    tools:
+      - read_agent_memory
+    when_to_notify: "always"
+  - name: keep-system-up-to-date
+    time: "03:00"
+    instruction: |
+      Ensure the system is up to date. Use the patch tool to check for and
+      apply any available Windows updates, rebooting if required.
+    tools:
+      - check_for_pending_system_patches
+    when_to_notify: "always"

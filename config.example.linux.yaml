@@ -10,14 +10,10 @@ agent:
 
 logging:
   level: info
-  # file: /var/log/agent_patches.log  # omit to log to stderr
-
-tasks:
-  enabled:
-    - hello
+  file: /opt/agent_patches/logs/agent_patches.log
 
 storage:
-  tasks_file: tasks.jsonl
+  tasks_file: /opt/agent_patches/data/tasks.jsonl
 
 server:
   host: 0.0.0.0
@@ -35,7 +31,7 @@ security:
 # are automatically deleted on each write. attrs.json stores general attributes
 # without history.
 memory:
-  root: ./agent_memory   # root directory for all memory files (default: ./agent_memory)
+  root: /opt/agent_patches/agent_memory
 
 # loop is a generic background loop that wakes up on a fixed interval for the
 # lifetime of the server. It always starts automatically; the interval is
@@ -170,4 +166,3 @@ responsibilities:
     tools:
       - check_for_pending_system_patches
     when_to_notify: "always"
-
