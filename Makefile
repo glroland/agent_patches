@@ -101,11 +101,12 @@ run-central-backend:
 ## deploy: deploy release builds to all hosts in inventory.csv
 deploy:
 	WINDOWS_BINARY=$(WINDOWS_AMD64_DIR)/$(BINARY).exe \
+	WINDOWS_CONFIG=$(INVENTORY_ROOT)/endpoint-server-config-windows.yaml \
 	$(DEPLOY_SCRIPT) \
 		$(INVENTORY_ROOT)/inventory.csv \
 		$(LINUX_AMD64_DIR)/$(BINARY) \
 		$(CURDIR)/deploy/linux/agent_patches.service \
-		$(INVENTORY_ROOT)/endpoint-server-config.yaml
+		$(INVENTORY_ROOT)/endpoint-server-config-linux.yaml
 
 ## fmt: format all Go source files
 fmt:

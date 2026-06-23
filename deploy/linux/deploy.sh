@@ -29,8 +29,10 @@ SSH_PORT="${SSH_PORT:-22}"
 
 # Windows-specific env vars (only required when inventory contains windows hosts).
 #   WINDOWS_BINARY  Path to the compiled patches-endpoint-server.exe
+#   WINDOWS_CONFIG  Path to the Windows config file (config.example.windows.yaml)
 #   WINDOWS_USER    Login user on Windows hosts (default: Administrator)
 WINDOWS_BINARY="${WINDOWS_BINARY:-}"
+WINDOWS_CONFIG="${WINDOWS_CONFIG:-}"
 WINDOWS_USER="${WINDOWS_USER:-Administrator}"
 
 for f in "$INVENTORY_CSV" "$BINARY" "$SERVICE_FILE"; do
@@ -79,7 +81,7 @@ for i in "${!HOSTS[@]}"; do
 done
 echo ""
 
-# Validate Windows binary if any Windows hosts are in the inventory.
+# Validate Windows-specific files if any Windows hosts are in the inventory.
 for os in "${HOST_OSTYPES[@]}"; do
     if [[ "$os" == "windows" ]]; then
         if [[ -z "$WINDOWS_BINARY" ]]; then
@@ -89,6 +91,10 @@ for os in "${HOST_OSTYPES[@]}"; do
         fi
         if [[ ! -f "$WINDOWS_BINARY" ]]; then
             echo "ERROR: Windows binary not found: $WINDOWS_BINARY" >&2
+            exit 1
+        fi
+        if [[ -n "$WINDOWS_CONFIG" && ! -f "$WINDOWS_CONFIG" ]]; then
+            echo "ERROR: Windows config not found: $WINDOWS_CONFIG" >&2
             exit 1
         fi
         break
@@ -362,11 +368,12 @@ deploy_host_windows() {
     # Build file list. Files go to C:\Windows\Temp\ on the remote host.
     local cfg_base=""
     local files=("$WINDOWS_BINARY" "$WIN_SETUP_SCRIPT")
-    if [[ -f "$CONFIG_FILE" ]]; then
-        cfg_base=$(basename "$CONFIG_FILE")
-        files+=("$CONFIG_FILE")
+    local win_cfg="${WINDOWS_CONFIG:-$CONFIG_FILE}"
+    if [[ -f "$win_cfg" ]]; then
+        cfg_base=$(basename "$win_cfg")
+        files+=("$win_cfg")
     else
-        echo "│  ⚠ WARNING: config file not found ($CONFIG_FILE) — skipping config deploy"
+        echo "│  ⚠ WARNING: config file not found ($win_cfg) — skipping config deploy"
     fi
 
     local win_setup_base
