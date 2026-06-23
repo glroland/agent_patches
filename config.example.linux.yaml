@@ -17,8 +17,8 @@ storage:
 
 server:
   host: 0.0.0.0
-  port: 8080
-  # public_url: http://server.home.example.com:8080  # URL embedded in the agent card; if unset, derived from the host's FQDN (via reverse DNS) or hostname
+  port: 9976
+  # public_url: http://server.home.example.com:9976  # URL embedded in the agent card; if unset, derived from the host's FQDN (via reverse DNS) or hostname
 
 # security.scheme: "none" | "bearer"
 # When scheme is "bearer", callers must supply: Authorization: Bearer <token>
