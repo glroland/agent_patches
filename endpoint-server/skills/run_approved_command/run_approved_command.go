@@ -23,6 +23,44 @@ import (
 // commandTimeout bounds how long an approved command may run.
 const commandTimeout = 5 * time.Minute
 
+// noOpPhrases are placeholder "commands" the model sometimes submits when it
+// has nothing to execute. All comparisons are done after lowercasing and
+// trimming the input.
+var noOpPhrases = []string{
+	"none", "n/a", "na", "no action", "no action required", "no action needed",
+	"no command", "no remediation", "no remediation required", "not applicable",
+	"nothing", "nothing to do", "nothing required",
+}
+
+// isNoOpCommand reports whether s is a well-known placeholder rather than a
+// real shell command.
+func isNoOpCommand(s string) bool {
+	lower := strings.ToLower(strings.TrimSpace(s))
+	for _, phrase := range noOpPhrases {
+		if lower == phrase {
+			return true
+		}
+	}
+	return false
+}
+
+// isEchoStatusCommand reports whether s is a bare echo (or PowerShell
+// Write-Output / Write-Host) with no output redirection or pipe — i.e. a
+// status message that belongs in response text, not in an approval request.
+// Echo commands that redirect or pipe to something else may genuinely modify
+// state and are allowed through.
+func isEchoStatusCommand(s string) bool {
+	fields := strings.Fields(strings.TrimSpace(s))
+	if len(fields) == 0 {
+		return false
+	}
+	first := strings.ToLower(fields[0])
+	if first != "echo" && first != "write-output" && first != "write-host" {
+		return false
+	}
+	return !strings.ContainsAny(s, ">|")
+}
+
 type runCommandInput struct {
 	Title   string `json:"title" jsonschema_description:"Short one-line title for the approval card (e.g. 'Clear old log files from /var/log')."`
 	Command string `json:"command" jsonschema_description:"The exact shell command to execute if the operator approves."`
@@ -41,12 +79,23 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			"if approved. Use this tool ONLY for commands that change system state: installing or "+
 			"removing packages, restarting or reconfiguring services, deleting or overwriting files, "+
 			"modifying users or permissions, or applying updates. "+
-			"For read-only investigation (ps, du, ss, journalctl, etc.) use run_diagnostic_command instead. "+
+			"NEVER use this for read-only commands. Commands such as du, ls, df, find, ps, cat, "+
+			"grep, ss, netstat, journalctl, systemctl status, which, command -v, type, and any "+
+			"other listing, querying, or reporting command are ALWAYS run_diagnostic_command — "+
+			"even when the purpose is to inform a future cleanup or check prerequisites. "+
+			"Read-only commands never require operator approval. "+
 			"The operator sees the full command, reason, and risk level before deciding. "+
 			"Returns the command output on approval, or a cancellation message on rejection.",
 		func(ctx context.Context, in runCommandInput) (string, error) {
-			if strings.TrimSpace(in.Command) == "" {
-				return "", fmt.Errorf("run_approved_command: command must not be empty")
+			cmd := strings.TrimSpace(in.Command)
+			if cmd == "" {
+				return "", fmt.Errorf("run_approved_command: command must not be empty — if no action is needed, write your conclusion in response text instead")
+			}
+			if isNoOpCommand(cmd) {
+				return "", fmt.Errorf("run_approved_command: %q is not an executable command — if no corrective action is needed, write your conclusion in response text or call report_findings instead of submitting a placeholder approval", cmd)
+			}
+			if isEchoStatusCommand(cmd) {
+				return "", fmt.Errorf("run_approved_command: echo is not a state-modifying command — write the message in your response text or call report_findings instead of routing it through an approval request")
 			}
 
 			host, _ := os.Hostname()
@@ -59,7 +108,7 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 				ctx, mem, notify,
 				title,
 				fmt.Sprintf("Host: %s\n\nReason: %s", host, in.Reason),
-				in.Command,
+				cmd,
 				in.Risk,
 			)
 			if err != nil {
@@ -68,31 +117,31 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 
 			switch decision {
 			case "rejected":
-				slog.Info("run_approved_command: operator rejected command", "command", in.Command)
+				slog.Info("run_approved_command: operator rejected command", "command", cmd)
 				return "Command rejected by operator — not executed.", nil
 			case "timed_out":
-				slog.Info("run_approved_command: approval timed out", "command", in.Command)
+				slog.Info("run_approved_command: approval timed out", "command", cmd)
 				return "Command not executed: approval request timed out.", nil
 			}
 
 			// Approved — run it.
-			slog.Info("run_approved_command: executing approved command", "command", in.Command)
+			slog.Info("run_approved_command: executing approved command", "command", cmd)
 			cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout)
 			defer cancel()
 
-			cmd := exec.CommandContext(cmdCtx, "sh", "-c", in.Command) //nolint:gosec
-			out, execErr := cmd.CombinedOutput()
+			execCmd := exec.CommandContext(cmdCtx, "sh", "-c", cmd) //nolint:gosec
+			out, execErr := execCmd.CombinedOutput()
 			output := strings.TrimRight(string(out), "\n")
 
 			if execErr != nil {
-				slog.Warn("run_approved_command: command failed", "command", in.Command, "error", execErr)
+				slog.Warn("run_approved_command: command failed", "command", cmd, "error", execErr)
 				if output != "" {
 					return fmt.Sprintf("Command failed (%v):\n%s", execErr, output), nil
 				}
 				return fmt.Sprintf("Command failed: %v", execErr), nil
 			}
 
-			slog.Info("run_approved_command: command completed successfully", "command", in.Command, "output_len", len(output))
+			slog.Info("run_approved_command: command completed successfully", "command", cmd, "output_len", len(output))
 			if output == "" {
 				return "Command completed with no output.", nil
 			}

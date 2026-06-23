@@ -94,8 +94,18 @@ func ValidateForTest(cmd string) error { return validateCommand(cmd) }
 // Returns a non-nil error (with a message suitable for returning to the model)
 // if the command is not permitted for unattended execution.
 func validateCommand(cmd string) error {
-	// Layer 1: allowlist — first token must be a known-safe diagnostic binary.
 	first := firstToken(cmd)
+
+	// Pre-check: echo (and PowerShell equivalents) are never diagnostic commands.
+	// Plain echo produces no useful information; redirect/pipe forms are
+	// state-modifying and belong in run_approved_command.
+	if first == "echo" || first == "write-output" || first == "write-host" {
+		return fmt.Errorf(
+			"run_diagnostic_command: %q is not a diagnostic command — "+
+				"write the message in your response text or call report_findings instead", first)
+	}
+
+	// Layer 1: allowlist — first token must be a known-safe diagnostic binary.
 	if !diagnosticAllowlist[first] {
 		return fmt.Errorf(
 			"run_diagnostic_command: %q is not on the diagnostic allowlist — "+
@@ -167,7 +177,9 @@ var diagnosticAllowlist = map[string]bool{
 	"systemctl": true, "service": true,
 
 	// Miscellaneous safe builtins
-	"date": true, "echo": true, "env": true, "printenv": true,
+	// Note: "echo" is intentionally absent — plain echo is never a diagnostic
+	// command and is rejected with a specific error before the allowlist check.
+	"date": true, "env": true, "printenv": true,
 	"which": true, "whereis": true, "type": true,
 }
 

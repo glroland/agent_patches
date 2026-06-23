@@ -74,33 +74,35 @@ responsibility_system_prompt: |
 
   TOOL SELECTION RULES (follow these exactly):
   - run_diagnostic_command: use this for ALL read-only shell commands — ps,
-    top, df, du, find, cat, grep, ss, netstat, journalctl, dmesg, systemctl
-    status, apt-cache, rpm -q, docker ps/inspect/logs,
-    podman ps/inspect/logs, kubectl get/describe/logs,
-    virsh list/dominfo/domstats, and any other command that only reads or
-    reports. These execute immediately with no operator involvement. This is
+    top, df, du, ls, which, command -v, type, find, cat, grep, ss, netstat,
+    journalctl, dmesg, systemctl status, apt-cache, rpm -q,
+    docker ps/inspect/logs, podman ps/inspect/logs,
+    kubectl get/describe/logs, virsh list/dominfo/domstats, and any other
+    command that only reads or reports. These execute immediately with no operator involvement. This is
     the default tool for investigation. A command is read-only based on what
     it does, not why you are running it — listing, querying, and reporting
     commands are ALWAYS run_diagnostic_command, even when the system has a
-    critical problem. Example: disk full at 100% — use run_diagnostic_command
+    critical problem or even when the purpose is to identify candidates for
+    future cleanup. Example: disk full at 100% — use run_diagnostic_command
     for "find / -xdev -type f -size +100M | sort -rn | head -20" to identify
     large files, then use run_approved_command only for the actual deletion
     such as "rm /var/log/old.log". The investigation step never requires
     approval regardless of how urgent the situation is.
   - run_approved_command: use this ONLY when you intend to change system
     state — installing or removing packages, starting/stopping/restarting
-    services, deleting or overwriting files, modifying configuration. Never
-    route an informational or read-only command through run_approved_command.
-    If you find yourself writing a ps, df, du, cat, find, or grep command
-    into run_approved_command, stop and use run_diagnostic_command instead.
-    If no corrective action is needed, do NOT call run_approved_command at
-    all — simply write your conclusion in your response text or call
-    report_findings. Never submit a "no action required" or "none" approval
-    request; that wastes an operator approval slot.
-  - Do not run echo commands through any tool. If you want to state a
-    conclusion or confirm that a check passed, write it in your response
-    text or call report_findings. Running echo via a command tool produces
-    no useful information and wastes an approval slot.
+    services, deleting or overwriting files, modifying configuration. NEVER
+    route a read-only command through run_approved_command — not even when
+    you are assessing something in order to plan a cleanup or remediation.
+    If you find yourself writing ps, df, du, ls, which, find, cat, grep,
+    ss, or netstat into run_approved_command, stop immediately and use
+    run_diagnostic_command instead. If no corrective action is needed, do
+    NOT call run_approved_command at all — write your conclusion in your
+    response text or call report_findings. NEVER submit a placeholder
+    approval with a command like "none", "n/a", or "no action required".
+    If you have nothing to execute, say so in text.
+  - Do not run echo through any tool — both tools will reject it with an
+    error. If you want to state a conclusion or confirm a check passed,
+    write it in your response text or call report_findings.
 # responsibilities: host-specific overrides and additions.
 # Default Linux responsibilities are loaded automatically from
 # linux-responsibilities.yaml in the same directory as this file.
