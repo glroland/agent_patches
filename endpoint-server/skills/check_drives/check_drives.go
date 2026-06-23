@@ -84,6 +84,12 @@ func NewDiskUsageTool(mem *memory.Store) (tool.Tool, error) {
 				health, summary = tHealth, tSummary
 			}
 
+			rawAttrs := CollectRawSmartAttrs(ctx, disks)
+			smartTrends, _ := RecordSmartSamples(mem, rawAttrs, time.Now())
+			if stHealth, stSummary := SmartTrendHealth(smartTrends); severityOf(stHealth) > severityOf(health) {
+				health, summary = stHealth, stSummary
+			}
+
 			_ = skillstate.Save(mem, "check_drives", health, summary)
 			return report, nil
 		},

@@ -50,4 +50,7 @@ type Response struct {
 	// slope for each mount point. Omitted when no trend data has been recorded
 	// yet (requires at least one check_drives run).
 	DiskTrends json.RawMessage `json:"diskTrends,omitempty"`
+	// SmartTrends holds the 30-day rolling SMART attribute history per device.
+	// Omitted when no trend data has been recorded yet.
+	SmartTrends json.RawMessage `json:"smartTrends,omitempty"`
 }

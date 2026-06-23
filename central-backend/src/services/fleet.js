@@ -93,6 +93,7 @@ async function toFleetAgent(inventoryAgent) {
     lastPatchedAt: data?.lastPatchedAt ?? null,
     timeline,
     diskTrends: data?.diskTrends ?? null,
+    smartTrends: data?.smartTrends ?? null,
   };
 }
 

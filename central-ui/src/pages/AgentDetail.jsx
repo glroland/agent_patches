@@ -77,6 +77,10 @@ export default function AgentDetail() {
         <DiskTrendsPanel trends={agent.diskTrends} />
       )}
 
+      {agent.smartTrends && Object.keys(agent.smartTrends).length > 0 && (
+        <SmartTrendsPanel trends={agent.smartTrends} />
+      )}
+
       <div className="flex gap-1 border-b border-slate-800">
         {TABS.map((t) => (
           <button
@@ -540,6 +544,87 @@ function DiskTrendsPanel({ trends }) {
                 <p className={`mt-1.5 text-xs ${trendColor}`}>{trendLabel}</p>
               )}
               <p className="mt-0.5 text-xs text-slate-600">{t.samples.length} sample{t.samples.length !== 1 ? 's' : ''}</p>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// Maps SMART attribute names to whether a positive delta is critical (true) or warning (false).
+const CRITICAL_SMART_ATTRS = {
+  Offline_Uncorrectable: true,
+  Reported_Uncorrect: true,
+  Reallocated_Sector_Ct: false,
+  Current_Pending_Sector: false,
+};
+
+function SmartTrendsPanel({ trends }) {
+  const devices = Object.values(trends).filter(
+    (d) => d.attrs && Object.keys(d.attrs).length > 0
+  );
+  if (devices.length === 0) return null;
+
+  return (
+    <Card title="SMART trends" subtitle="30-day attribute history per device — pre-failure indicator tracking">
+      <div className="space-y-4">
+        {devices.map((dev) => {
+          const attrList = Object.values(dev.attrs).filter((a) => a.samples && a.samples.length > 0);
+          if (attrList.length === 0) return null;
+
+          return (
+            <div key={dev.device}>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{dev.device}</p>
+              <div className="overflow-x-auto rounded-lg border border-slate-800">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-left text-slate-500">
+                      <th className="px-3 py-2 font-medium">Attribute</th>
+                      <th className="px-3 py-2 font-medium text-right">Current</th>
+                      <th className="px-3 py-2 font-medium text-right">Δ baseline</th>
+                      <th className="px-3 py-2 font-medium text-right">Trend/day</th>
+                      <th className="px-3 py-2 font-medium text-right">Samples</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60">
+                    {attrList.map((attr) => {
+                      const current = attr.samples[attr.samples.length - 1]?.value ?? 0;
+                      const delta = attr.delta ?? 0;
+                      const slope = attr.slopePerDay ?? 0;
+                      const isCriticalAttr = CRITICAL_SMART_ATTRS[attr.name];
+                      const isWear = attr.name === 'NVMe_Wear_Pct' || attr.name === 'Wear';
+
+                      let deltaColor = 'text-slate-500';
+                      if (isWear) {
+                        deltaColor = current >= 90 ? 'text-rose-400' : current >= 70 ? 'text-amber-400' : 'text-slate-400';
+                      } else if (delta > 0) {
+                        const isCritical = isCriticalAttr || slope > 1.0;
+                        deltaColor = isCritical ? 'text-rose-400' : 'text-amber-400';
+                      }
+
+                      const slopeLabel = slope > 0 ? `+${slope.toFixed(2)}` : slope.toFixed(2);
+                      const slopeColor = slope > 1.0 ? 'text-rose-400' : slope > 0.1 ? 'text-amber-400' : 'text-slate-500';
+
+                      return (
+                        <tr key={attr.name} className="hover:bg-slate-800/30">
+                          <td className="px-3 py-2 font-medium text-slate-300">{attr.name}</td>
+                          <td className="px-3 py-2 text-right text-slate-400">
+                            {isWear ? `${current}%` : current}
+                          </td>
+                          <td className={`px-3 py-2 text-right font-medium ${deltaColor}`}>
+                            {delta > 0 ? `+${delta}` : delta === 0 ? '—' : delta}
+                          </td>
+                          <td className={`px-3 py-2 text-right ${slopeColor}`}>
+                            {slope !== 0 ? slopeLabel : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right text-slate-600">{attr.samples.length}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         })}

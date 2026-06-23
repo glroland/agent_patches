@@ -109,6 +109,11 @@ func (s *Service) build() Response {
 		diskTrends = nil
 	}
 
+	var smartTrends json.RawMessage
+	if err := s.mem.Attrs().Get("smart_trends", &smartTrends); err != nil || string(smartTrends) == "null" {
+		smartTrends = nil
+	}
+
 	return Response{
 		Agent: AgentInfo{
 			Hostname: s.info.Hostname,
@@ -125,6 +130,7 @@ func (s *Service) build() Response {
 		LastPatchedAt:     lastPatchedAt,
 		StatusDescription: statusDescription,
 		DiskTrends:        diskTrends,
+		SmartTrends:       smartTrends,
 	}
 }
 
