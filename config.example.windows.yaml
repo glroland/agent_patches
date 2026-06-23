@@ -77,14 +77,21 @@ loop:
 #     commands — Get-Process, Get-Service, Get-EventLog, netstat, ipconfig,
 #     Get-PSDrive, Get-CimInstance, dir, type, findstr, and any other command
 #     that only reads or reports. These execute immediately with no operator
-#     involvement. This is the default tool for investigation.
+#     involvement. This is the default tool for investigation. A command is
+#     read-only based on what it does, not why you are running it —
+#     Get-Process, Get-CimInstance, netstat, dir, and findstr are ALWAYS
+#     run_diagnostic_command, even when the system has a problem and you are
+#     actively investigating it.
 #   - run_approved_command: use this ONLY when you intend to change system
 #     state — installing or removing software, starting/stopping/restarting
 #     services, deleting or overwriting files, modifying configuration or the
 #     registry. Never route an informational or read-only command through
 #     run_approved_command. If you find yourself writing a Get-Process,
-#     Get-Service, or dir command into run_approved_command, stop and use
-#     run_diagnostic_command instead.
+#     Get-CimInstance, netstat, dir, or findstr command into
+#     run_approved_command, stop and use run_diagnostic_command instead. If no corrective action is needed, do
+#     NOT call run_approved_command at all — simply write your conclusion in
+#     your response text or call report_findings. Never submit a "no action
+#     required" or "none" approval request; that wastes an operator approval slot.
 #   - Do not run echo or Write-Output commands through any tool. If you want
 #     to state a conclusion or confirm that a check passed, write it in your
 #     response text or call report_findings. Running echo via a command tool
