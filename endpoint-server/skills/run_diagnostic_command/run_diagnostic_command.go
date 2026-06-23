@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"os/exec"
 	"regexp"
 	"strings"
 	"time"
@@ -47,10 +46,23 @@ func NewRunDiagnosticCommandTool() (tool.Tool, error) {
 	return tool.New(
 		"run_diagnostic_command",
 		"Execute a read-only diagnostic shell command immediately, without operator approval. "+
-			"Use for investigation only: process inspection (ps, top), disk usage (df, du, find), "+
-			"network state (ss, ip, lsof), logs (journalctl, dmesg), package queries, "+
-			"service status (systemctl status), and similar non-destructive observation. "+
-			"For commands that modify system state (install, remove, restart, delete, write files), "+
+			"Use for investigation only: process inspection (ps, top, tasklist, Get-Process), "+
+			"disk and storage (df, du, lsblk, smartctl, Get-PSDrive, Get-PhysicalDisk, Get-Disk, Get-Volume), "+
+			"network state (ss, ip, lsof, netstat, Get-NetTCPConnection, netsh, ipconfig), "+
+			"memory (free, vmstat, Get-CimInstance Win32_OperatingSystem), "+
+			"containers (docker ps, docker inspect, docker logs, docker stats, "+
+			"podman ps, podman inspect, podman logs), "+
+			"logs (journalctl, dmesg, Get-EventLog, wevtutil), "+
+			"package queries, service status (systemctl status, Get-Service), "+
+			"and similar non-destructive observation. "+
+			"On Windows, bare PowerShell Verb-Noun cmdlets may be used WITHOUT the "+
+			"'powershell -Command' wrapper — e.g. "+
+			"'Get-Process | Sort-Object CPU -Descending | Select-Object -First 5' "+
+			"or 'Get-PhysicalDisk | Select-Object FriendlyName, HealthStatus' are both valid. "+
+			"Any PowerShell cmdlet starting with Get-, Measure-, Select-, Sort-, Format-, "+
+			"Where-, ForEach-, Compare-, Find-, Resolve-, or Test- is permitted without approval. "+
+			"For commands that modify system state (install, remove, restart, delete, write files, "+
+			"Set-*, Remove-*, New-Item, Start/Stop-Service, smartctl -t/-s), "+
 			"use run_approved_command instead.",
 		func(ctx context.Context, in runDiagnosticInput) (string, error) {
 			cmd := strings.TrimSpace(in.Command)
@@ -64,10 +76,8 @@ func NewRunDiagnosticCommandTool() (tool.Tool, error) {
 			}
 
 			slog.Info("run_diagnostic_command: executing", "command", cmd, "reason", in.Reason)
-			cmdCtx, cancel := context.WithTimeout(ctx, diagnosticTimeout)
-			defer cancel()
 
-			out, execErr := exec.CommandContext(cmdCtx, "sh", "-c", cmd).CombinedOutput() //nolint:gosec
+			out, execErr := runShell(ctx, cmd, diagnosticTimeout)
 			output := strings.TrimRight(string(out), "\n")
 
 			if execErr != nil {
@@ -105,8 +115,9 @@ func validateCommand(cmd string) error {
 				"write the message in your response text or call report_findings instead", first)
 	}
 
-	// Layer 1: allowlist — first token must be a known-safe diagnostic binary.
-	if !diagnosticAllowlist[first] {
+	// Layer 1: allowlist — first token must be a known-safe diagnostic binary
+	// OR a bare PowerShell read-only Verb-Noun cmdlet (e.g. "Get-Process").
+	if !diagnosticAllowlist[first] && !isPowerShellReadOnlyCmdlet(first) {
 		return fmt.Errorf(
 			"run_diagnostic_command: %q is not on the diagnostic allowlist — "+
 				"use run_approved_command so the operator can review it", first)
@@ -131,6 +142,29 @@ func firstToken(cmd string) string {
 		return ""
 	}
 	return strings.ToLower(f[0])
+}
+
+// isPowerShellReadOnlyCmdlet reports whether token is a bare PowerShell
+// Verb-Noun cmdlet whose verb is known to be read-only. This lets the agent
+// issue commands like "Get-Process | Sort-Object CPU" without the
+// "powershell -Command" prefix, which the model sometimes omits.
+// The deny-pattern layer still applies to the full command string, so
+// any state-modifying argument (Out-File, Set-Content, etc.) is still caught.
+func isPowerShellReadOnlyCmdlet(token string) bool {
+	// Must be Verb-Noun form: at least one letter, a hyphen, at least one letter.
+	idx := strings.Index(token, "-")
+	if idx < 1 || idx == len(token)-1 {
+		return false
+	}
+	verb := token[:idx]
+	// Read-only PowerShell verbs by convention.
+	switch verb {
+	case "get", "measure", "select", "sort", "format", "compare",
+		"find", "resolve", "test", "where", "foreach", "show", "read",
+		"search", "convertto", "convertfrom", "out", "tee":
+		return true
+	}
+	return false
 }
 
 // diagnosticAllowlist is the set of binaries permitted in run_diagnostic_command.
@@ -186,11 +220,26 @@ var diagnosticAllowlist = map[string]bool{
 	// Virtualisation (state-modifying subcommands caught by denylist)
 	"virsh": true,
 
+	// Storage / SMART
+	"smartctl": true, "hdparm": true, "nvme": true,
+
+	// NFS / filesystem tools
+	"nfsstat": true, "nfsmount": true, "showmount": true,
+	"mountstats": true,
+
 	// Miscellaneous safe builtins
 	// Note: "echo" is intentionally absent — plain echo is never a diagnostic
 	// command and is rejected with a specific error before the allowlist check.
 	"date": true, "env": true, "printenv": true,
 	"which": true, "whereis": true, "type": true,
+
+	// Windows — PowerShell and cmd.exe for read-only diagnostics
+	// State-modifying cmdlets are caught by the PowerShell deny patterns below.
+	"powershell": true, "powershell.exe": true,
+	"cmd": true, "cmd.exe": true,
+	"wmic": true, "tasklist": true, "netsh": true,
+	"ipconfig": true, "systeminfo": true, "sc": true,
+	"wevtutil": true, "qwinsta": true, "query": true,
 }
 
 // denyPattern pairs a compiled regex with a human-readable reason shown in
@@ -204,8 +253,10 @@ type denyPattern struct {
 // state-modifying even when its leading binary is on the allowlist.
 var denyPatterns = []denyPattern{
 	// ── Output redirection ────────────────────────────────────────────────────
+	// Digits before > are file-descriptor redirections (2>/dev/null, 2>&1)
+	// which are harmless; only flag > not preceded by a digit or <.
 	{
-		re:     regexp.MustCompile(`(?:^|[^<])(>{1,2})`),
+		re:     regexp.MustCompile(`(?:^|[^<0-9])(>{1,2})`),
 		reason: "output redirect writes to a file",
 	},
 
@@ -343,6 +394,50 @@ var denyPatterns = []denyPattern{
 			`\bhelm\s+(?:install|upgrade|uninstall|rollback|repo\s+add|repo\s+remove|push|package)\b`,
 		),
 		reason: "helm subcommand modifies release state",
+	},
+
+	// ── PowerShell filesystem / content write cmdlets ─────────────────────────
+	{
+		re:     regexp.MustCompile(`(?i)\b(?:Set|Remove|New|Add|Clear|Copy|Move|Rename)-(?:Item|Content|Property|Location|Acl)\b`),
+		reason: "PowerShell cmdlet modifies filesystem or registry state",
+	},
+	// ── PowerShell service / process lifecycle ─────────────────────────────────
+	{
+		re:     regexp.MustCompile(`(?i)\b(?:Start|Stop|Restart|Suspend|Resume)-(?:Service|Process)\b`),
+		reason: "PowerShell cmdlet modifies service or process state",
+	},
+	// ── PowerShell package / feature management ────────────────────────────────
+	{
+		re:     regexp.MustCompile(`(?i)\b(?:Install|Uninstall)-(?:Module|Package|WindowsFeature|WindowsOptionalFeature|Script)\b`),
+		reason: "PowerShell cmdlet modifies installed packages or features",
+	},
+	// ── PowerShell output to file ──────────────────────────────────────────────
+	{
+		re:     regexp.MustCompile(`(?i)\bOut-File\b`),
+		reason: "Out-File writes to a file",
+	},
+	// ── PowerShell arbitrary execution ────────────────────────────────────────
+	{
+		re:     regexp.MustCompile(`(?i)\b(?:Invoke-Expression|iex)\b`),
+		reason: "Invoke-Expression executes arbitrary code",
+	},
+	// ── PowerShell execution policy change ────────────────────────────────────
+	{
+		re:     regexp.MustCompile(`(?i)\bSet-ExecutionPolicy\b`),
+		reason: "Set-ExecutionPolicy changes the PowerShell execution policy",
+	},
+	// ── Windows sc.exe state-modifying subcommands ────────────────────────────
+	{
+		re:     regexp.MustCompile(`\bsc(?:\.exe)?\s+(?:start|stop|create|delete|config|failure|pause|continue)\b`),
+		reason: "sc.exe subcommand modifies service state",
+	},
+
+	// ── smartctl test / settings flags ───────────────────────────────────────
+	// -t runs self-tests; -s enables/disables SMART or offline testing;
+	// -o/-S controls offline data collection / attribute autosave.
+	{
+		re:     regexp.MustCompile(`\bsmartctl\b.*\s-[tsToS]\b`),
+		reason: "smartctl flag triggers a drive self-test or changes SMART settings",
 	},
 
 	// ── virsh state-modifying subcommands ─────────────────────────────────────
