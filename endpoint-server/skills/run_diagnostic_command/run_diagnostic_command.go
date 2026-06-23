@@ -176,6 +176,16 @@ var diagnosticAllowlist = map[string]bool{
 	// Service status (start/stop/enable/disable caught by denylist)
 	"systemctl": true, "service": true,
 
+	// Container runtimes (state-modifying subcommands caught by denylist)
+	"docker": true, "podman": true, "podman-compose": true, "docker-compose": true,
+	"nerdctl": true, "crictl": true,
+
+	// Kubernetes / orchestration (state-modifying subcommands caught by denylist)
+	"kubectl": true, "helm": true,
+
+	// Virtualisation (state-modifying subcommands caught by denylist)
+	"virsh": true,
+
 	// Miscellaneous safe builtins
 	// Note: "echo" is intentionally absent — plain echo is never a diagnostic
 	// command and is rejected with a specific error before the allowlist check.
@@ -291,5 +301,62 @@ var denyPatterns = []denyPattern{
 	{
 		re:     regexp.MustCompile(`\bwget\b.+(?:--(?:post-data|post-file|method=(?:POST|PUT|DELETE)))`),
 		reason: "wget flag indicates a write request",
+	},
+
+	// ── docker / podman / nerdctl / crictl state-modifying subcommands ────────
+	{
+		re: regexp.MustCompile(
+			`\b(?:docker|podman|nerdctl|crictl)\s+` +
+				`(?:run|create|start|stop|restart|kill|pause|unpause|` +
+				`rm|rmi|exec|build|commit|tag|push|` +
+				`cp|rename|update|login|logout|` +
+				`system\s+prune|container\s+prune|` +
+				`image\s+(?:rm|prune|build|push|import|load)|` +
+				`network\s+(?:create|rm|connect|disconnect|prune)|` +
+				`volume\s+(?:create|rm|prune))\b`,
+		),
+		reason: "docker/podman subcommand modifies container or image state",
+	},
+	// docker-compose / podman-compose lifecycle commands
+	{
+		re: regexp.MustCompile(
+			`\b(?:docker-compose|podman-compose)\s+` +
+				`(?:up|down|start|stop|restart|kill|rm|build|push|pull|create|run|exec)\b`,
+		),
+		reason: "docker-compose/podman-compose subcommand modifies service state",
+	},
+
+	// ── kubectl state-modifying subcommands ───────────────────────────────────
+	{
+		re: regexp.MustCompile(
+			`\bkubectl\s+` +
+				`(?:apply|create|delete|replace|patch|edit|label|annotate|` +
+				`scale|taint|drain|cordon|uncordon|exec|cp|` +
+				`rollout\s+(?:restart|undo)|` +
+				`set\s+(?:image|env|resources|selector|serviceaccount))\b`,
+		),
+		reason: "kubectl subcommand modifies cluster state",
+	},
+	// helm state-modifying subcommands
+	{
+		re: regexp.MustCompile(
+			`\bhelm\s+(?:install|upgrade|uninstall|rollback|repo\s+add|repo\s+remove|push|package)\b`,
+		),
+		reason: "helm subcommand modifies release state",
+	},
+
+	// ── virsh state-modifying subcommands ─────────────────────────────────────
+	{
+		re: regexp.MustCompile(
+			`\bvirsh\s+` +
+				`(?:start|shutdown|destroy|reboot|reset|suspend|resume|` +
+				`create|define|undefine|migrate|` +
+				`attach-(?:device|disk|interface)|detach-(?:device|disk|interface)|` +
+				`snapshot-create|snapshot-delete|snapshot-revert|` +
+				`vol-create|vol-delete|vol-clone|` +
+				`net-start|net-destroy|net-define|net-undefine|` +
+				`pool-start|pool-destroy|pool-define|pool-undefine)\b`,
+		),
+		reason: "virsh subcommand modifies VM or network state",
 	},
 }

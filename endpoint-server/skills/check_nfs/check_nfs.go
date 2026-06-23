@@ -67,10 +67,8 @@ func NewCheckNFSTool(mem *memory.Store) (tool.Tool, error) {
 			}
 
 			if len(mounts) == 0 {
-				msg := "no NFS mounts found on this host"
-				_ = skillstate.Save(mem, "check_nfs", skillstate.HealthOK, msg)
-				slog.Info("check_nfs: no NFS mounts found")
-				return msg, nil
+				slog.Info("check_nfs: no NFS mounts found — skipping health record")
+				return "no NFS mounts found on this host", nil
 			}
 
 			dStateTotal := countDStateProcs()
@@ -338,15 +336,17 @@ func AutoResponsibility() (config.ResponsibilitySettings, bool) {
 		Name:      "nfs-health-check",
 		Frequency: "5m",
 		Instruction: `Check the health of all NFS mount points on this host.
-Review pending RPC operations, GETATTR latency, and D-state processes.
-If any mount has elevated pending ops (>500) or slow GETATTR latency (>1000ms),
-use run_diagnostic_command to investigate further — for example:
+Run check_nfs and review the output. If the result is "no NFS mounts found on
+this host", stop — do NOT call report_findings; the outcome is logged automatically.
+Only call report_findings when there is something that requires attention:
+elevated pending ops (>500), slow GETATTR latency (>1000ms), D-state processes,
+or an emergency unmount ([AUTO-UNMOUNTED] in the output).
+When issues are present, use run_diagnostic_command to investigate further:
   nfsstat -m                     # per-mount NFS statistics
   dmesg | grep -i nfs | tail -20 # kernel NFS messages
   ps aux | awk '$8 ~ /^D/ {print}' | head -20  # D-state processes
-Report your findings. If the skill has already performed an emergency unmount
-(shown as [AUTO-UNMOUNTED] in the output), report that action via report_findings
-and investigate why the NFS server became unresponsive. Do not re-mount without
+If an emergency unmount was performed, report it via report_findings and
+investigate why the NFS server became unresponsive. Do not re-mount without
 operator approval via run_approved_command.`,
 		Tools:        []string{"check_nfs", "run_diagnostic_command", "run_approved_command", "report_findings"},
 		WhenToNotify: "on error",
