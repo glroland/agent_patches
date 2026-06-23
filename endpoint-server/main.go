@@ -31,9 +31,9 @@ import (
 	"agent_patches/endpoint-server/skills/capture_system_info"
 	"agent_patches/endpoint-server/skills/check_containers"
 	"agent_patches/endpoint-server/skills/check_drives"
-	"agent_patches/endpoint-server/skills/check_nfs"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
+	"agent_patches/endpoint-server/skills/check_nfs"
 	"agent_patches/endpoint-server/skills/check_reboot_required"
 	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/skills/read_agent_memory"
@@ -269,7 +269,8 @@ func runServer(ctx context.Context) {
 		}
 	}
 
-	loginMon := loginmonitor.New(mem)
+	loginMon := loginmonitor.New(mem, notify, cfg.LoginMonitor)
+	failedLoginMon := loginmonitor.NewFailedMonitor(mem, notify, cfg.LoginMonitor)
 
 	lp := loop.New(cfg, registry, notify, mem)
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
@@ -311,6 +312,7 @@ func runServer(ctx context.Context) {
 	srv.BaseContext = func(_ net.Listener) context.Context { return ctx }
 
 	loginMon.Start(ctx)
+	failedLoginMon.Start(ctx)
 	lp.Start(ctx)
 
 	go func() {

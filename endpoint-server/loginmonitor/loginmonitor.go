@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"strings"
 	"time"
 
@@ -20,12 +21,17 @@ import (
 
 	"agent_patches/endpoint-server/logind"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
+	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 const (
 	historyKey = "login_history"
 	maxHistory = 500
 	retryDelay = 10 * time.Second
+
+	enrichTimeout = 2 * time.Second
 )
 
 // EventType classifies a login history entry.
@@ -39,25 +45,29 @@ const (
 
 // LoginEvent is one record in the login history.
 type LoginEvent struct {
-	EventType   EventType `json:"event_type"`
-	SessionID   string    `json:"session_id"`
-	Username    string    `json:"username"`
-	Class       string    `json:"class,omitempty"`
-	SessionType string    `json:"session_type,omitempty"`
-	Remote      bool      `json:"remote"`
-	RemoteHost  string    `json:"remote_host,omitempty"`
-	TTY         string    `json:"tty,omitempty"`
-	Timestamp   time.Time `json:"timestamp"` // UTC wall time of the event
+	EventType        EventType `json:"event_type"`
+	SessionID        string    `json:"session_id"`
+	Username         string    `json:"username"`
+	Class            string    `json:"class,omitempty"`
+	SessionType      string    `json:"session_type,omitempty"`
+	Remote           bool      `json:"remote"`
+	RemoteHost       string    `json:"remote_host,omitempty"`       // raw value from logind (hostname or IP)
+	SourceIP         string    `json:"source_ip,omitempty"`         // resolved IPv4/v6 address
+	ResolvedHostname string    `json:"resolved_hostname,omitempty"` // PTR lookup or forward hostname
+	TTY              string    `json:"tty,omitempty"`
+	Timestamp        time.Time `json:"timestamp"` // UTC wall time of the event
 }
 
 // Monitor watches logind D-Bus signals and records login/logout history.
 type Monitor struct {
-	mem *memory.Store
+	mem    *memory.Store
+	notify *notifier.Notifier
+	cfg    config.LoginMonitorSettings
 }
 
 // New creates a Monitor. Call Start to launch the background goroutine.
-func New(mem *memory.Store) *Monitor {
-	return &Monitor{mem: mem}
+func New(mem *memory.Store, notify *notifier.Notifier, cfg config.LoginMonitorSettings) *Monitor {
+	return &Monitor{mem: mem, notify: notify, cfg: cfg}
 }
 
 // Start launches the background goroutine. It returns immediately; the
@@ -110,16 +120,19 @@ func (m *Monitor) run(ctx context.Context) error {
 		if ts.IsZero() {
 			ts = time.Now().UTC()
 		}
+		ip, hostname := enrichSourceInfo(s.RemoteHost)
 		m.appendEvent(LoginEvent{
-			EventType:   EventExisting,
-			SessionID:   s.ID,
-			Username:    s.Username,
-			Class:       s.Class,
-			SessionType: s.SessionType,
-			Remote:      s.Remote,
-			RemoteHost:  s.RemoteHost,
-			TTY:         s.TTY,
-			Timestamp:   ts,
+			EventType:        EventExisting,
+			SessionID:        s.ID,
+			Username:         s.Username,
+			Class:            s.Class,
+			SessionType:      s.SessionType,
+			Remote:           s.Remote,
+			RemoteHost:       s.RemoteHost,
+			SourceIP:         ip,
+			ResolvedHostname: hostname,
+			TTY:              s.TTY,
+			Timestamp:        ts,
 		})
 	}
 	slog.Info("loginmonitor: bootstrapped existing sessions", "count", len(existing))
@@ -176,18 +189,24 @@ func (m *Monitor) handleSignal(conn *dbus.Conn, sig *dbus.Signal) {
 			return
 		}
 		info.ID = id
-		slog.Info("loginmonitor: session opened", "user", info.Username, "type", info.SessionType, "remote", info.Remote)
-		m.appendEvent(LoginEvent{
-			EventType:   EventLogin,
-			SessionID:   id,
-			Username:    info.Username,
-			Class:       info.Class,
-			SessionType: info.SessionType,
-			Remote:      info.Remote,
-			RemoteHost:  info.RemoteHost,
-			TTY:         info.TTY,
-			Timestamp:   time.Now().UTC(),
-		})
+
+		ip, hostname := enrichSourceInfo(info.RemoteHost)
+		ev := LoginEvent{
+			EventType:        EventLogin,
+			SessionID:        id,
+			Username:         info.Username,
+			Class:            info.Class,
+			SessionType:      info.SessionType,
+			Remote:           info.Remote,
+			RemoteHost:       info.RemoteHost,
+			SourceIP:         ip,
+			ResolvedHostname: hostname,
+			TTY:              info.TTY,
+			Timestamp:        time.Now().UTC(),
+		}
+		slog.Info("loginmonitor: session opened", "user", info.Username, "type", info.SessionType, "remote", info.Remote, "source_ip", ip)
+		m.appendEvent(ev)
+		m.checkUnusualSource(ev)
 
 	case "SessionRemoved":
 		if len(sig.Body) < 1 {
@@ -205,6 +224,84 @@ func (m *Monitor) handleSignal(conn *dbus.Conn, sig *dbus.Signal) {
 			Timestamp: time.Now().UTC(),
 		})
 	}
+}
+
+// checkUnusualSource fires a critical alert when a remote login originates
+// from an address not in cfg.AllowedSources. No-op when AllowedSources is
+// empty or the login is local.
+func (m *Monitor) checkUnusualSource(ev LoginEvent) {
+	if !ev.Remote || len(m.cfg.AllowedSources) == 0 {
+		return
+	}
+
+	candidate := ev.SourceIP
+	if candidate == "" {
+		candidate = ev.RemoteHost
+	}
+	if candidate == "" {
+		return
+	}
+
+	parsedIP := net.ParseIP(candidate)
+	for _, src := range m.cfg.AllowedSources {
+		if _, cidr, err := net.ParseCIDR(src); err == nil {
+			if parsedIP != nil && cidr.Contains(parsedIP) {
+				return
+			}
+			continue
+		}
+		if allowedIP := net.ParseIP(src); allowedIP != nil {
+			if parsedIP != nil && parsedIP.Equal(allowedIP) {
+				return
+			}
+			continue
+		}
+		// Treat as hostname — match against RemoteHost or ResolvedHostname.
+		if src == ev.RemoteHost || src == ev.ResolvedHostname {
+			return
+		}
+	}
+
+	subject := fmt.Sprintf("[CRITICAL] Unusual login source: %s from %s", ev.Username, candidate)
+	body := fmt.Sprintf(
+		"A login was detected from an unexpected source.\n\nUser:     %s\nSource IP: %s\nHostname:  %s\nSession:  %s\nTime:     %s",
+		ev.Username, ev.SourceIP, ev.ResolvedHostname, ev.SessionID, ev.Timestamp.Format(time.RFC1123),
+	)
+	m.notify.Notify(context.Background(), subject, body)
+	_ = skillstate.Save(m.mem, "check_interactive_logins", skillstate.HealthCritical,
+		fmt.Sprintf("unusual login source: %s from %s", ev.Username, candidate))
+	slog.Warn("loginmonitor: unusual login source", "user", ev.Username, "source", candidate)
+}
+
+// enrichSourceInfo resolves a raw host value (IP or hostname from logind) into
+// a canonical source IP and a resolved hostname. Both fields may be empty on
+// lookup failure. Lookups are capped at enrichTimeout.
+func enrichSourceInfo(host string) (sourceIP, resolvedHostname string) {
+	if host == "" {
+		return "", ""
+	}
+
+	if net.ParseIP(host) != nil {
+		// Already an IP — PTR lookup for hostname.
+		sourceIP = host
+		ctx, cancel := context.WithTimeout(context.Background(), enrichTimeout)
+		defer cancel()
+		names, err := net.DefaultResolver.LookupAddr(ctx, host)
+		if err == nil && len(names) > 0 {
+			resolvedHostname = strings.TrimSuffix(names[0], ".")
+		}
+		return
+	}
+
+	// Hostname — forward lookup for IP.
+	resolvedHostname = host
+	ctx, cancel := context.WithTimeout(context.Background(), enrichTimeout)
+	defer cancel()
+	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+	if err == nil && len(addrs) > 0 {
+		sourceIP = addrs[0]
+	}
+	return
 }
 
 // lastUsernameForSession scans history in reverse to find the most recent
@@ -256,7 +353,6 @@ func ReadHistory(mem *memory.Store) ([]LoginEvent, error) {
 // A session is active if it has a "login" or "existing" event with no
 // subsequent "logout" event for the same SessionID.
 func ActiveSessions(history []LoginEvent) []LoginEvent {
-	// Track the most recent open/close state per session ID.
 	type state struct {
 		event  LoginEvent
 		closed bool

@@ -14,16 +14,16 @@ import (
 	"agent_patches/endpoint-server/skillstate"
 )
 
-// NewLoginSessionsTool returns a tool that reports active login sessions and
-// recent login/logout history recorded by the loginmonitor background service.
-// When no history is available yet (monitor not running, or first start), it
-// falls back to a live D-Bus query so the tool is always useful.
+// NewLoginSessionsTool returns a tool that reports active login sessions,
+// recent login/logout history, and recent failed login attempts recorded by
+// the background monitors. Falls back to a live D-Bus query when no history
+// is available yet.
 func NewLoginSessionsTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
 		"check_interactive_logins",
-		"Reports currently active login sessions and recent login/logout history. "+
-			"History is maintained by a background monitor that watches systemd-logind "+
-			"D-Bus signals, so it captures events between skill invocations. "+
+		"Reports currently active login sessions, recent login/logout history, and "+
+			"recent failed login attempts. History is maintained by background monitors "+
+			"that watch systemd-logind D-Bus signals and the system journal (sshd). "+
 			"Falls back to a live snapshot when no history is available. "+
 			"Requires systemd-logind; unavailable on macOS and Windows.",
 		func(_ context.Context, _ struct{}) (string, error) {
@@ -35,18 +35,18 @@ func NewLoginSessionsTool(mem *memory.Store) (tool.Tool, error) {
 			}
 
 			if len(history) > 0 {
-				return reportFromHistory(mem, history), nil
+				failedHistory, _ := loginmonitor.ReadFailedHistory(mem)
+				return reportFromHistory(mem, history, failedHistory), nil
 			}
 
-			// No history yet — live fallback.
 			return liveReport(mem), nil
 		},
 	)
 }
 
-// reportFromHistory builds a two-section report from recorded history:
-// active sessions and recent activity.
-func reportFromHistory(mem *memory.Store, history []loginmonitor.LoginEvent) string {
+// reportFromHistory builds a three-section report: active sessions, recent
+// login/logout activity, and recent failed login attempts.
+func reportFromHistory(mem *memory.Store, history []loginmonitor.LoginEvent, failedHistory []loginmonitor.FailedLoginEvent) string {
 	active := loginmonitor.ActiveSessions(history)
 
 	var sb strings.Builder
@@ -71,7 +71,13 @@ func reportFromHistory(mem *memory.Store, history []loginmonitor.LoginEvent) str
 			if ev.Remote {
 				fmt.Fprintf(&sb, "Origin:       remote\n")
 				if ev.RemoteHost != "" {
-					fmt.Fprintf(&sb, "From host:    %s\n", ev.RemoteHost)
+					fmt.Fprintf(&sb, "Remote host:  %s\n", ev.RemoteHost)
+				}
+				if ev.SourceIP != "" {
+					fmt.Fprintf(&sb, "Source IP:    %s\n", ev.SourceIP)
+				}
+				if ev.ResolvedHostname != "" && ev.ResolvedHostname != ev.RemoteHost {
+					fmt.Fprintf(&sb, "Hostname:     %s\n", ev.ResolvedHostname)
 				}
 			} else {
 				fmt.Fprintf(&sb, "Origin:       local console\n")
@@ -83,7 +89,7 @@ func reportFromHistory(mem *memory.Store, history []loginmonitor.LoginEvent) str
 		}
 	}
 
-	// Section 2: recent activity (last 50 events, newest first).
+	// Section 2: recent login/logout activity (last 50 events, newest first).
 	sb.WriteString("\n=== Recent Activity ===\n")
 	start := 0
 	if len(history) > 50 {
@@ -94,10 +100,16 @@ func reportFromHistory(mem *memory.Store, history []loginmonitor.LoginEvent) str
 		ev := recent[i]
 		origin := "local"
 		if ev.Remote {
-			origin = "remote"
-			if ev.RemoteHost != "" {
-				origin = "remote:" + ev.RemoteHost
+			parts := []string{"remote"}
+			if ev.SourceIP != "" {
+				parts = append(parts, ev.SourceIP)
+			} else if ev.RemoteHost != "" {
+				parts = append(parts, ev.RemoteHost)
 			}
+			if ev.ResolvedHostname != "" && ev.ResolvedHostname != ev.RemoteHost && ev.ResolvedHostname != ev.SourceIP {
+				parts = append(parts, ev.ResolvedHostname)
+			}
+			origin = strings.Join(parts, ":")
 		}
 		tty := ev.TTY
 		if tty == "" {
@@ -112,9 +124,40 @@ func reportFromHistory(mem *memory.Store, history []loginmonitor.LoginEvent) str
 		)
 	}
 
-	state := fmt.Sprintf("%d active session(s); %d history events", len(active), len(history))
+	// Section 3: recent failed login attempts (last 20, newest first).
+	sb.WriteString("\n=== Recent Failed Login Attempts ===\n")
+	if len(failedHistory) == 0 {
+		sb.WriteString("No failed login attempts recorded.\n")
+	} else {
+		fstart := 0
+		if len(failedHistory) > 20 {
+			fstart = len(failedHistory) - 20
+		}
+		recentFailed := failedHistory[fstart:]
+		for i := len(recentFailed) - 1; i >= 0; i-- {
+			ev := recentFailed[i]
+			src := ev.SourceIP
+			if src == "" {
+				src = ev.RemoteHost
+			}
+			hostname := ev.ResolvedHostname
+			if hostname != "" && hostname != ev.RemoteHost && hostname != ev.SourceIP {
+				src = fmt.Sprintf("%s (%s)", src, hostname)
+			}
+			fmt.Fprintf(&sb, "[%s] %-16s %-20s %s\n",
+				ev.Timestamp.UTC().Format("2006-01-02 15:04 UTC"),
+				ev.Username,
+				src,
+				ev.Reason,
+			)
+		}
+	}
+
+	state := fmt.Sprintf("%d active session(s); %d history events; %d failed attempts",
+		len(active), len(history), len(failedHistory))
 	_ = skillstate.Save(mem, "check_interactive_logins", skillstate.HealthOK, state)
-	slog.Info("check_interactive_logins: completed from history", "active", len(active), "history", len(history))
+	slog.Info("check_interactive_logins: completed from history",
+		"active", len(active), "history", len(history), "failed", len(failedHistory))
 	return sb.String()
 }
 

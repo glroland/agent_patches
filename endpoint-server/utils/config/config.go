@@ -56,14 +56,15 @@ const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system a
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
-	Agent    AgentSettings    `yaml:"agent"`
-	Logging  LoggingSettings  `yaml:"logging"`
-	Tasks    TasksSettings    `yaml:"tasks"`
-	Storage  StorageSettings  `yaml:"storage"`
-	Server   ServerSettings   `yaml:"server"`
-	Security SecuritySettings `yaml:"security"`
-	Memory   MemorySettings   `yaml:"memory"`
-	Loop     LoopSettings     `yaml:"loop"`
+	Agent        AgentSettings        `yaml:"agent"`
+	Logging      LoggingSettings      `yaml:"logging"`
+	Tasks        TasksSettings        `yaml:"tasks"`
+	Storage      StorageSettings      `yaml:"storage"`
+	Server       ServerSettings       `yaml:"server"`
+	Security     SecuritySettings     `yaml:"security"`
+	Memory       MemorySettings       `yaml:"memory"`
+	Loop         LoopSettings         `yaml:"loop"`
+	LoginMonitor LoginMonitorSettings `yaml:"login_monitor"`
 
 	// Responsibilities is a dynamic list of recurring duties the agent should
 	// carry out, each on its own schedule.
@@ -91,6 +92,18 @@ type ResponsibilitySettings struct {
 	Instruction  string   `yaml:"instruction"`
 	Tools        []string `yaml:"tools,omitempty"`
 	WhenToNotify string   `yaml:"when_to_notify"`
+}
+
+// LoginMonitorSettings controls the background login monitor and alerting.
+type LoginMonitorSettings struct {
+	// AllowedSources is a list of CIDRs or exact IP addresses from which remote
+	// logins are expected. A remote login from an address outside this list
+	// triggers a critical alert. When empty, no unusual-source alerting is done.
+	AllowedSources []string `yaml:"allowed_sources"`
+
+	// FailedLoginThreshold is the number of consecutive failed login attempts
+	// from the same source IP that triggers a critical alert. Defaults to 3.
+	FailedLoginThreshold int `yaml:"failed_login_threshold"`
 }
 
 // LoopSettings controls the generic background wake-up loop.
@@ -183,6 +196,9 @@ func Load() (*Settings, error) {
 	}
 	if s.ResponsibilitySystemPrompt == "" {
 		s.ResponsibilitySystemPrompt = defaultResponsibilitySystemPrompt
+	}
+	if s.LoginMonitor.FailedLoginThreshold <= 0 {
+		s.LoginMonitor.FailedLoginThreshold = 3
 	}
 
 	return &s, nil

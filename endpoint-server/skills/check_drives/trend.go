@@ -15,7 +15,7 @@ const (
 	trendMaxAge       = 7 * 24 * time.Hour
 	trendMinInterval  = 30 * time.Minute
 	trendMinSamples   = 3
-	trendGrowthPerDay = 10.0 / 7  // ~1.43% / day ≈ 10% / week
+	trendGrowthPerDay = 10.0 / 7 // ~1.43% / day ≈ 10% / week
 	trendWarningDays  = 30
 	trendCriticalDays = 7
 	trendFullPct      = 90.0

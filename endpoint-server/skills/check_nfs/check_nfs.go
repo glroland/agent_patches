@@ -40,9 +40,9 @@ type NFSMountStats struct {
 
 // RawNFSStats is the parsed output of one mountstats block. Exported for testing.
 type RawNFSStats struct {
-	PendingOps   int64   // instantaneous pending RPCs from xprt line
-	GETATTRMs    float64 // avg GETATTR RTT in ms
-	GETATTROps   int64   // total GETATTR ops (context for the latency figure)
+	PendingOps int64   // instantaneous pending RPCs from xprt line
+	GETATTRMs  float64 // avg GETATTR RTT in ms
+	GETATTROps int64   // total GETATTR ops (context for the latency figure)
 }
 
 type nfsCheckInput struct{}
@@ -195,7 +195,7 @@ func ParseMountstats(data string) map[string]RawNFSStats {
 				if parts[i] == "mounted" && parts[i+1] == "on" && parts[i+3] == "with" {
 					currentMount = parts[i+2]
 					fstype := ""
-					for j := i+4; j < len(parts); j++ {
+					for j := i + 4; j < len(parts); j++ {
 						if parts[j-1] == "fstype" {
 							fstype = parts[j]
 							break
