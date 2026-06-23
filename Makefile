@@ -99,7 +99,7 @@ run-central-ui:
 ## loading config from the .env file in the project root
 run-central-backend:
 	cd $(CENTRAL_BACKEND_DIR) && [ -d node_modules ] || npm install
-	cd $(CENTRAL_BACKEND_DIR) && DOTENV_CONFIG_PATH=$(CURDIR)/.env AGENT_INVENTORY_FILE=$(CURDIR)/inventory.csv npm start
+	cd $(CENTRAL_BACKEND_DIR) && DOTENV_CONFIG_PATH=$(CURDIR)/.env npm start
 
 ## deploy: deploy release builds to all hosts in inventory.csv
 deploy:

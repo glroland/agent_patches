@@ -90,6 +90,12 @@ export function broadcastMessage(message) {
   return postJSON('/chat', { message });
 }
 
+// Sends a message to the central fleet AI. Returns { reply, routedTo?, agentReply? }.
+// history is an array of { role: 'user'|'assistant', text } conversation turns.
+export function sendCentralChat(message, history = []) {
+  return postJSON('/chat/central', { message, history });
+}
+
 // Clears all memory on a single agent.
 export function clearAgentMemory(id) {
   return deleteJSON(`/agents/${id}/memory`);

@@ -4,6 +4,7 @@ import Card from '../components/Card';
 import Badge from '../components/Badge';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
+import DashboardChat from '../components/DashboardChat';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { relativeTime } from '../utils/time';
 
@@ -173,6 +174,8 @@ export default function Dashboard() {
           </Card>
         </div>
       </div>
+
+      <DashboardChat />
     </div>
   );
 }
