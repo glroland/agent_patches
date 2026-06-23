@@ -132,16 +132,33 @@ export async function chat(message, history = []) {
   }
   llmMessages.push({ role: 'user', content: message });
 
+  const model = config.intelligence.model;
+  const baseURL = config.intelligence.baseUrl;
+  logger.info(`centralChat: calling LLM`, { model, baseURL, turns: llmMessages.length });
+
   let raw;
   try {
     const response = await client.chat.completions.create({
-      model: config.intelligence.model,
+      model,
       max_tokens: 800,
       messages: llmMessages,
     });
-    raw = response.choices[0]?.message?.content ?? '';
+
+    if (response?.error) {
+      const errMsg = response.error.message ?? JSON.stringify(response.error);
+      logger.error(`centralChat: LLM endpoint returned error body`, { model, baseURL, error: response.error });
+      return { reply: `Fleet AI error: ${errMsg}`, routedTo: null };
+    }
+
+    raw = response?.choices?.[0]?.message?.content?.trim() ?? '';
+    if (!raw) {
+      logger.error(`centralChat: LLM returned no content`, { model, baseURL, response: JSON.stringify(response) });
+      return { reply: `The fleet AI returned an empty response (model: ${model}, endpoint: ${baseURL}). Check that INTELLIGENCE_MODEL matches the endpoint.`, routedTo: null };
+    }
+
+    logger.info(`centralChat: LLM responded`, { model, rawLength: raw.length });
   } catch (err) {
-    logger.error(`centralChat: LLM call failed: ${err.message}`);
+    logger.error(`centralChat: LLM call failed`, { model, baseURL, error: err.message });
     return { reply: `Fleet intelligence is temporarily unavailable: ${err.message}`, routedTo: null };
   }
 

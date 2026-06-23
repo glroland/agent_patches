@@ -5,8 +5,8 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
+    "start": "node --import ./src/setup.js src/index.js",
+    "dev": "node --import ./src/setup.js --watch src/index.js",
     "test": "node --test"
   },
   "engines": {

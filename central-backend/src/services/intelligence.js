@@ -146,7 +146,17 @@ async function analyse() {
         { role: 'user', content: fleetText },
       ],
     });
-    raw = response.choices[0]?.message?.content ?? '';
+
+    if (response?.error) {
+      logger.error(`intelligence: LLM error body`, { error: response.error });
+      return;
+    }
+
+    raw = response?.choices?.[0]?.message?.content?.trim() ?? '';
+    if (!raw) {
+      logger.error(`intelligence: empty LLM response`);
+      return;
+    }
   } catch (err) {
     logger.error(`intelligence: API call failed: ${err.message}`);
     return;

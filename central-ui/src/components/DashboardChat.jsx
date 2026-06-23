@@ -50,10 +50,13 @@ export default function DashboardChat() {
   const routedApprovalCount =
     wsAgents?.find((a) => a.id === routedAgentId)?.pendingApprovalCount ?? 0;
 
-  // Auto-scroll to bottom on new messages.
+  const prevMessageCount = useRef(0);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, sending]);
+    if (messages.length > prevMessageCount.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+    prevMessageCount.current = messages.length;
+  }, [messages]);
 
   // Watch the WebSocket approval count for the last routed agent.
   // Fires on every count change and injects new pending approvals inline.
@@ -114,7 +117,7 @@ export default function DashboardChat() {
     <div className="rounded-xl border border-slate-800 bg-slate-900/30">
       <div className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <div>
-          <p className="text-sm font-semibold text-slate-200">Fleet Chat</p>
+          <p className="text-sm font-semibold text-slate-200">Chat w/Patches</p>
           <p className="text-xs text-slate-500">Ask about the fleet or interact with individual agents</p>
         </div>
       </div>

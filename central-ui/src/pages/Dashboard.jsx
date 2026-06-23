@@ -61,11 +61,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-slate-100">Fleet Activity</h1>
-        <p className="mt-1 text-sm text-slate-500">What your agents are seeing, doing, and asking for.</p>
-      </div>
-
       <IntelligenceBanner report={intelligence} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -93,6 +88,8 @@ export default function Dashboard() {
           hint="Suggestions from agents, no action taken yet"
         />
       </div>
+
+      <DashboardChat />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card
@@ -175,7 +172,6 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <DashboardChat />
     </div>
   );
 }
