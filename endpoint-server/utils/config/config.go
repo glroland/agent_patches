@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"gopkg.in/yaml.v3"
 )
@@ -201,12 +203,71 @@ func Load() (*Settings, error) {
 		s.LoginMonitor.FailedLoginThreshold = 3
 	}
 
+	osResps, err := loadOSResponsibilities(path)
+	if err != nil {
+		slog.Warn("config: could not load OS responsibilities file, using main config only",
+			"file", OSResponsibilitiesPath(path), "error", err)
+	}
+	s.Responsibilities = mergeResponsibilities(osResps, s.Responsibilities)
+
 	return &s, nil
 }
 
 // FilePath returns the resolved config file path, exported for testing and diagnostics.
 func FilePath() string {
 	return filePath()
+}
+
+// OSResponsibilitiesPath returns the path of the OS-specific responsibilities
+// file that is loaded alongside the given config file path. The file is named
+// "<runtime.GOOS>-responsibilities.yaml" and lives in the same directory.
+func OSResponsibilitiesPath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), runtime.GOOS+"-responsibilities.yaml")
+}
+
+// osResponsibilitiesFile is the YAML structure of a standalone responsibilities file.
+type osResponsibilitiesFile struct {
+	Responsibilities []ResponsibilitySettings `yaml:"responsibilities"`
+}
+
+// loadOSResponsibilities reads the OS-specific responsibilities file. Returns
+// nil, nil when the file does not exist (not an error — file is optional).
+func loadOSResponsibilities(configPath string) ([]ResponsibilitySettings, error) {
+	path := OSResponsibilitiesPath(configPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			slog.Info("config: no OS responsibilities file found, using main config only", "path", path)
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	var f osResponsibilitiesFile
+	if err := yaml.Unmarshal(data, &f); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+	slog.Info("config: loaded OS responsibilities", "file", path, "count", len(f.Responsibilities))
+	return f.Responsibilities, nil
+}
+
+// mergeResponsibilities merges OS-default responsibilities with instance-level
+// overrides. Entries from override are always included; entries from base are
+// included only when no override entry shares the same name.
+func mergeResponsibilities(base, override []ResponsibilitySettings) []ResponsibilitySettings {
+	if len(base) == 0 {
+		return override
+	}
+	overrideNames := make(map[string]bool, len(override))
+	for _, r := range override {
+		overrideNames[r.Name] = true
+	}
+	result := make([]ResponsibilitySettings, 0, len(base)+len(override))
+	for _, r := range base {
+		if !overrideNames[r.Name] {
+			result = append(result, r)
+		}
+	}
+	return append(result, override...)
 }
 
 func filePath() string {

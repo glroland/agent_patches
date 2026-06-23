@@ -5,9 +5,11 @@
 #   deploy.sh <inventory.csv> <binary> <service-file> <config-file>
 #
 # Optional environment variables:
-#   SSH_USER   Login username on remote hosts (default: current user)
-#   SSH_PORT   SSH port (default: 22)
-#   SSH_KEY    Path to a private key (-i flag)
+#   SSH_USER                Login username on remote hosts (default: current user)
+#   SSH_PORT                SSH port (default: 22)
+#   SSH_KEY                 Path to a private key (-i flag)
+#   LINUX_RESPONSIBILITIES  Path to linux-responsibilities.yaml (optional)
+#   WINDOWS_RESPONSIBILITIES Path to windows-responsibilities.yaml (optional)
 
 set -uo pipefail
 
@@ -28,12 +30,18 @@ SSH_USER="${SSH_USER:-$USER}"
 SSH_PORT="${SSH_PORT:-22}"
 
 # Windows-specific env vars (only required when inventory contains windows hosts).
-#   WINDOWS_BINARY  Path to the compiled patches-endpoint-server.exe
-#   WINDOWS_CONFIG  Path to the Windows config file (config.example.windows.yaml)
-#   WINDOWS_USER    Login user on Windows hosts (default: Administrator)
+#   WINDOWS_BINARY           Path to the compiled patches-endpoint-server.exe
+#   WINDOWS_CONFIG           Path to the Windows config file
+#   WINDOWS_USER             Login user on Windows hosts (default: Administrator)
+#   WINDOWS_RESPONSIBILITIES Path to windows-responsibilities.yaml
 WINDOWS_BINARY="${WINDOWS_BINARY:-}"
 WINDOWS_CONFIG="${WINDOWS_CONFIG:-}"
 WINDOWS_USER="${WINDOWS_USER:-Administrator}"
+WINDOWS_RESPONSIBILITIES="${WINDOWS_RESPONSIBILITIES:-}"
+
+# Linux-specific env vars.
+#   LINUX_RESPONSIBILITIES  Path to linux-responsibilities.yaml
+LINUX_RESPONSIBILITIES="${LINUX_RESPONSIBILITIES:-}"
 
 for f in "$INVENTORY_CSV" "$BINARY" "$SERVICE_FILE"; do
     if [[ ! -f "$f" ]]; then
@@ -251,6 +259,16 @@ else
     warn "no config file found in /tmp — skipping (existing config preserved)"
 fi
 
+# ── OS responsibilities ───────────────────────────────────────────────────────
+step "Deploying OS responsibilities..."
+if [[ -f /tmp/linux-responsibilities.yaml ]]; then
+    install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 640 \
+        /tmp/linux-responsibilities.yaml "$INSTALL_ROOT/config/linux-responsibilities.yaml"
+    ok "responsibilities written to $INSTALL_ROOT/config/linux-responsibilities.yaml"
+else
+    warn "no linux-responsibilities.yaml found in /tmp — skipping (existing file preserved)"
+fi
+
 # ── Start service ─────────────────────────────────────────────────────────────
 step "Enabling and starting agent_patches service..."
 systemctl enable --now agent_patches
@@ -262,6 +280,7 @@ step "Cleaning up temporary files..."
 rm -f /tmp/patches-endpoint-server \
       /tmp/agent_patches.service \
       /tmp/endpoint-server-config.yaml \
+      /tmp/linux-responsibilities.yaml \
       /tmp/agent_patches_setup.*.sh
 ok "done"
 REMOTE_SCRIPT
@@ -270,7 +289,8 @@ cat > "$WIN_SETUP_SCRIPT" << 'WIN_REMOTE_SCRIPT'
 # Windows setup script - runs on the remote host via PowerShell over SSH.
 # Files are SCP'd to C:\Windows\Temp\ before this script runs.
 param(
-    [string]$ConfigFile = ""
+    [string]$ConfigFile = "",
+    [string]$ResponsibilitiesFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -316,6 +336,14 @@ if ($ConfigFile -ne "" -and (Test-Path "$Tmp\$ConfigFile")) {
     Warn "no config supplied - existing config preserved"
 }
 
+Step "Installing OS responsibilities..."
+if ($ResponsibilitiesFile -ne "" -and (Test-Path "$Tmp\$ResponsibilitiesFile")) {
+    Copy-Item -Path "$Tmp\$ResponsibilitiesFile" -Destination "$ConfigDir\windows-responsibilities.yaml" -Force
+    OK "responsibilities written to $ConfigDir\windows-responsibilities.yaml"
+} else {
+    Warn "no responsibilities file supplied - existing file preserved"
+}
+
 Step "Configuring Windows service..."
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
@@ -344,6 +372,9 @@ Remove-Item -Path "$Tmp\patches-endpoint-server.exe" -Force -ErrorAction Silentl
 if ($ConfigFile -ne "") {
     Remove-Item -Path "$Tmp\$ConfigFile" -Force -ErrorAction SilentlyContinue
 }
+if ($ResponsibilitiesFile -ne "") {
+    Remove-Item -Path "$Tmp\$ResponsibilitiesFile" -Force -ErrorAction SilentlyContinue
+}
 OK "done"
 WIN_REMOTE_SCRIPT
 
@@ -367,6 +398,7 @@ deploy_host_windows() {
 
     # Build file list. Files go to C:\Windows\Temp\ on the remote host.
     local cfg_base=""
+    local resp_base=""
     local files=("$WINDOWS_BINARY" "$WIN_SETUP_SCRIPT")
     local win_cfg="${WINDOWS_CONFIG:-$CONFIG_FILE}"
     if [[ -f "$win_cfg" ]]; then
@@ -374,6 +406,12 @@ deploy_host_windows() {
         files+=("$win_cfg")
     else
         echo "│  ⚠ WARNING: config file not found ($win_cfg) — skipping config deploy"
+    fi
+    if [[ -n "$WINDOWS_RESPONSIBILITIES" && -f "$WINDOWS_RESPONSIBILITIES" ]]; then
+        resp_base=$(basename "$WINDOWS_RESPONSIBILITIES")
+        files+=("$WINDOWS_RESPONSIBILITIES")
+    elif [[ -n "$WINDOWS_RESPONSIBILITIES" ]]; then
+        echo "│  ⚠ WARNING: windows-responsibilities.yaml not found ($WINDOWS_RESPONSIBILITIES) — skipping"
     fi
 
     local win_setup_base
@@ -391,7 +429,8 @@ deploy_host_windows() {
     "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
         "powershell -NoProfile -ExecutionPolicy Bypass \
             -File ${win_tmp}/${win_setup_base} \
-            -ConfigFile ${cfg_base}" \
+            -ConfigFile ${cfg_base} \
+            -ResponsibilitiesFile ${resp_base}" \
         2>&1 | sed 's/^/│  /' || rc=$?
 
     if [[ $rc -eq 0 ]]; then
@@ -422,6 +461,11 @@ deploy_host() {
     else
         echo "│  ⚠ WARNING: config file not found ($CONFIG_FILE) — skipping config deploy"
     fi
+    if [[ -n "$LINUX_RESPONSIBILITIES" && -f "$LINUX_RESPONSIBILITIES" ]]; then
+        files+=("$LINUX_RESPONSIBILITIES")
+    elif [[ -n "$LINUX_RESPONSIBILITIES" ]]; then
+        echo "│  ⚠ WARNING: linux-responsibilities.yaml not found ($LINUX_RESPONSIBILITIES) — skipping"
+    fi
 
     echo "│  Connecting as ${host_user}@${host}"
     if ! "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" true 2>&1 | sed 's/^/│  /'; then
@@ -442,6 +486,16 @@ deploy_host() {
         if [[ "$cfg_base" != "endpoint-server-config.yaml" ]]; then
             "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
                 "mv /tmp/$cfg_base /tmp/endpoint-server-config.yaml" 2>/dev/null || true
+        fi
+    fi
+
+    # Rename the responsibilities file to the expected name on the remote
+    if [[ -n "$LINUX_RESPONSIBILITIES" && -f "$LINUX_RESPONSIBILITIES" ]]; then
+        local resp_base
+        resp_base=$(basename "$LINUX_RESPONSIBILITIES")
+        if [[ "$resp_base" != "linux-responsibilities.yaml" ]]; then
+            "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
+                "mv /tmp/$resp_base /tmp/linux-responsibilities.yaml" 2>/dev/null || true
         fi
     fi
 

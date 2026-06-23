@@ -103,89 +103,10 @@ responsibility_system_prompt: |
     to state a conclusion or confirm that a check passed, write it in your
     response text or call report_findings. Running echo via a command tool
     produces no useful information and wastes an approval slot.
-responsibilities:
-  - name: disk-space-check
-    frequency: "1h"
-    instruction: |
-      Check disk usage on all drives. Review disk space usage, SMART health,
-      and the largest directories on each drive.
-      If any drive is above 90% capacity, use run_diagnostic_command to
-      investigate the root cause — for example:
-        Get-ChildItem C:\ -Recurse -ErrorAction SilentlyContinue |
-          Sort-Object Length -Descending | Select-Object -First 20 FullName, Length
-      Once you have identified a safe remediation (e.g. clearing old logs or
-      temp files under C:\Windows\Temp), submit that command via
-      run_approved_command for operator approval before executing it. Do not
-      propose commands for SMART hardware failures — report those findings only.
-    tools:
-      - check_drives
-      - run_diagnostic_command
-      - run_approved_command
-    when_to_notify: "on error"
-  - name: cpu-utilization-check
-    frequency: "30m"
-    instruction: |
-      Check CPU utilization on this host. Report overall CPU usage percentage
-      and the top consuming processes. If CPU usage is above 80%, use
-      run_diagnostic_command to investigate — for example:
-        Get-Process | Sort-Object CPU -Descending | Select-Object -First 20 Name, CPU, Id
-      Report your findings. Only use run_approved_command if you determine a
-      specific remediation action is warranted and safe to propose.
-      Do not act if CPU usage is within normal bounds.
-    tools:
-      - analyze_cpu_utilization
-      - run_diagnostic_command
-      - run_approved_command
-    when_to_notify: "on error"
-  - name: memory-utilization-check
-    frequency: "30m"
-    instruction: |
-      Check memory utilization on this host. Report total RAM, used memory,
-      and available memory. Use run_diagnostic_command to gather details — for
-      example:
-        Get-CimInstance Win32_OperatingSystem |
-          Select-Object TotalVisibleMemorySize, FreePhysicalMemory
-        Get-Process | Sort-Object WorkingSet -Descending |
-          Select-Object -First 20 Name, WorkingSet, Id
-      If memory usage is above 80%, report the top consumers. For sustained
-      critical pressure above 90% where a specific safe remediation exists,
-      propose it via run_approved_command for operator approval.
-      Do not act if memory is within normal bounds.
-    tools:
-      - analyze_memory_utilization
-      - run_diagnostic_command
-      - run_approved_command
-    when_to_notify: "on error"
-  - name: network-utilization-check
-    frequency: "1h"
-    instruction: |
-      Check network utilization on all active interfaces. Report upload and
-      download rates. If any interface shows unusually high or unexpected
-      traffic, use run_diagnostic_command to investigate — for example:
-        netstat -ano | Select-String ESTABLISHED | Select-Object -First 40
-        Get-NetTCPConnection -State Established |
-          Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, OwningProcess
-      Report findings even when no action is needed. Only use run_approved_command
-      if a specific remediation is warranted; do not propose commands unless
-      traffic is clearly anomalous.
-    tools:
-      - analyze_network_utilization
-      - run_diagnostic_command
-      - run_approved_command
-    when_to_notify: "on error"
-  - name: daily-summary
-    time: "07:00"
-    instruction: |
-      Summarize overnight system activity, including any errors, service
-      restarts, or completed patch runs, and produce a short report.
-    tools:
-      - read_agent_memory
-    when_to_notify: "always"
-  - name: keep-system-up-to-date
-    time: "03:00"
-    instruction: |
-      Ensure the system is up to date. Use the patch tool to check for and
-      apply any available Windows updates, rebooting if required.
-    tools:
-      - check_for_pending_system_patches
-    when_to_notify: "always"
+# responsibilities: host-specific overrides and additions.
+# Default Windows responsibilities are loaded automatically from
+# windows-responsibilities.yaml in the same directory as this file.
+# Define entries here only to override a default by name or to add
+# responsibilities unique to this host. Leave this empty (or omit it)
+# to use the defaults as-is.
+responsibilities: []
