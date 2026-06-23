@@ -27,6 +27,12 @@ CONFIG_FILE="$4"
 SSH_USER="${SSH_USER:-$USER}"
 SSH_PORT="${SSH_PORT:-22}"
 
+# Windows-specific env vars (only required when inventory contains windows hosts).
+#   WINDOWS_BINARY  Path to the compiled patches-endpoint-server.exe
+#   WINDOWS_USER    Login user on Windows hosts (default: Administrator)
+WINDOWS_BINARY="${WINDOWS_BINARY:-}"
+WINDOWS_USER="${WINDOWS_USER:-Administrator}"
+
 for f in "$INVENTORY_CSV" "$BINARY" "$SERVICE_FILE"; do
     if [[ ! -f "$f" ]]; then
         echo "ERROR: required file not found: $f" >&2
@@ -44,15 +50,18 @@ fi
 
 HOSTS=()
 HOST_USERS=()
+HOST_OSTYPES=()
 while IFS='|' read -r host os_type; do
     [[ -n "$host" ]] || continue
     case "$os_type" in
-        rhel)   user="root" ;;
-        ubuntu) user="lroland" ;;
-        *)      user="${SSH_USER}" ;;
+        rhel)    user="root" ;;
+        ubuntu)  user="lroland" ;;
+        windows) user="$WINDOWS_USER" ;;
+        *)       user="${SSH_USER}" ;;
     esac
     HOSTS+=("$host")
     HOST_USERS+=("$user")
+    HOST_OSTYPES+=("$os_type")
 done < <(awk -F',' 'NR>1 {
     gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", $2)
     gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", $4)
@@ -66,9 +75,25 @@ fi
 
 echo "Deploying patches-endpoint-server to ${#HOSTS[@]} host(s):"
 for i in "${!HOSTS[@]}"; do
-    echo "  ${HOST_USERS[$i]}@${HOSTS[$i]}"
+    echo "  ${HOST_USERS[$i]}@${HOSTS[$i]}  (${HOST_OSTYPES[$i]})"
 done
 echo ""
+
+# Validate Windows binary if any Windows hosts are in the inventory.
+for os in "${HOST_OSTYPES[@]}"; do
+    if [[ "$os" == "windows" ]]; then
+        if [[ -z "$WINDOWS_BINARY" ]]; then
+            echo "ERROR: inventory contains Windows host(s) but WINDOWS_BINARY is not set." >&2
+            echo "       Set WINDOWS_BINARY=target/windows-x86_64/patches-endpoint-server.exe" >&2
+            exit 1
+        fi
+        if [[ ! -f "$WINDOWS_BINARY" ]]; then
+            echo "ERROR: Windows binary not found: $WINDOWS_BINARY" >&2
+            exit 1
+        fi
+        break
+    fi
+done
 
 # ---------------------------------------------------------------------------
 # SSH / sshpass setup
@@ -125,7 +150,8 @@ SCP_OPTS=(
 # Remote setup script (written to a local tempfile, scp'd and executed)
 # ---------------------------------------------------------------------------
 SETUP_SCRIPT=$(mktemp /tmp/agent_patches_setup.XXXXXX.sh)
-trap 'rm -f "$SETUP_SCRIPT"; rm -rf "$CTRL_DIR"' EXIT
+WIN_SETUP_SCRIPT=$(mktemp /tmp/agent_patches_setup.XXXXXX.ps1)
+trap 'rm -f "$SETUP_SCRIPT" "$WIN_SETUP_SCRIPT"; rm -rf "$CTRL_DIR"' EXIT
 
 cat > "$SETUP_SCRIPT" << 'REMOTE_SCRIPT'
 #!/bin/bash
@@ -234,8 +260,147 @@ rm -f /tmp/patches-endpoint-server \
 ok "done"
 REMOTE_SCRIPT
 
+cat > "$WIN_SETUP_SCRIPT" << 'WIN_REMOTE_SCRIPT'
+# Windows setup script - runs on the remote host via PowerShell over SSH.
+# Files are SCP'd to C:\Windows\Temp\ before this script runs.
+param(
+    [string]$ConfigFile = ""
+)
+
+$ErrorActionPreference = "Stop"
+$Tmp         = "C:\Windows\Temp"
+$ServiceName = "agent_patches"
+$InstallDir  = "C:\ProgramData\agent_patches"
+$BinDir      = "$InstallDir\bin"
+$ConfigDir   = "$InstallDir\config"
+$BinaryDst   = "$BinDir\patches-endpoint-server.exe"
+$ConfigDst   = "$ConfigDir\config.yaml"
+
+function Step { param([string]$m) Write-Output "  -> $m" }
+function OK   { param([string]$m) Write-Output "     OK $m" }
+function Warn { param([string]$m) Write-Output "  WARNING: $m" }
+
+Step "Creating directories under $InstallDir..."
+foreach ($d in $BinDir, $ConfigDir, "$InstallDir\data", "$InstallDir\logs") {
+    New-Item -ItemType Directory -Force -Path $d | Out-Null
+}
+OK "directories ready"
+
+Step "Stopping existing service/process..."
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($svc -and $svc.Status -ne "Stopped") {
+    Stop-Service -Name $ServiceName -Force -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+    OK "service stopped"
+} else {
+    Get-Process "patches-endpoint-server" -ErrorAction SilentlyContinue |
+        Stop-Process -Force -ErrorAction SilentlyContinue
+    OK "no running service"
+}
+
+Step "Installing binary..."
+Copy-Item -Path "$Tmp\patches-endpoint-server.exe" -Destination $BinaryDst -Force
+OK "installed to $BinaryDst"
+
+Step "Installing config..."
+if ($ConfigFile -ne "" -and (Test-Path "$Tmp\$ConfigFile")) {
+    Copy-Item -Path "$Tmp\$ConfigFile" -Destination $ConfigDst -Force
+    OK "config written to $ConfigDst"
+} else {
+    Warn "no config supplied - existing config preserved"
+}
+
+Step "Configuring Windows service..."
+$svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
+if ($svc) {
+    & sc.exe config $ServiceName binPath= "`"$BinaryDst`"" start= auto | Out-Null
+    OK "service updated"
+} else {
+    & sc.exe create $ServiceName binPath= "`"$BinaryDst`"" start= auto DisplayName= "agent_patches" | Out-Null
+    OK "service created"
+}
+
+Step "Setting AGENT_PATCHES_CONFIG for service..."
+$regKey = "HKLM:\SYSTEM\CurrentControlSet\Services\$ServiceName"
+Set-ItemProperty -Path $regKey -Name "Environment" `
+    -Value @("AGENT_PATCHES_CONFIG=$ConfigDst") -Type MultiString
+OK "env var set"
+
+Step "Starting service..."
+Start-Service -Name $ServiceName
+$status = (Get-Service -Name $ServiceName).Status
+OK "service is $status"
+
+Step "Cleaning up..."
+Get-ChildItem -Path $Tmp -Filter "agent_patches_setup*.ps1" |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "$Tmp\patches-endpoint-server.exe" -Force -ErrorAction SilentlyContinue
+if ($ConfigFile -ne "") {
+    Remove-Item -Path "$Tmp\$ConfigFile" -Force -ErrorAction SilentlyContinue
+}
+OK "done"
+WIN_REMOTE_SCRIPT
+
 # ---------------------------------------------------------------------------
-# Per-host deploy
+# Per-host deploy (Windows)
+# ---------------------------------------------------------------------------
+deploy_host_windows() {
+    local host=$1
+    local host_user=$2
+    local win_tmp="C:/Windows/Temp"
+    echo ""
+    echo "┌─ $host (windows)"
+
+    # Prime the ControlMaster — one auth for all subsequent steps.
+    echo "│  Connecting as ${host_user}@${host}"
+    if ! "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
+            "echo connected" 2>&1 | sed 's/^/│  /'; then
+        echo "│  ✗ FAILED: could not connect to $host"
+        return 1
+    fi
+
+    # Build file list. Files go to C:\Windows\Temp\ on the remote host.
+    local cfg_base=""
+    local files=("$WINDOWS_BINARY" "$WIN_SETUP_SCRIPT")
+    if [[ -f "$CONFIG_FILE" ]]; then
+        cfg_base=$(basename "$CONFIG_FILE")
+        files+=("$CONFIG_FILE")
+    else
+        echo "│  ⚠ WARNING: config file not found ($CONFIG_FILE) — skipping config deploy"
+    fi
+
+    local win_setup_base
+    win_setup_base=$(basename "$WIN_SETUP_SCRIPT")
+
+    echo "│  Copying files..."
+    if ! "${SCP_CMD[@]}" "${SCP_OPTS[@]}" "${files[@]}" \
+            "${host_user}@${host}:${win_tmp}/" 2>&1 | sed 's/^/│  /'; then
+        echo "│  ✗ FAILED: could not copy files to $host"
+        return 1
+    fi
+
+    echo "│  Running setup..."
+    local rc=0
+    "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
+        "powershell -NoProfile -ExecutionPolicy Bypass \
+            -File ${win_tmp}/${win_setup_base} \
+            -ConfigFile ${cfg_base}" \
+        2>&1 | sed 's/^/│  /' || rc=$?
+
+    if [[ $rc -eq 0 ]]; then
+        echo "└─ ✓ $host — done"
+    else
+        echo "└─ ✗ $host — FAILED (exit $rc)"
+    fi
+
+    "${SSH_CMD[@]}" -O exit -o "ControlPath=$CTRL_DIR/%h-%p-%r" \
+        "${host_user}@${host}" 2>/dev/null || true
+
+    return $rc
+}
+
+# ---------------------------------------------------------------------------
+# Per-host deploy (Linux)
 # ---------------------------------------------------------------------------
 deploy_host() {
     local host=$1
@@ -317,7 +482,11 @@ echo ""
 
 FAILED=0
 for i in "${!HOSTS[@]}"; do
-    deploy_host "${HOSTS[$i]}" "${HOST_USERS[$i]}" || FAILED=$((FAILED + 1))
+    if [[ "${HOST_OSTYPES[$i]}" == "windows" ]]; then
+        deploy_host_windows "${HOSTS[$i]}" "${HOST_USERS[$i]}" || FAILED=$((FAILED + 1))
+    else
+        deploy_host "${HOSTS[$i]}" "${HOST_USERS[$i]}" || FAILED=$((FAILED + 1))
+    fi
 done
 
 echo ""

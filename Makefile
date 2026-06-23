@@ -98,8 +98,9 @@ run-central-backend:
 	cd $(CENTRAL_BACKEND_DIR) && [ -d node_modules ] || npm install
 	cd $(CENTRAL_BACKEND_DIR) && DOTENV_CONFIG_PATH=$(CURDIR)/.env AGENT_INVENTORY_FILE=$(CURDIR)/inventory.csv npm start
 
-## deploy: cross-compile for Linux and deploy to all hosts in inventory.csv
+## deploy: deploy release builds to all hosts in inventory.csv
 deploy:
+	WINDOWS_BINARY=$(WINDOWS_AMD64_DIR)/$(BINARY).exe \
 	$(DEPLOY_SCRIPT) \
 		$(INVENTORY_ROOT)/inventory.csv \
 		$(LINUX_AMD64_DIR)/$(BINARY) \

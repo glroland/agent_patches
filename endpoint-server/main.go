@@ -47,6 +47,24 @@ import (
 )
 
 func main() {
+	isWinSvc, err := isWindowsService()
+	if err != nil {
+		slog.Warn("isWindowsService check failed, running as console app", "error", err)
+	}
+	if isWinSvc {
+		if err := runAsWindowsService(runServer); err != nil {
+			slog.Error("windows service failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+	runServer(ctx)
+}
+
+func runServer(ctx context.Context) {
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("failed to load config", "error", err,
@@ -241,8 +259,8 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer stop()
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	// Propagate the signal context into every in-flight HTTP request so that
 	// handlers (and the tools they call) abort promptly on SIGTERM/SIGINT.
@@ -255,7 +273,7 @@ func main() {
 		slog.Info("server listening", "addr", addr, "card", cardURL+a2asrv.WellKnownAgentCardPath)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server error", "error", err)
-			stop()
+			cancel()
 		}
 	}()
 
