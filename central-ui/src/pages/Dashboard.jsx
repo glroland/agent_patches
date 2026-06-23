@@ -7,29 +7,12 @@ import AsyncState from '../components/AsyncState';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { relativeTime } from '../utils/time';
 
-const PRIORITY_STYLES = {
-  high:   { badge: 'bg-rose-500/15 text-rose-300',   border: 'border-rose-500/20'   },
-  medium: { badge: 'bg-amber-500/15 text-amber-300',  border: 'border-amber-500/20'  },
-  low:    { badge: 'bg-slate-700/60 text-slate-400',  border: 'border-slate-700/60'  },
-};
-
-const CATEGORY_LABEL = {
-  health:        'Health',
-  security:      'Security',
-  feature:       'New Feature',
-  configuration: 'Config',
-};
-
-function IntelligencePanel({ report }) {
-  if (report === undefined) {
-    // Feature not configured.
-    return null;
-  }
+function IntelligenceBanner({ report }) {
+  if (report === undefined) return null;
 
   if (report === null) {
-    // Configured but first analysis not yet ready.
     return (
-      <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-5 py-4">
+      <div className="rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-5 py-3.5">
         <div className="flex items-center gap-3">
           <span className="h-2 w-2 animate-pulse rounded-full bg-indigo-400" />
           <p className="text-sm font-medium text-indigo-300">Fleet intelligence is analysing your environment…</p>
@@ -39,40 +22,29 @@ function IntelligencePanel({ report }) {
   }
 
   const { headline, recommendations, generatedAt } = report;
+  const highCount = recommendations.filter((r) => r.priority === 'high').length;
 
   return (
-    <div className="rounded-xl border border-indigo-500/25 bg-indigo-500/5 p-5 space-y-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-1">Fleet Intelligence</p>
-          <p className="text-base font-medium text-slate-100">{headline}</p>
+    <div className="flex items-center justify-between gap-4 rounded-xl border border-indigo-500/25 bg-indigo-500/5 px-5 py-3.5">
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-400" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-0.5">Fleet Intelligence</p>
+          <p className="text-sm font-medium text-slate-200 truncate">{headline}</p>
         </div>
-        <p className="shrink-0 text-xs text-slate-600 mt-0.5">{relativeTime(generatedAt)}</p>
       </div>
-
-      {recommendations.length > 0 && (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {recommendations.map((rec, i) => {
-            const styles = PRIORITY_STYLES[rec.priority] ?? PRIORITY_STYLES.low;
-            return (
-              <div key={i} className={`rounded-lg border bg-slate-900/60 p-3.5 ${styles.border}`}>
-                <div className="flex items-center gap-2 mb-2">
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${styles.badge}`}>
-                    {rec.priority}
-                  </span>
-                  {rec.category && (
-                    <span className="text-xs text-slate-500">
-                      {CATEGORY_LABEL[rec.category] ?? rec.category}
-                    </span>
-                  )}
-                </div>
-                <p className="text-sm font-medium text-slate-200 mb-1">{rec.title}</p>
-                <p className="text-xs text-slate-500 leading-relaxed">{rec.body}</p>
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className="shrink-0 flex items-center gap-4">
+        {highCount > 0 && (
+          <span className="text-xs font-semibold text-rose-300">{highCount} high-priority</span>
+        )}
+        <span className="text-xs text-slate-600">{relativeTime(generatedAt)}</span>
+        <Link
+          to="/intelligence"
+          className="rounded-lg border border-indigo-500/30 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:border-indigo-400/50 hover:text-indigo-200 transition-colors whitespace-nowrap"
+        >
+          See all →
+        </Link>
+      </div>
     </div>
   );
 }
@@ -93,7 +65,7 @@ export default function Dashboard() {
         <p className="mt-1 text-sm text-slate-500">What your agents are seeing, doing, and asking for.</p>
       </div>
 
-      <IntelligencePanel report={intelligence} />
+      <IntelligenceBanner report={intelligence} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard

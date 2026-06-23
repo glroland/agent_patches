@@ -120,7 +120,7 @@ Respond ONLY with a JSON object in this exact shape — no preamble, no markdown
 }
 
 Rules:
-- Maximum 6 recommendations, ordered high → low priority.
+- Maximum 9 recommendations, ordered high → low priority.
 - Only include a recommendation if there is real evidence in the data.
 - "feature" = a new agent skill or central-backend capability to build.
 - Headline must not repeat any recommendation title verbatim.`;
@@ -140,7 +140,7 @@ async function analyse() {
   try {
     const response = await _client.chat.completions.create({
       model: config.intelligence.model,
-      max_tokens: 1024,
+      max_tokens: 2048,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: fleetText },
