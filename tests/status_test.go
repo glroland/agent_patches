@@ -14,12 +14,17 @@ import (
 	"agent_patches/endpoint-server/utils/config"
 )
 
-// fakeCurrentTasker is a test double for the loop's CurrentTask accessor.
+// fakeCurrentTasker is a test double for the loop's RunningTasks accessor.
 type fakeCurrentTasker struct {
 	task string
 }
 
-func (f fakeCurrentTasker) CurrentTask() string { return f.task }
+func (f fakeCurrentTasker) RunningTasks() []string {
+	if f.task == "" {
+		return nil
+	}
+	return []string{f.task}
+}
 
 func newStatusService(t *testing.T, task string) (*status.Service, *memory.Store) {
 	t.Helper()

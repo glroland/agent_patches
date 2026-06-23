@@ -21,29 +21,47 @@ const (
 
 // Store is the root memory store. Use Domain to get a history-backed domain
 // store, or Attrs to get the global attribute store.
+//
+// Domain and Attrs always return the same instance for a given name/path so
+// that the per-instance mutex actually serialises concurrent callers.
 type Store struct {
-	root string
+	root  string
+	mu    sync.Mutex
+	doms  map[string]*DomainStore
+	attrs *AttrsStore
 }
 
 // New creates a Store rooted at cfg.Root.
 func New(cfg *config.MemorySettings) *Store {
-	return &Store{root: cfg.Root}
+	return &Store{
+		root: cfg.Root,
+		doms: make(map[string]*DomainStore),
+	}
 }
 
-// Domain returns a DomainStore for the named domain, backed by a subdirectory
-// of the root. The directory is created on first Write.
+// Domain returns the DomainStore for the named domain, backed by a
+// subdirectory of the root. The same instance is returned on every call with
+// the same name so the intra-instance mutex serialises concurrent access.
 func (s *Store) Domain(name string) *DomainStore {
-	return &DomainStore{
-		root:  filepath.Join(s.root, name),
-		Clock: time.Now,
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if d, ok := s.doms[name]; ok {
+		return d
 	}
+	d := &DomainStore{root: filepath.Join(s.root, name), Clock: time.Now}
+	s.doms[name] = d
+	return d
 }
 
 // Attrs returns the shared attribute store, backed by attrs.json in the root.
+// The same instance is returned on every call.
 func (s *Store) Attrs() *AttrsStore {
-	return &AttrsStore{
-		path: filepath.Join(s.root, "attrs.json"),
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.attrs == nil {
+		s.attrs = &AttrsStore{path: filepath.Join(s.root, "attrs.json")}
 	}
+	return s.attrs
 }
 
 // Dump is a snapshot of every memory domain's most recent value plus all

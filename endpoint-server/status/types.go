@@ -15,9 +15,10 @@ type AgentInfo struct {
 
 // StatusBlock describes the agent's current activity state.
 type StatusBlock struct {
-	State       string  `json:"state"`
-	LastPoll    string  `json:"lastPoll"`
-	CurrentTask *string `json:"currentTask"`
+	State        string   `json:"state"`
+	LastPoll     string   `json:"lastPoll"`
+	CurrentTask  *string  `json:"currentTask"`  // first running task; nil when idle
+	CurrentTasks []string `json:"currentTasks"` // all running tasks; empty when idle
 }
 
 // TimelineEntry is one entry in the agent's activity timeline, recorded via

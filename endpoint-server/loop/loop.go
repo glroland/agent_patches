@@ -63,14 +63,25 @@ func (l *Loop) Responsibilities() []*Responsibility { return l.responsibilities 
 
 // CurrentTask returns the name of the responsibility currently in flight, or
 // "" if none is running. If multiple are running concurrently, the first one
-// found is returned.
+// found is returned. Deprecated: prefer RunningTasks.
 func (l *Loop) CurrentTask() string {
+	tasks := l.RunningTasks()
+	if len(tasks) == 0 {
+		return ""
+	}
+	return tasks[0]
+}
+
+// RunningTasks returns the names of all responsibilities currently in flight.
+// Returns nil when none are running.
+func (l *Loop) RunningTasks() []string {
+	var running []string
 	for _, r := range l.responsibilities {
 		if r.Running.Load() {
-			return r.Name()
+			running = append(running, r.Name())
 		}
 	}
-	return ""
+	return running
 }
 
 // Start launches the background loop. It returns immediately; the goroutine

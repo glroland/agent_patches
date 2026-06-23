@@ -15,10 +15,10 @@ import (
 	"agent_patches/endpoint-server/utils/config"
 )
 
-// currentTasker reports the name of the responsibility currently in flight,
-// or "" if none is running. Satisfied by *loop.Loop.
+// currentTasker reports which responsibilities are currently in flight.
+// Satisfied by *loop.Loop.
 type currentTasker interface {
-	CurrentTask() string
+	RunningTasks() []string
 }
 
 // Service builds GET /status responses from cached system info,
@@ -75,10 +75,11 @@ func (s *Service) build() Response {
 		}
 	}
 
+	runningTasks := s.loop.RunningTasks()
 	var currentTask *string
 	state := "idle"
-	if task := s.loop.CurrentTask(); task != "" {
-		currentTask = &task
+	if len(runningTasks) > 0 {
+		currentTask = &runningTasks[0]
 		state = "active"
 	} else if hasAttention(timeline) {
 		state = "attention"
@@ -115,9 +116,10 @@ func (s *Service) build() Response {
 			OS:       osLabel(s.info),
 		},
 		Status: StatusBlock{
-			State:       state,
-			LastPoll:    time.Now().Format(time.RFC3339),
-			CurrentTask: currentTask,
+			State:        state,
+			LastPoll:     time.Now().Format(time.RFC3339),
+			CurrentTask:  currentTask,
+			CurrentTasks: runningTasks,
 		},
 		Timeline:          timeline,
 		LastPatchedAt:     lastPatchedAt,

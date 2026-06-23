@@ -199,12 +199,13 @@ func TestCheckNFSTool_Execute_NoMounts(t *testing.T) {
 		t.Error("Execute() returned empty result")
 	}
 
-	// Skillstate should always be written.
+	// When no mounts are present the skill does NOT write to skillstate; the
+	// result is logged only, keeping the health check stream clean.
 	states, err := skillstate.LoadAll(mem)
 	if err != nil {
 		t.Fatalf("skillstate.LoadAll: %v", err)
 	}
-	if len(states) != 1 || states[0].Skill != "check_nfs" {
-		t.Fatalf("skillstate = %+v, want one entry for check_nfs", states)
+	if len(states) != 0 {
+		t.Fatalf("skillstate = %+v, want no entries when there are no NFS mounts", states)
 	}
 }
