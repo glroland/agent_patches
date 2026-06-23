@@ -31,6 +31,7 @@ import (
 	"agent_patches/endpoint-server/skills/capture_system_info"
 	"agent_patches/endpoint-server/skills/check_containers"
 	"agent_patches/endpoint-server/skills/check_drives"
+	"agent_patches/endpoint-server/skills/check_nfs"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
 	"agent_patches/endpoint-server/skills/check_reboot_required"
@@ -123,6 +124,13 @@ func runServer(ctx context.Context) {
 		return
 	}
 	registry.Register(containersTool)
+
+	nfsTool, err := check_nfs.NewCheckNFSTool(mem)
+	if err != nil {
+		slog.Error("failed to create check_nfs tool", "error", err)
+		return
+	}
+	registry.Register(nfsTool)
 
 	cpuUsageTool, err := analyze_cpu_utilization.NewCPUUsageTool(mem)
 	if err != nil {
@@ -232,6 +240,20 @@ func runServer(ctx context.Context) {
 	}
 
 	card := buildAgentCard(cardURL, cfg, registry)
+
+	if rs, ok := check_nfs.AutoResponsibility(); ok {
+		alreadyDefined := false
+		for _, r := range cfg.Responsibilities {
+			if r.Name == rs.Name {
+				alreadyDefined = true
+				break
+			}
+		}
+		if !alreadyDefined {
+			cfg.Responsibilities = append(cfg.Responsibilities, rs)
+			slog.Info("auto-injected nfs-health-check responsibility")
+		}
+	}
 
 	if rs, ok := check_containers.AutoResponsibility(); ok {
 		alreadyDefined := false
