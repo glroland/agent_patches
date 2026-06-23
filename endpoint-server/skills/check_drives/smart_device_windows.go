@@ -2,9 +2,11 @@
 
 package check_drives
 
-// parentDevices is not implemented on Windows: resolving a drive letter to a
-// \\.\PhysicalDriveN path requires WMI volume/disk associations. SMART
-// checks are skipped on this platform.
-func parentDevices(_ string) []string {
-	return nil
+// parentDevices on Windows receives a "PhysicalDriveN" path set by localDisks()
+// and returns it as-is; no device-mapper resolution is needed.
+func parentDevices(device string) []string {
+	if device == "" {
+		return nil
+	}
+	return []string{device}
 }
