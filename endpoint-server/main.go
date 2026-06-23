@@ -29,6 +29,7 @@ import (
 	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
 	"agent_patches/endpoint-server/skills/analyze_network_utilization"
 	"agent_patches/endpoint-server/skills/capture_system_info"
+	"agent_patches/endpoint-server/skills/check_containers"
 	"agent_patches/endpoint-server/skills/check_drives"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
@@ -115,6 +116,13 @@ func runServer(ctx context.Context) {
 		return
 	}
 	registry.Register(diskUsageTool)
+
+	containersTool, err := check_containers.NewCheckContainersTool(mem)
+	if err != nil {
+		slog.Error("failed to create check_containers tool", "error", err)
+		return
+	}
+	registry.Register(containersTool)
 
 	cpuUsageTool, err := analyze_cpu_utilization.NewCPUUsageTool(mem)
 	if err != nil {
@@ -224,6 +232,20 @@ func runServer(ctx context.Context) {
 	}
 
 	card := buildAgentCard(cardURL, cfg, registry)
+
+	if rs, ok := check_containers.AutoResponsibility(); ok {
+		alreadyDefined := false
+		for _, r := range cfg.Responsibilities {
+			if r.Name == rs.Name {
+				alreadyDefined = true
+				break
+			}
+		}
+		if !alreadyDefined {
+			cfg.Responsibilities = append(cfg.Responsibilities, rs)
+			slog.Info("auto-injected container-health-check responsibility")
+		}
+	}
 
 	loginMon := loginmonitor.New(mem)
 
