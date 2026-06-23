@@ -73,6 +73,10 @@ export default function AgentDetail() {
         </div>
       </div>
 
+      {agent.diskTrends && Object.keys(agent.diskTrends).length > 0 && (
+        <DiskTrendsPanel trends={agent.diskTrends} />
+      )}
+
       <div className="flex gap-1 border-b border-slate-800">
         {TABS.map((t) => (
           <button
@@ -487,6 +491,58 @@ function ResponsibilitiesTab({ agentId }) {
             )}
           </div>
         ))}
+      </div>
+    </Card>
+  );
+}
+
+function DiskTrendsPanel({ trends }) {
+  const mounts = Object.values(trends).filter((t) => t.samples && t.samples.length > 0);
+  if (mounts.length === 0) return null;
+
+  return (
+    <Card title="Disk trends" subtitle="7-day rolling growth rate per mount — updates every check_drives run">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {mounts.map((t) => {
+          const current = t.samples[t.samples.length - 1];
+          const pct = current?.usedPct ?? 0;
+          const slope = t.slopePerDay ?? 0;
+          const forecast = t.forecastDays ?? -1;
+
+          let trendLabel;
+          let trendColor;
+          if (slope <= 0.1) {
+            trendLabel = '→ stable';
+            trendColor = 'text-slate-400';
+          } else if (forecast > 0 && forecast < 7) {
+            trendLabel = `↑ ${slope.toFixed(1)}%/day — fills in ~${forecast}d`;
+            trendColor = 'text-rose-400';
+          } else if (forecast > 0 && forecast < 30) {
+            trendLabel = `↑ ${slope.toFixed(1)}%/day — fills in ~${forecast}d`;
+            trendColor = 'text-amber-400';
+          } else if (slope > 0.1) {
+            trendLabel = `↑ ${slope.toFixed(1)}%/day`;
+            trendColor = 'text-slate-400';
+          }
+
+          const barColor = pct >= 90 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
+
+          return (
+            <div key={t.mount} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
+              <p className="truncate text-xs font-medium text-slate-300" title={t.mount}>{t.mount}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="h-1.5 flex-1 rounded-full bg-slate-700">
+                  <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.min(pct, 100).toFixed(1)}%` }} />
+                </div>
+                <span className="shrink-0 text-xs text-slate-400">{pct.toFixed(1)}%</span>
+              </div>
+              {trendLabel && (
+                <p className={`mt-1.5 text-xs ${trendColor}`}>{trendLabel}</p>
+              )}
+              <p className="mt-0.5 text-xs text-slate-600">{t.samples.length} sample{t.samples.length !== 1 ? 's' : ''}</p>
+            </div>
+          );
+        })}
       </div>
     </Card>
   );

@@ -103,6 +103,11 @@ func (s *Service) build() Response {
 		statusDescription = s.summarizer.get(timeline)
 	}
 
+	var diskTrends json.RawMessage
+	if err := s.mem.Attrs().Get("disk_trends", &diskTrends); err != nil || string(diskTrends) == "null" {
+		diskTrends = nil
+	}
+
 	return Response{
 		Agent: AgentInfo{
 			Hostname: s.info.Hostname,
@@ -117,6 +122,7 @@ func (s *Service) build() Response {
 		Timeline:          timeline,
 		LastPatchedAt:     lastPatchedAt,
 		StatusDescription: statusDescription,
+		DiskTrends:        diskTrends,
 	}
 }
 

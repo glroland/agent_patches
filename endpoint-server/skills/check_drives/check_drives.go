@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
@@ -74,6 +75,15 @@ func NewDiskUsageTool(mem *memory.Store) (tool.Tool, error) {
 			report := buildReport(ctx, disks, smartCache)
 			slog.Info("check_drives: completed", "disks", len(disks), "output_len", len(report))
 			health, summary := diskHealth(disks, smartCache)
+
+			trends, err := RecordSamples(mem, disks, time.Now())
+			if err != nil {
+				slog.Warn("check_drives: trend recording failed", "error", err)
+			}
+			if tHealth, tSummary := TrendHealth(trends); severityOf(tHealth) > severityOf(health) {
+				health, summary = tHealth, tSummary
+			}
+
 			_ = skillstate.Save(mem, "check_drives", health, summary)
 			return report, nil
 		},
@@ -263,6 +273,18 @@ func buildReport(ctx context.Context, disks []DiskStat, smartCache map[string][]
 		}
 	}
 	return sb.String()
+}
+
+// severityOf maps a skillstate Health to a numeric level for comparison.
+func severityOf(h skillstate.Health) int {
+	switch h {
+	case skillstate.HealthWarning:
+		return 1
+	case skillstate.HealthCritical:
+		return 2
+	default:
+		return 0
+	}
 }
 
 func formatBytes(b uint64) string {

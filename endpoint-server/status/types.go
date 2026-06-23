@@ -3,6 +3,8 @@
 // entries for consumption by central-backend.
 package status
 
+import "encoding/json"
+
 // AgentInfo describes the identity of this agent's host. Operator-assigned
 // metadata (role, tags) lives in central-backend's inventory, not here.
 type AgentInfo struct {
@@ -43,4 +45,8 @@ type Response struct {
 	// StatusDescription is an AI-generated one-sentence summary of what
 	// needs operator attention. Only present when state is "attention".
 	StatusDescription string `json:"statusDescription,omitempty"`
+	// DiskTrends holds the 7-day rolling usage history and computed growth
+	// slope for each mount point. Omitted when no trend data has been recorded
+	// yet (requires at least one check_drives run).
+	DiskTrends json.RawMessage `json:"diskTrends,omitempty"`
 }

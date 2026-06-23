@@ -92,6 +92,7 @@ async function toFleetAgent(inventoryAgent) {
     currentTask: statusBlock.currentTask ?? null,
     lastPatchedAt: data?.lastPatchedAt ?? null,
     timeline,
+    diskTrends: data?.diskTrends ?? null,
   };
 }
 
