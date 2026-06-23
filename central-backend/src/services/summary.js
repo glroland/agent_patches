@@ -8,7 +8,9 @@ const ATTENTION_STATUSES = ['attention', 'offline'];
 
 export async function getSummary() {
   const agents = await listFleet();
-  const attentionCount = agents.filter((a) => ATTENTION_STATUSES.includes(a.status)).length;
+  const attentionCount = agents.filter((a) =>
+    ATTENTION_STATUSES.includes(a.status) ||
+    (a.timeline ?? []).some((e) => e.severity === 'critical')).length;
   const pending = pendingApprovals(agents);
   const pendingApprovalCount = pending.length;
   const criticalIssueCount = concerns(agents).filter((c) => c.severity === 'critical').length;

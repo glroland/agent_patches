@@ -16,7 +16,9 @@ let wss = null;
 // no transformation logic.
 function buildPayload(rawAgents) {
   const allApprovals = pendingApprovals(rawAgents);
-  const attentionAgents = rawAgents.filter((a) => ATTENTION_STATUSES.includes(a.status));
+  const attentionAgents = rawAgents.filter((a) =>
+    ATTENTION_STATUSES.includes(a.status) ||
+    (a.timeline ?? []).some((e) => e.severity === 'critical'));
   const openRecommendations = rawAgents
     .flatMap((a) => a.timeline.filter((t) => t.type === 'recommendation')).length;
 
