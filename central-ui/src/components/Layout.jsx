@@ -47,8 +47,8 @@ export default function Layout() {
       : 'text-navy-600 hover:bg-navy-50 hover:text-navy-900';
 
   return (
-    <div className="flex min-h-screen bg-white">
-      <aside className="flex w-64 flex-col border-r border-navy-200 bg-navy-50 px-4 py-6">
+    <div className="flex h-screen overflow-hidden bg-white">
+      <aside className="flex h-full w-64 flex-col overflow-y-auto border-r border-navy-200 bg-navy-50 px-4 py-6">
         <div className="mb-8 flex flex-col items-center px-2 text-center">
           <img src={logo} alt="Agent Patches" className="h-48 w-48 rounded-lg object-contain" />
         </div>
@@ -108,8 +108,8 @@ export default function Layout() {
         </div>
       </aside>
 
-      <div className="flex flex-1 flex-col">
-        <header className="flex items-center justify-between border-b border-navy-200 bg-white px-8 py-4">
+      <div className="flex flex-1 flex-col overflow-hidden">
+        <header className="flex shrink-0 items-center justify-between border-b border-navy-200 bg-white px-8 py-4">
           <div>
             <p className="text-xs text-navy-500">Inventory source</p>
             <p className="text-sm font-medium text-navy-900">central-backend</p>
@@ -124,7 +124,7 @@ export default function Layout() {
             <div className="h-9 w-9 rounded-full bg-gradient-to-br from-navy-200 to-navy-300 ring-1 ring-navy-300" />
           </div>
         </header>
-        <main className="flex-1 px-8 py-6">
+        <main className="flex-1 overflow-y-auto px-8 py-6">
           <Outlet />
         </main>
       </div>
