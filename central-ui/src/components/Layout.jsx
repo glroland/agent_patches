@@ -5,11 +5,11 @@ import logo from '../assets/logo.png';
 
 const navItems = [
   { to: '/', label: 'Dashboard', icon: DashboardIcon, exact: true },
-  { to: '/intelligence', label: 'Fleet Intelligence', icon: LightbulbIcon },
-  { to: '/activity', label: 'Activity', icon: BoltIcon },
-  { to: '/agents', label: 'Agents', icon: ServerIcon },
-  { to: '/approvals', label: 'Approvals', icon: HandIcon },
   { to: '/issues', label: 'Issues & Concerns', icon: AlertIcon },
+  { to: '/approvals', label: 'Approvals', icon: HandIcon },
+  { to: '/agents', label: 'Agentic Fleet', icon: ServerIcon },
+  { to: '/activity', label: 'Fleet Activity', icon: BoltIcon },
+  { to: '/intelligence', label: 'Fleet Intelligence', icon: LightbulbIcon },
   { to: '/chat', label: 'Fleet Chat', icon: ChatIcon },
   { to: '/admin', label: 'Admin', icon: WrenchIcon },
 ];
