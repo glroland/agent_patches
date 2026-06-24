@@ -13,22 +13,22 @@ const SEVERITY_DOT = {
 
 const URGENCY_STYLES = {
   action: {
-    border: 'border-rose-500/30',
-    bg: 'bg-rose-500/5',
+    border: 'border-rose-300',
+    bg: 'bg-rose-50',
     dot: 'bg-rose-400',
-    label: 'text-rose-400',
+    label: 'text-rose-700',
   },
   watch: {
-    border: 'border-amber-500/30',
-    bg: 'bg-amber-500/5',
+    border: 'border-amber-300',
+    bg: 'bg-amber-50',
     dot: 'bg-amber-400',
-    label: 'text-amber-400',
+    label: 'text-amber-700',
   },
   calm: {
-    border: 'border-emerald-500/25',
-    bg: 'bg-emerald-500/5',
+    border: 'border-emerald-200',
+    bg: 'bg-emerald-50',
     dot: 'bg-emerald-400',
-    label: 'text-emerald-400',
+    label: 'text-emerald-700',
   },
 };
 
@@ -36,10 +36,10 @@ function WelcomeBriefing({ briefing, intelligence }) {
   // Loading state — intelligence configured but neither ready yet
   if (briefing === null) {
     return (
-      <div className="rounded-xl border border-slate-700/50 bg-slate-800/30 px-5 py-4">
+      <div className="rounded-xl border border-navy-200 bg-navy-50 px-5 py-4">
         <div className="flex items-center gap-3">
-          <span className="h-2 w-2 animate-pulse rounded-full bg-slate-500" />
-          <p className="text-sm text-slate-400">Preparing your briefing…</p>
+          <span className="h-2 w-2 animate-pulse rounded-full bg-navy-400" />
+          <p className="text-sm text-navy-600">Preparing your briefing…</p>
         </div>
       </div>
     );
@@ -51,18 +51,18 @@ function WelcomeBriefing({ briefing, intelligence }) {
     const { headline, recommendations, generatedAt } = intelligence;
     const highCount = (recommendations || []).filter((r) => r.priority === 'high').length;
     return (
-      <div className="flex items-center justify-between gap-4 rounded-xl border border-indigo-500/25 bg-indigo-500/5 px-5 py-3.5">
+      <div className="flex items-center justify-between gap-4 rounded-xl border border-navy-200 bg-navy-50 px-5 py-3.5">
         <div className="flex items-center gap-3 min-w-0">
-          <span className="h-2 w-2 shrink-0 rounded-full bg-indigo-400" />
+          <span className="h-2 w-2 shrink-0 rounded-full bg-navy-600" />
           <div className="min-w-0">
-            <p className="text-xs font-semibold uppercase tracking-wider text-indigo-400 mb-0.5">Fleet Intelligence</p>
-            <p className="text-sm font-medium text-slate-200 truncate">{headline}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-navy-600 mb-0.5">Fleet Intelligence</p>
+            <p className="text-sm font-medium text-navy-900 truncate">{headline}</p>
           </div>
         </div>
         <div className="shrink-0 flex items-center gap-4">
-          {highCount > 0 && <span className="text-xs font-semibold text-rose-300">{highCount} high-priority</span>}
-          <span className="text-xs text-slate-600">{relativeTime(generatedAt)}</span>
-          <Link to="/intelligence" className="rounded-lg border border-indigo-500/30 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:border-indigo-400/50 hover:text-indigo-200 transition-colors whitespace-nowrap">
+          {highCount > 0 && <span className="text-xs font-semibold text-rose-700">{highCount} high-priority</span>}
+          <span className="text-xs text-navy-400">{relativeTime(generatedAt)}</span>
+          <Link to="/intelligence" className="rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-medium text-navy-700 hover:border-navy-400 hover:text-navy-900 transition-colors whitespace-nowrap">
             See all →
           </Link>
         </div>
@@ -78,12 +78,12 @@ function WelcomeBriefing({ briefing, intelligence }) {
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-center gap-3 min-w-0">
           <span className={`mt-0.5 h-2 w-2 shrink-0 rounded-full ${s.dot}`} />
-          <p className="text-sm font-medium text-slate-100">{greeting}</p>
+          <p className="text-sm font-medium text-black">{greeting}</p>
         </div>
         <div className="shrink-0 flex items-center gap-3">
-          <span className="text-xs text-slate-600">{relativeTime(generatedAt)}</span>
+          <span className="text-xs text-navy-400">{relativeTime(generatedAt)}</span>
           {intelligence && (
-            <Link to="/intelligence" className="rounded-lg border border-slate-700 px-2.5 py-1 text-xs font-medium text-slate-400 hover:border-slate-600 hover:text-slate-200 transition-colors whitespace-nowrap">
+            <Link to="/intelligence" className="rounded-lg border border-navy-300 px-2.5 py-1 text-xs font-medium text-navy-600 hover:border-navy-400 hover:text-navy-900 transition-colors whitespace-nowrap">
               Full report →
             </Link>
           )}
@@ -94,10 +94,10 @@ function WelcomeBriefing({ briefing, intelligence }) {
         <div className="ml-5 space-y-2">
           {items.map((item, i) => (
             <div key={i} className="flex gap-2.5">
-              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${SEVERITY_DOT[item.severity] ?? 'bg-slate-500'}`} />
+              <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${SEVERITY_DOT[item.severity] ?? 'bg-navy-400'}`} />
               <div>
-                <p className="text-sm font-medium text-slate-200">{item.title}</p>
-                {item.detail && <p className="text-xs text-slate-400 mt-0.5">{item.detail}</p>}
+                <p className="text-sm font-medium text-navy-900">{item.title}</p>
+                {item.detail && <p className="text-xs text-navy-600 mt-0.5">{item.detail}</p>}
               </div>
             </div>
           ))}

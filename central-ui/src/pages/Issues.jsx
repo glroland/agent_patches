@@ -24,8 +24,8 @@ export default function Issues() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-100">Issues & Concerns</h1>
-        <p className="mt-1 text-sm text-slate-500">Things your agents have flagged for awareness, in their own words.</p>
+        <h1 className="text-2xl font-semibold text-black">Issues & Concerns</h1>
+        <p className="mt-1 text-sm text-navy-500">Things your agents have flagged for awareness, in their own words.</p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -34,13 +34,13 @@ export default function Issues() {
         <StatCard label="Informational" value={counts.info} hint="For awareness only" />
       </div>
 
-      <div className="flex rounded-lg border border-slate-800 bg-slate-900/60 p-1 text-xs w-fit">
+      <div className="flex rounded-lg border border-navy-200 bg-white p-1 text-xs w-fit">
         {SEVERITIES.map((s) => (
           <button
             key={s}
             onClick={() => setSeverity(s)}
             className={`rounded-md px-3 py-1.5 font-medium capitalize transition-colors ${
-              severity === s ? 'bg-indigo-500/20 text-indigo-300' : 'text-slate-400 hover:text-slate-200'
+              severity === s ? 'bg-navy-100 text-navy-700' : 'text-navy-600 hover:text-navy-900'
             }`}
           >
             {s}
@@ -50,22 +50,22 @@ export default function Issues() {
 
       <Card>
         {filtered.length === 0 ? (
-          <p className="py-8 text-center text-sm text-slate-500">No concerns match the selected filter.</p>
+          <p className="py-8 text-center text-sm text-navy-500">No concerns match the selected filter.</p>
         ) : (
-          <div className="divide-y divide-slate-800">
+          <div className="divide-y divide-navy-200">
             {filtered.map((item) => (
               <div key={item.id} className="flex items-start justify-between gap-4 py-4 first:pt-0 last:pb-0">
                 <div className="flex items-start gap-3">
                   <Badge variant={item.severity}>{item.severity}</Badge>
                   <div>
-                    <p className="text-sm font-medium text-slate-200">{item.title}</p>
-                    <p className="mt-0.5 text-sm text-slate-500">{item.detail}</p>
-                    <p className="mt-1.5 text-xs text-slate-600">flagged {relativeTime(item.time)}</p>
+                    <p className="text-sm font-medium text-navy-900">{item.title}</p>
+                    <p className="mt-0.5 text-sm text-navy-500">{item.detail}</p>
+                    <p className="mt-1.5 text-xs text-navy-400">flagged {relativeTime(item.time)}</p>
                   </div>
                 </div>
                 <Link
                   to={`/agents/${item.agentId}`}
-                  className="whitespace-nowrap rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:border-indigo-500/50 hover:text-indigo-300"
+                  className="whitespace-nowrap rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-medium text-navy-700 hover:border-navy-400 hover:text-navy-800"
                 >
                   {item.hostname}
                 </Link>

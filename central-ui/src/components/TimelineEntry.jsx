@@ -4,10 +4,10 @@ import { EyeIcon, BoltIcon, LightbulbIcon, HandIcon } from './icons';
 import { relativeTime } from '../utils/time';
 
 const TYPE_META = {
-  observation: { label: 'Observed', icon: EyeIcon, color: 'text-sky-400 bg-sky-500/10' },
-  action: { label: 'Did', icon: BoltIcon, color: 'text-violet-400 bg-violet-500/10' },
-  recommendation: { label: 'Recommends', icon: LightbulbIcon, color: 'text-amber-400 bg-amber-500/10' },
-  approval: { label: 'Needs approval', icon: HandIcon, color: 'text-rose-400 bg-rose-500/10' },
+  observation: { label: 'Observed', icon: EyeIcon, color: 'text-sky-700 bg-sky-50' },
+  action: { label: 'Did', icon: BoltIcon, color: 'text-violet-700 bg-violet-50' },
+  recommendation: { label: 'Recommends', icon: LightbulbIcon, color: 'text-amber-700 bg-amber-50' },
+  approval: { label: 'Needs approval', icon: HandIcon, color: 'text-rose-700 bg-rose-50' },
 };
 
 // Inline [CRITICAL] and [HIGH] markers with red text; leave everything else as-is.
@@ -15,7 +15,7 @@ function InlineWithSeverity({ text }) {
   const parts = text.split(/(\[(?:CRITICAL|HIGH)\])/);
   return parts.map((part, i) =>
     part === '[CRITICAL]' || part === '[HIGH]'
-      ? <span key={i} className="font-semibold text-red-400">{part}</span>
+      ? <span key={i} className="font-semibold text-red-700">{part}</span>
       : <span key={i}>{part}</span>
   );
 }
@@ -30,18 +30,18 @@ function DetailText({ detail }) {
   const hasBullets = lines.some((l) => l.startsWith('•'));
 
   if (!hasBullets) {
-    return <p className="mt-0.5 text-sm text-slate-500">{detail}</p>;
+    return <p className="mt-0.5 text-sm text-navy-500">{detail}</p>;
   }
 
   return (
-    <div className="mt-1 space-y-0.5 text-sm text-slate-500">
+    <div className="mt-1 space-y-0.5 text-sm text-navy-500">
       {lines.map((line, i) => {
         if (!line) return null;
 
         if (line.startsWith('• ')) {
           return (
             <div key={i} className="flex gap-1.5">
-              <span className="mt-px shrink-0 text-slate-600">•</span>
+              <span className="mt-px shrink-0 text-navy-400">•</span>
               <span><InlineWithSeverity text={line.slice(2)} /></span>
             </div>
           );
@@ -58,7 +58,7 @@ function DetailText({ detail }) {
 
         // Header line or dist-upgrade notice.
         return (
-          <p key={i} className={i === 0 ? 'font-medium text-slate-400' : ''}>
+          <p key={i} className={i === 0 ? 'font-medium text-navy-600' : ''}>
             <InlineWithSeverity text={line} />
           </p>
         );
@@ -78,21 +78,21 @@ export default function TimelineEntry({ entry, showAgent = false }) {
       </div>
       <div className="min-w-0 flex-1 pb-1">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">{meta.label}</span>
+          <span className="text-xs font-medium uppercase tracking-wide text-navy-500">{meta.label}</span>
           {entry.severity && <Badge variant={entry.severity}>{entry.severity}</Badge>}
           {entry.type === 'approval' && <Badge variant={entry.risk}>{entry.risk} risk</Badge>}
           {entry.type === 'approval' && entry.status !== 'pending' && <Badge variant={entry.status}>{entry.status}</Badge>}
-          <span className="text-xs text-slate-600">{relativeTime(entry.time)}</span>
+          <span className="text-xs text-navy-400">{relativeTime(entry.time)}</span>
           {showAgent && (
-            <Link to={`/agents/${entry.agentId}`} className="text-xs font-medium text-indigo-400 hover:text-indigo-300">
+            <Link to={`/agents/${entry.agentId}`} className="text-xs font-medium text-navy-600 hover:text-navy-800">
               {entry.hostname}
             </Link>
           )}
         </div>
-        <p className="mt-1 text-sm font-medium text-slate-200">{entry.title}</p>
+        <p className="mt-1 text-sm font-medium text-navy-900">{entry.title}</p>
         <DetailText detail={entry.detail} />
         {entry.type === 'approval' && entry.proposedAction && (
-          <p className="mt-2 rounded-md bg-slate-800/70 px-3 py-2 font-mono text-xs text-slate-400">
+          <p className="mt-2 rounded-md bg-navy-50 px-3 py-2 font-mono text-xs text-navy-600">
             {entry.proposedAction}
           </p>
         )}

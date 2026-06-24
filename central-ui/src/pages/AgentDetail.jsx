@@ -29,8 +29,8 @@ export default function AgentDetail() {
   if (error?.message?.includes('404') || (!loading && !error && !agent)) {
     return (
       <div className="space-y-4">
-        <p className="text-sm text-slate-400">Agent not found.</p>
-        <Link to="/agents" className="text-sm font-medium text-indigo-400 hover:text-indigo-300">&larr; Back to agents</Link>
+        <p className="text-sm text-navy-600">Agent not found.</p>
+        <Link to="/agents" className="text-sm font-medium text-navy-600 hover:text-navy-800">&larr; Back to agents</Link>
       </div>
     );
   }
@@ -48,25 +48,25 @@ export default function AgentDetail() {
   return (
     <div className="space-y-6">
       <div>
-        <Link to="/agents" className="text-xs font-medium text-slate-500 hover:text-slate-300">&larr; Agents</Link>
+        <Link to="/agents" className="text-xs font-medium text-navy-500 hover:text-navy-900">&larr; Agents</Link>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-semibold text-slate-100">{agent.hostname}</h1>
+              <h1 className="text-2xl font-semibold text-black">{agent.hostname}</h1>
               <Badge variant={agent.status}>{agent.statusLabel}</Badge>
             </div>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-navy-500">
               {agent.role} &middot; {agent.os} &middot; last polled {relativeTime(agent.lastPoll)}
             </p>
           </div>
           <div className="flex gap-2">
             {agent.tags.map((t) => (
-              <span key={t} className="rounded-full bg-slate-800 px-2.5 py-1 text-xs text-slate-400">{t}</span>
+              <span key={t} className="rounded-full bg-navy-100 px-2.5 py-1 text-xs text-navy-600">{t}</span>
             ))}
           </div>
         </div>
-        <div className="mt-3 rounded-md bg-slate-900/60 px-3 py-2 text-sm text-slate-300 ring-1 ring-inset ring-slate-800">
-          <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
+        <div className="mt-3 rounded-md bg-white px-3 py-2 text-sm text-navy-700 ring-1 ring-inset ring-navy-200">
+          <span className="text-xs font-medium uppercase tracking-wide text-navy-500">
             {agent.currentTask ? 'Currently working on' : 'Status'}
           </span>
           <p className="mt-0.5">{agent.currentTask ?? agent.statusDescription}</p>
@@ -81,17 +81,17 @@ export default function AgentDetail() {
         <SmartTrendsPanel trends={agent.smartTrends} />
       )}
 
-      <div className="flex gap-1 border-b border-slate-800">
+      <div className="flex gap-1 border-b border-navy-200">
         {TABS.map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
-              tab === t ? 'text-indigo-300' : 'text-slate-500 hover:text-slate-300'
+              tab === t ? 'text-navy-700' : 'text-navy-500 hover:text-navy-900'
             }`}
           >
             {t}
-            {tab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-indigo-400" />}
+            {tab === t && <span className="absolute inset-x-0 -bottom-px h-0.5 rounded-full bg-navy-600" />}
           </button>
         ))}
       </div>
@@ -127,40 +127,40 @@ function RecommendationsTab({ agent, resolveStatus, decide }) {
     <div className="space-y-4">
       <Card title="Awaiting your decision" subtitle="The agent will act once you approve or reject these">
         {approvals.length === 0 ? (
-          <p className="text-sm text-slate-500">This agent has no actions waiting on approval.</p>
+          <p className="text-sm text-navy-500">This agent has no actions waiting on approval.</p>
         ) : (
           <div className="space-y-4">
             {approvals.map((entry) => {
               const status = resolveStatus(entry);
               return (
-                <div key={entry.id} className="rounded-lg border border-slate-800 p-4">
+                <div key={entry.id} className="rounded-lg border border-navy-200 p-4">
                   <div className="flex flex-wrap items-center gap-2">
                     <Badge variant={entry.risk}>{entry.risk} risk</Badge>
                     <Badge variant={status}>{status}</Badge>
-                    <span className="text-xs text-slate-600">{relativeTime(entry.time)}</span>
+                    <span className="text-xs text-navy-400">{relativeTime(entry.time)}</span>
                   </div>
-                  <p className="mt-2 text-sm font-medium text-slate-200">{entry.title}</p>
-                  <p className="mt-1 text-sm text-slate-500">{entry.detail}</p>
-                  <p className="mt-2 rounded-md bg-slate-800/70 px-3 py-2 font-mono text-xs text-slate-400">
+                  <p className="mt-2 text-sm font-medium text-navy-900">{entry.title}</p>
+                  <p className="mt-1 text-sm text-navy-500">{entry.detail}</p>
+                  <p className="mt-2 rounded-md bg-navy-50 px-3 py-2 font-mono text-xs text-navy-600">
                     {entry.proposedAction}
                   </p>
                   {status === 'pending' ? (
                     <div className="mt-3 flex gap-2">
                       <button
                         onClick={() => decide(entry.id, 'approved')}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400"
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600"
                       >
                         <CheckIcon className="h-3.5 w-3.5" /> Approve
                       </button>
                       <button
                         onClick={() => decide(entry.id, 'rejected')}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-rose-500/50 hover:text-rose-300"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-semibold text-navy-700 hover:border-rose-400 hover:text-rose-800"
                       >
                         <XIcon className="h-3.5 w-3.5" /> Reject
                       </button>
                     </div>
                   ) : (
-                    <p className="mt-3 text-xs text-slate-500">
+                    <p className="mt-3 text-xs text-navy-500">
                       {status === 'approved'
                         ? 'The agent will carry this out and report back on the next poll.'
                         : 'The agent will not proceed with this action.'}
@@ -175,7 +175,7 @@ function RecommendationsTab({ agent, resolveStatus, decide }) {
 
       <Card title="Other recommendations" subtitle="Suggestions that don't require a specific action right now">
         {recommendations.length === 0 ? (
-          <p className="text-sm text-slate-500">No open recommendations.</p>
+          <p className="text-sm text-navy-500">No open recommendations.</p>
         ) : (
           <div className="space-y-5">
             {recommendations.map((entry) => (
@@ -285,41 +285,41 @@ function InteractTab({ agent }) {
               const decided = state?.decision;
               return (
                 <div key={i} className="flex justify-start">
-                  <div className="w-full max-w-[92%] rounded-xl border border-amber-800/50 bg-amber-950/20 p-3 text-sm">
+                  <div className="w-full max-w-[92%] rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm">
                     <div className="mb-2 flex items-center gap-2">
-                      <span className="text-xs font-semibold uppercase tracking-wide text-amber-400">
+                      <span className="text-xs font-semibold uppercase tracking-wide text-amber-700">
                         Approval Required
                       </span>
                       <Badge variant={m.entry.risk}>{m.entry.risk} risk</Badge>
                     </div>
-                    <p className="font-medium text-slate-200">{m.entry.title}</p>
-                    <p className="mt-1 text-xs text-slate-400">{m.entry.detail}</p>
+                    <p className="font-medium text-navy-900">{m.entry.title}</p>
+                    <p className="mt-1 text-xs text-navy-600">{m.entry.detail}</p>
                     {m.entry.proposedAction && (
-                      <p className="mt-2 rounded bg-slate-900 px-2 py-1.5 font-mono text-xs text-slate-400">
+                      <p className="mt-2 rounded bg-navy-50 px-2 py-1.5 font-mono text-xs text-navy-600">
                         {m.entry.proposedAction}
                       </p>
                     )}
                     {decided ? (
-                      <p className={`mt-2 text-xs font-medium ${decided === 'approved' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                      <p className={`mt-2 text-xs font-medium ${decided === 'approved' ? 'text-emerald-700' : 'text-rose-700'}`}>
                         {decided === 'approved'
                           ? '✓ Approved — agent will proceed'
                           : '✗ Rejected — agent will not proceed'}
                       </p>
                     ) : state?.error ? (
-                      <p className="mt-2 text-xs text-rose-400">{state.error}</p>
+                      <p className="mt-2 text-xs text-rose-700">{state.error}</p>
                     ) : (
                       <div className="mt-3 flex gap-2">
                         <button
                           onClick={() => resolveApproval(m.entry, 'approved')}
                           disabled={state?.loading}
-                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <CheckIcon className="h-3.5 w-3.5" /> Approve
                         </button>
                         <button
                           onClick={() => resolveApproval(m.entry, 'rejected')}
                           disabled={state?.loading}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-rose-500/50 hover:text-rose-300 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-semibold text-navy-700 hover:border-rose-400 hover:text-rose-800 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <XIcon className="h-3.5 w-3.5" /> Reject
                         </button>
@@ -334,7 +334,7 @@ function InteractTab({ agent }) {
               <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`max-w-[80%] rounded-xl px-3.5 py-2.5 text-sm whitespace-pre-wrap ${
-                    m.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-slate-200'
+                    m.role === 'user' ? 'bg-navy-700 text-white' : 'bg-navy-100 text-navy-900'
                   }`}
                 >
                   {m.text}
@@ -344,7 +344,7 @@ function InteractTab({ agent }) {
           })}
           {sending && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-xl bg-slate-800 px-3.5 py-2.5 text-sm text-slate-400">
+              <div className="max-w-[80%] rounded-xl bg-navy-100 px-3.5 py-2.5 text-sm text-navy-600">
                 Thinking...
               </div>
             </div>
@@ -358,7 +358,7 @@ function InteractTab({ agent }) {
               key={s}
               onClick={() => send(s)}
               disabled={sending}
-              className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-400 hover:border-indigo-500/50 hover:text-indigo-300 disabled:opacity-50"
+              className="rounded-full border border-navy-300 px-3 py-1 text-xs text-navy-600 hover:border-navy-400 hover:text-navy-800 disabled:opacity-50"
             >
               {s}
             </button>
@@ -367,20 +367,20 @@ function InteractTab({ agent }) {
 
         <form
           onSubmit={(e) => { e.preventDefault(); send(); }}
-          className="mt-3 flex items-center gap-2 border-t border-slate-800 pt-3"
+          className="mt-3 flex items-center gap-2 border-t border-navy-200 pt-3"
         >
-          <ChatIcon className="h-4 w-4 text-slate-500" />
+          <ChatIcon className="h-4 w-4 text-navy-500" />
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder="Ask this agent something..."
             disabled={sending}
-            className="flex-1 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-sm text-slate-200 placeholder:text-slate-500 focus:border-indigo-500 focus:outline-none disabled:opacity-50"
+            className="flex-1 rounded-lg border border-navy-200 bg-white px-3 py-2 text-sm text-navy-900 placeholder:text-navy-400 focus:border-navy-500 focus:outline-none disabled:opacity-50"
           />
           <button
             type="submit"
             disabled={sending}
-            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-400 disabled:opacity-50"
+            className="rounded-lg bg-navy-700 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-800 disabled:opacity-50"
           >
             Send
           </button>
@@ -393,21 +393,21 @@ function InteractTab({ agent }) {
 function CollapsibleSection({ title, subtitle, children }) {
   const [open, setOpen] = useState(false);
   return (
-    <div className="rounded-lg border border-slate-800">
+    <div className="rounded-lg border border-navy-200">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-slate-800/40 transition-colors rounded-lg"
+        className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-navy-50 transition-colors rounded-lg"
       >
         <ChevronRightIcon
-          className={`h-4 w-4 shrink-0 text-slate-500 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
+          className={`h-4 w-4 shrink-0 text-navy-500 transition-transform duration-150 ${open ? 'rotate-90' : ''}`}
         />
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-medium text-slate-200">{title}</p>
-          {subtitle && <p className="mt-0.5 text-xs text-slate-500 truncate">{subtitle}</p>}
+          <p className="text-sm font-medium text-navy-900">{title}</p>
+          {subtitle && <p className="mt-0.5 text-xs text-navy-500 truncate">{subtitle}</p>}
         </div>
       </button>
       {open && (
-        <div className="border-t border-slate-800 px-4 pb-4 pt-3">
+        <div className="border-t border-navy-200 px-4 pb-4 pt-3">
           {children}
         </div>
       )}
@@ -416,10 +416,10 @@ function CollapsibleSection({ title, subtitle, children }) {
 }
 
 const STATUS_STYLES = {
-  never:   'bg-slate-800 text-slate-400',
-  ok:      'bg-emerald-900/50 text-emerald-300',
-  error:   'bg-rose-900/50 text-rose-300',
-  running: 'bg-amber-900/50 text-amber-300',
+  never:   'bg-navy-100 text-navy-600',
+  ok:      'bg-emerald-50 text-emerald-700',
+  error:   'bg-rose-50 text-rose-700',
+  running: 'bg-amber-50 text-amber-700',
 };
 
 function ResponsibilitiesTab({ agentId }) {
@@ -448,7 +448,7 @@ function ResponsibilitiesTab({ agentId }) {
   if (!responsibilities || responsibilities.length === 0) {
     return (
       <Card title="Responsibilities" subtitle="Recurring duties assigned to this agent">
-        <p className="text-sm text-slate-500">No responsibilities configured.</p>
+        <p className="text-sm text-navy-500">No responsibilities configured.</p>
       </Card>
     );
   }
@@ -457,17 +457,17 @@ function ResponsibilitiesTab({ agentId }) {
     <Card title="Responsibilities" subtitle="Recurring duties assigned to this agent — refreshes every 30s">
       <div className="space-y-3">
         {responsibilities.map((r) => (
-          <div key={r.name} className="rounded-lg border border-slate-800">
+          <div key={r.name} className="rounded-lg border border-navy-200">
             <div className="flex flex-wrap items-center gap-3 px-4 py-3">
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="text-sm font-medium text-slate-200">{r.name}</p>
+                  <p className="text-sm font-medium text-navy-900">{r.name}</p>
                   <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[r.status] ?? STATUS_STYLES.never}`}>
                     {r.status}
                   </span>
-                  <span className="rounded-full bg-slate-800/80 px-2 py-0.5 text-xs text-slate-400">{r.schedule}</span>
+                  <span className="rounded-full bg-navy-100 px-2 py-0.5 text-xs text-navy-600">{r.schedule}</span>
                 </div>
-                <div className="mt-1 flex flex-wrap gap-4 text-xs text-slate-500">
+                <div className="mt-1 flex flex-wrap gap-4 text-xs text-navy-500">
                   <span>Last run: {r.lastRunAt ? relativeTime(r.lastRunAt) : 'never'}</span>
                   <span>Next run: {r.nextRunAt ? relativeTime(r.nextRunAt) : '—'}</span>
                   {r.tools && r.tools.length > 0 && (
@@ -475,20 +475,20 @@ function ResponsibilitiesTab({ agentId }) {
                   )}
                 </div>
                 {r.summary && (
-                  <p className="mt-1.5 text-xs text-slate-400 line-clamp-2">{r.summary}</p>
+                  <p className="mt-1.5 text-xs text-navy-600 line-clamp-2">{r.summary}</p>
                 )}
               </div>
               <button
                 onClick={() => toggle(r.name)}
-                className="shrink-0 rounded-md border border-slate-700 px-2.5 py-1 text-xs text-slate-400 hover:border-indigo-500/50 hover:text-indigo-300 transition-colors"
+                className="shrink-0 rounded-md border border-navy-300 px-2.5 py-1 text-xs text-navy-600 hover:border-navy-400 hover:text-navy-800 transition-colors"
               >
                 {expanded[r.name] ? 'Hide' : 'Show'} instruction
               </button>
             </div>
             {expanded[r.name] && (
-              <div className="border-t border-slate-800 px-4 pb-4 pt-3">
-                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Instruction</p>
-                <pre className="whitespace-pre-wrap rounded-md bg-slate-950/60 p-3 text-xs text-slate-300 leading-relaxed">
+              <div className="border-t border-navy-200 px-4 pb-4 pt-3">
+                <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-navy-500">Instruction</p>
+                <pre className="whitespace-pre-wrap rounded-md bg-navy-50 p-3 text-xs text-navy-700 leading-relaxed">
                   {r.instruction}
                 </pre>
               </div>
@@ -517,33 +517,33 @@ function DiskTrendsPanel({ trends }) {
           let trendColor;
           if (slope <= 0.1) {
             trendLabel = '→ stable';
-            trendColor = 'text-slate-400';
+            trendColor = 'text-navy-600';
           } else if (forecast > 0 && forecast < 7) {
             trendLabel = `↑ ${slope.toFixed(1)}%/day — fills in ~${forecast}d`;
-            trendColor = 'text-rose-400';
+            trendColor = 'text-rose-700';
           } else if (forecast > 0 && forecast < 30) {
             trendLabel = `↑ ${slope.toFixed(1)}%/day — fills in ~${forecast}d`;
-            trendColor = 'text-amber-400';
+            trendColor = 'text-amber-700';
           } else if (slope > 0.1) {
             trendLabel = `↑ ${slope.toFixed(1)}%/day`;
-            trendColor = 'text-slate-400';
+            trendColor = 'text-navy-600';
           }
 
           const barColor = pct >= 90 ? 'bg-rose-500' : pct >= 80 ? 'bg-amber-500' : 'bg-emerald-500';
 
           return (
-            <div key={t.mount} className="rounded-lg border border-slate-800 bg-slate-900/40 p-3">
-              <p className="truncate text-xs font-medium text-slate-300" title={t.mount}>{t.mount}</p>
+            <div key={t.mount} className="rounded-lg border border-navy-200 bg-navy-50 p-3">
+              <p className="truncate text-xs font-medium text-navy-700" title={t.mount}>{t.mount}</p>
               <div className="mt-2 flex items-center gap-2">
-                <div className="h-1.5 flex-1 rounded-full bg-slate-700">
+                <div className="h-1.5 flex-1 rounded-full bg-navy-100">
                   <div className={`h-1.5 rounded-full ${barColor}`} style={{ width: `${Math.min(pct, 100).toFixed(1)}%` }} />
                 </div>
-                <span className="shrink-0 text-xs text-slate-400">{pct.toFixed(1)}%</span>
+                <span className="shrink-0 text-xs text-navy-600">{pct.toFixed(1)}%</span>
               </div>
               {trendLabel && (
                 <p className={`mt-1.5 text-xs ${trendColor}`}>{trendLabel}</p>
               )}
-              <p className="mt-0.5 text-xs text-slate-600">{t.samples.length} sample{t.samples.length !== 1 ? 's' : ''}</p>
+              <p className="mt-0.5 text-xs text-navy-400">{t.samples.length} sample{t.samples.length !== 1 ? 's' : ''}</p>
             </div>
           );
         })}
@@ -575,11 +575,11 @@ function SmartTrendsPanel({ trends }) {
 
           return (
             <div key={dev.device}>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{dev.device}</p>
-              <div className="overflow-x-auto rounded-lg border border-slate-800">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-navy-500">{dev.device}</p>
+              <div className="overflow-x-auto rounded-lg border border-navy-200">
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-slate-800 text-left text-slate-500">
+                    <tr className="border-b border-navy-200 text-left text-navy-500">
                       <th className="px-3 py-2 font-medium">Attribute</th>
                       <th className="px-3 py-2 font-medium text-right">Current</th>
                       <th className="px-3 py-2 font-medium text-right">Δ baseline</th>
@@ -587,7 +587,7 @@ function SmartTrendsPanel({ trends }) {
                       <th className="px-3 py-2 font-medium text-right">Samples</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60">
+                  <tbody className="divide-y divide-navy-100">
                     {attrList.map((attr) => {
                       const current = attr.samples[attr.samples.length - 1]?.value ?? 0;
                       const delta = attr.delta ?? 0;
@@ -595,21 +595,21 @@ function SmartTrendsPanel({ trends }) {
                       const isCriticalAttr = CRITICAL_SMART_ATTRS[attr.name];
                       const isWear = attr.name === 'NVMe_Wear_Pct' || attr.name === 'Wear';
 
-                      let deltaColor = 'text-slate-500';
+                      let deltaColor = 'text-navy-500';
                       if (isWear) {
-                        deltaColor = current >= 90 ? 'text-rose-400' : current >= 70 ? 'text-amber-400' : 'text-slate-400';
+                        deltaColor = current >= 90 ? 'text-rose-700' : current >= 70 ? 'text-amber-700' : 'text-navy-600';
                       } else if (delta > 0) {
                         const isCritical = isCriticalAttr || slope > 1.0;
-                        deltaColor = isCritical ? 'text-rose-400' : 'text-amber-400';
+                        deltaColor = isCritical ? 'text-rose-700' : 'text-amber-700';
                       }
 
                       const slopeLabel = slope > 0 ? `+${slope.toFixed(2)}` : slope.toFixed(2);
-                      const slopeColor = slope > 1.0 ? 'text-rose-400' : slope > 0.1 ? 'text-amber-400' : 'text-slate-500';
+                      const slopeColor = slope > 1.0 ? 'text-rose-700' : slope > 0.1 ? 'text-amber-700' : 'text-navy-500';
 
                       return (
-                        <tr key={attr.name} className="hover:bg-slate-800/30">
-                          <td className="px-3 py-2 font-medium text-slate-300">{attr.name}</td>
-                          <td className="px-3 py-2 text-right text-slate-400">
+                        <tr key={attr.name} className="hover:bg-navy-50">
+                          <td className="px-3 py-2 font-medium text-navy-700">{attr.name}</td>
+                          <td className="px-3 py-2 text-right text-navy-600">
                             {isWear ? `${current}%` : current}
                           </td>
                           <td className={`px-3 py-2 text-right font-medium ${deltaColor}`}>
@@ -618,7 +618,7 @@ function SmartTrendsPanel({ trends }) {
                           <td className={`px-3 py-2 text-right ${slopeColor}`}>
                             {slope !== 0 ? slopeLabel : '—'}
                           </td>
-                          <td className="px-3 py-2 text-right text-slate-600">{attr.samples.length}</td>
+                          <td className="px-3 py-2 text-right text-navy-400">{attr.samples.length}</td>
                         </tr>
                       );
                     })}
@@ -665,7 +665,7 @@ function AgentAdminTab({ agent }) {
         {!memLoading && !memError && (
           <div className="space-y-2">
             {domains.length === 0 && attrs.length === 0 ? (
-              <p className="text-sm text-slate-500">No memory recorded yet.</p>
+              <p className="text-sm text-navy-500">No memory recorded yet.</p>
             ) : (
               <>
                 {domains.map(([name, value]) => (
@@ -674,7 +674,7 @@ function AgentAdminTab({ agent }) {
                     title={name}
                     subtitle={Array.isArray(value) ? `${value.length} entr${value.length === 1 ? 'y' : 'ies'}` : 'domain snapshot'}
                   >
-                    <pre className="overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
+                    <pre className="overflow-x-auto rounded-md bg-navy-50 p-3 text-xs text-navy-700">
                       {JSON.stringify(value, null, 2)}
                     </pre>
                   </CollapsibleSection>
@@ -687,8 +687,8 @@ function AgentAdminTab({ agent }) {
                     <div className="space-y-2">
                       {attrs.map(([key, value]) => (
                         <div key={key}>
-                          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">{key}</p>
-                          <pre className="overflow-x-auto rounded-md bg-slate-950/60 p-3 text-xs text-slate-300">
+                          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-navy-500">{key}</p>
+                          <pre className="overflow-x-auto rounded-md bg-navy-50 p-3 text-xs text-navy-700">
                             {JSON.stringify(value, null, 2)}
                           </pre>
                         </div>
@@ -704,10 +704,10 @@ function AgentAdminTab({ agent }) {
 
       {/* ── Danger zone ── */}
       <Card title="Danger zone" subtitle="Destructive actions for this agent">
-        <div className="flex items-center justify-between rounded-lg border border-slate-800 p-4">
+        <div className="flex items-center justify-between rounded-lg border border-navy-200 p-4">
           <div>
-            <p className="text-sm font-medium text-slate-200">Clear agent memory</p>
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="text-sm font-medium text-navy-900">Clear agent memory</p>
+            <p className="mt-0.5 text-xs text-navy-500">
               Removes all cached timeline snapshots, skill state, and attrs. The agent rebuilds memory on its next run cycle.
             </p>
           </div>
@@ -715,7 +715,7 @@ function AgentAdminTab({ agent }) {
             {clearState === 'idle' && (
               <button
                 onClick={() => setClearState('confirm')}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-800/60 px-3 py-1.5 text-xs font-semibold text-rose-400 transition-colors hover:border-rose-600 hover:bg-rose-600/10"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-rose-300 px-3 py-1.5 text-xs font-semibold text-rose-700 transition-colors hover:border-rose-600 hover:bg-rose-50"
               >
                 <TrashIcon className="h-3.5 w-3.5" />
                 Clear memory
@@ -723,24 +723,24 @@ function AgentAdminTab({ agent }) {
             )}
             {clearState === 'confirm' && (
               <div className="flex items-center gap-2">
-                <span className="text-xs text-slate-400">Are you sure?</span>
+                <span className="text-xs text-navy-600">Are you sure?</span>
                 <button
                   onClick={doClear}
-                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500"
+                  className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700"
                 >
                   Yes, clear
                 </button>
                 <button
                   onClick={() => setClearState('idle')}
-                  className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs text-slate-400 hover:text-slate-200"
+                  className="rounded-lg border border-navy-300 px-3 py-1.5 text-xs text-navy-600 hover:text-navy-900"
                 >
                   Cancel
                 </button>
               </div>
             )}
-            {clearState === 'working' && <span className="text-xs text-slate-500">Clearing...</span>}
-            {clearState === 'done' && <span className="text-xs text-emerald-400">Memory cleared</span>}
-            {clearState === 'error' && <span className="text-xs text-rose-400">{errorMsg}</span>}
+            {clearState === 'working' && <span className="text-xs text-navy-500">Clearing...</span>}
+            {clearState === 'done' && <span className="text-xs text-emerald-700">Memory cleared</span>}
+            {clearState === 'error' && <span className="text-xs text-rose-700">{errorMsg}</span>}
           </div>
         </div>
       </Card>
