@@ -2,6 +2,7 @@ import { WebSocketServer } from 'ws';
 import { logger } from '../utils/logger.js';
 import { getFleet, subscribe as subscribeFleet } from './fleetCache.js';
 import { getReport, subscribe as subscribeIntelligence } from './intelligenceCache.js';
+import { getBriefing, subscribe as subscribeBriefing } from './briefingCache.js';
 import { pendingApprovals, recentActivity, concerns } from './activity.js';
 
 const PING_INTERVAL_MS = 30000;
@@ -76,8 +77,9 @@ function buildPayload(rawAgents) {
   };
 
   const intelligence = getReport();
+  const briefing = getBriefing();
 
-  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary, intelligence });
+  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary, intelligence, briefing });
 }
 
 function broadcast(payload) {
@@ -117,8 +119,13 @@ export function attach(server) {
   // Broadcast every time the poller updates the fleet cache.
   subscribeFleet((agents) => broadcast(buildPayload(agents)));
 
-  // Also broadcast when a new intelligence report arrives (may come independently).
+  // Also broadcast when a new intelligence report or briefing arrives.
   subscribeIntelligence(() => {
+    const fleet = getFleet();
+    if (fleet) broadcast(buildPayload(fleet));
+  });
+
+  subscribeBriefing(() => {
     const fleet = getFleet();
     if (fleet) broadcast(buildPayload(fleet));
   });

@@ -6,6 +6,7 @@ import * as poller from './services/poller.js';
 import * as wsHub from './services/wsHub.js';
 import * as notifier from './services/notifier.js';
 import * as intelligence from './services/intelligence.js';
+import * as briefing from './services/briefing.js';
 
 const app = createApp();
 const server = createServer(app);
@@ -17,4 +18,5 @@ server.listen(config.server.port, config.server.host, () => {
   notifier.start(config.email);
   poller.start();
   intelligence.start();
+  briefing.start();
 });

@@ -1,5 +1,6 @@
 import * as fleet from '../services/fleet.js';
 import { pendingApprovals } from '../services/activity.js';
+import { invalidate as invalidateBriefing } from '../services/briefingCache.js';
 
 // GET /api/approvals — pending approval requests across the fleet, sorted by
 // risk then age.
@@ -26,6 +27,7 @@ export async function decideApproval(req, res, next) {
     }
 
     const result = await fleet.resolveApproval(agentId, id, decision, reason);
+    invalidateBriefing();
     res.json(result);
   } catch (err) {
     next(err);

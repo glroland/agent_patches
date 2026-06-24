@@ -12,6 +12,7 @@ export function FleetSocketProvider({ children }) {
     dashboard: null,
     summary: null,
     intelligence: null,
+    briefing: null,
     connected: false,
   });
 
@@ -42,8 +43,8 @@ export function FleetSocketProvider({ children }) {
               agents: msg.agents,
               dashboard: msg.dashboard,
               summary: msg.summary,
-              // Only overwrite intelligence if the message includes it (may be null on older reports).
               intelligence: msg.intelligence !== undefined ? msg.intelligence : prev.intelligence,
+              briefing: msg.briefing !== undefined ? msg.briefing : prev.briefing,
               connected: true,
             }));
           }
