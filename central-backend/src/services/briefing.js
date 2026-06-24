@@ -25,7 +25,7 @@ function serializeForBriefing(agents, nowMs) {
   const utcHour = new Date(nowMs).getUTCHours();
   const lines = [`## Context\n- Current UTC hour: ${utcHour}`];
 
-  lines.push(
+  lines.push(...[
     '',
     '## Fleet Overview',
     `- ${agents.length} agent(s) enrolled`,
@@ -36,7 +36,7 @@ function serializeForBriefing(agents, nowMs) {
       ? `- ${allApprovals.length} pending approval(s) (${allApprovals.filter((a) => a.risk === 'high').length} high-risk)`
       : '- No pending approvals',
     criticalConcerns.length > 0 ? `- ${criticalConcerns.length} critical concern(s)` : null,
-  ).filter(Boolean);
+  ].filter(Boolean));
 
   // Pending approvals with age
   if (allApprovals.length > 0) {
@@ -84,7 +84,7 @@ function serializeForBriefing(agents, nowMs) {
     }
   }
 
-  return lines.filter((l) => l != null).join('\n');
+  return lines.join('\n');
 }
 
 // ---------------------------------------------------------------------------
