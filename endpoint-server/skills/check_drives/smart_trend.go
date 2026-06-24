@@ -33,10 +33,10 @@ type SmartAttrSample struct {
 // SmartAttrTrend holds the rolling sample history and computed trend for one
 // SMART attribute on one device.
 type SmartAttrTrend struct {
-	Name        string             `json:"name"`
-	Samples     []SmartAttrSample  `json:"samples"`
-	Delta       int64              `json:"delta"`       // current − first sample (baseline)
-	SlopePerDay float64            `json:"slopePerDay"` // OLS regression, units/day
+	Name        string            `json:"name"`
+	Samples     []SmartAttrSample `json:"samples"`
+	Delta       int64             `json:"delta"`       // current − first sample (baseline)
+	SlopePerDay float64           `json:"slopePerDay"` // OLS regression, units/day
 }
 
 // SmartDeviceTrend holds attribute trends for one physical device.

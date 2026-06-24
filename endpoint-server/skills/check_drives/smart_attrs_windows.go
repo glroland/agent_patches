@@ -13,10 +13,10 @@ import (
 
 // psReliabilityCounter models the fields returned by Get-StorageReliabilityCounter.
 type psReliabilityCounter struct {
-	DeviceId        int `json:"DeviceId"`
-	Temperature     int `json:"Temperature"`
-	Wear            int `json:"Wear"`
-	ReadErrorsTotal int `json:"ReadErrorsTotal"`
+	DeviceId         int `json:"DeviceId"`
+	Temperature      int `json:"Temperature"`
+	Wear             int `json:"Wear"`
+	ReadErrorsTotal  int `json:"ReadErrorsTotal"`
 	WriteErrorsTotal int `json:"WriteErrorsTotal"`
 }
 
@@ -86,10 +86,10 @@ func ParseReliabilityCounter(data string) (map[string]int64, error) {
 	}
 	c := counters[0]
 	attrs := map[string]int64{
-		"Wear":            int64(c.Wear),
-		"Temperature_C":   int64(c.Temperature),
-		"ReadErrors":      int64(c.ReadErrorsTotal),
-		"WriteErrors":     int64(c.WriteErrorsTotal),
+		"Wear":          int64(c.Wear),
+		"Temperature_C": int64(c.Temperature),
+		"ReadErrors":    int64(c.ReadErrorsTotal),
+		"WriteErrors":   int64(c.WriteErrorsTotal),
 	}
 	return attrs, nil
 }

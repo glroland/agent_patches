@@ -113,8 +113,8 @@ func TestSmartTrendHealth_AllZero(t *testing.T) {
 			Device: "/dev/sda",
 			Attrs: map[string]check_drives.SmartAttrTrend{
 				"Reallocated_Sector_Ct": {
-					Name:   "Reallocated_Sector_Ct",
-					Delta:  0,
+					Name:    "Reallocated_Sector_Ct",
+					Delta:   0,
 					Samples: twoSamples(0, 0),
 				},
 			},
