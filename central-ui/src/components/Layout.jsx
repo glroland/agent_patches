@@ -97,7 +97,15 @@ export default function Layout() {
         <div className="mt-auto rounded-lg border border-navy-200 bg-white p-3">
           {summary ? (
             <>
-              <p className="text-xs font-medium text-navy-700">{summary.totalAgents} agents enrolled</p>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs font-medium text-navy-700">{summary.totalAgents} agents enrolled</p>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span
+                    className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}
+                  />
+                  <span className="text-xs text-navy-500">{connected ? 'Live' : 'Reconnecting...'}</span>
+                </span>
+              </div>
               <p className="mt-1 text-xs text-navy-500">
                 {summary.totalAgents - summary.attentionCount} healthy &middot; {summary.attentionCount} need attention
               </p>
@@ -108,26 +116,9 @@ export default function Layout() {
         </div>
       </aside>
 
-      <div className="flex flex-1 flex-col overflow-hidden">
-        <header className="flex shrink-0 items-center justify-between border-b border-navy-200 bg-white px-8 py-4">
-          <div>
-            <p className="text-xs text-navy-500">Inventory source</p>
-            <p className="text-sm font-medium text-navy-900">central-backend</p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span
-                className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}
-              />
-              <span className="text-xs text-navy-500">{connected ? 'Live' : 'Reconnecting...'}</span>
-            </div>
-            <div className="h-9 w-9 rounded-full bg-gradient-to-br from-navy-200 to-navy-300 ring-1 ring-navy-300" />
-          </div>
-        </header>
-        <main className="flex-1 overflow-y-auto px-8 py-6">
-          <Outlet />
-        </main>
-      </div>
+      <main className="flex-1 overflow-y-auto px-8 py-6">
+        <Outlet />
+      </main>
     </div>
   );
 }
