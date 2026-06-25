@@ -7,7 +7,7 @@ global:
   # endpoint-server. Centralized here rather than per-chart since
   # central-backend and central-ui both point at the same collector.
   # Unset (the default) disables tracing entirely for both.
-  otelExporterOtlpEndpoint: "http://eclipse.home.glroland.com:4317"
+  otelExporterOtlpEndpoint: "http://eclipse.home.glroland.com:4318"
   otelResourceAttributes: ""
   otelExporterOtlpHeaders: ""
   otelTracesSampler: ""
