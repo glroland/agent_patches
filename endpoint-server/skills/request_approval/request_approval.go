@@ -142,7 +142,14 @@ func requestApprovalOnce(ctx context.Context, mem *memory.Store, id, parentID, t
 	for {
 		select {
 		case <-ctx.Done():
+			// The agent process is shutting down (e.g. a redeploy) while this
+			// approval is still in flight. Patch both stores — not just
+			// attrs — so the timeline (what the UI renders the Approve/Reject
+			// card from) stops showing this as actionable too. Without this,
+			// the card looks pending forever after restart, but any decision
+			// on it 409s because attrs already says "cancelled".
 			_ = patchAttrs(mem, attrKey, "cancelled", "", nil)
+			_ = PatchTimeline(mem, id, "cancelled")
 			return "", ctx.Err()
 
 		case <-timer.C:

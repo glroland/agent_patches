@@ -66,7 +66,14 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		if entry.Status != "pending" {
-			http.Error(w, "approval already decided: "+entry.Status, http.StatusConflict)
+			msg := "approval already decided: " + entry.Status
+			switch entry.Status {
+			case "cancelled":
+				msg = "approval cancelled: the agent restarted before a decision was made"
+			case "timed_out":
+				msg = "approval timed out waiting for a decision and was requeued or escalated"
+			}
+			http.Error(w, msg, http.StatusConflict)
 			return
 		}
 
