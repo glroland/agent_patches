@@ -17,6 +17,7 @@ import (
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
 	reqapproval "agent_patches/endpoint-server/skills/request_approval"
+	"agent_patches/endpoint-server/skills/run_diagnostic_command"
 	"agent_patches/endpoint-server/utils/notifier"
 )
 
@@ -80,10 +81,14 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			"removing packages, restarting or reconfiguring services, deleting or overwriting files, "+
 			"modifying users or permissions, or applying updates. "+
 			"NEVER use this for read-only commands. Commands such as du, ls, df, find, ps, cat, "+
-			"grep, ss, netstat, journalctl, systemctl status, which, command -v, type, and any "+
-			"other listing, querying, or reporting command are ALWAYS run_diagnostic_command — "+
+			"grep, ss, netstat, journalctl, systemctl status, which, command -v, type, "+
+			"tasklist, Get-Process, Get-NetTCPConnection, Get-Service, Get-Counter, "+
+			"Get-CimInstance, Get-EventLog, Get-WinEvent, Get-ChildItem, and any "+
+			"other listing, querying, or reporting command — Unix or PowerShell alike — "+
+			"are ALWAYS run_diagnostic_command "+
 			"even when the purpose is to inform a future cleanup or check prerequisites. "+
-			"Read-only commands never require operator approval. "+
+			"Read-only commands never require operator approval; submitting one here is "+
+			"rejected and must be retried via run_diagnostic_command instead. "+
 			"The operator sees the full command, reason, and risk level before deciding. "+
 			"Returns the command output on approval, or a cancellation message on rejection.",
 		func(ctx context.Context, in runCommandInput) (string, error) {
@@ -96,6 +101,9 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			}
 			if isEchoStatusCommand(cmd) {
 				return "", fmt.Errorf("run_approved_command: echo is not a state-modifying command — write the message in your response text or call report_findings instead of routing it through an approval request")
+			}
+			if run_diagnostic_command.IsDiagnosticEligible(cmd) {
+				return "", fmt.Errorf("run_approved_command: %q is a read-only diagnostic command and does not require operator approval — call run_diagnostic_command instead, which runs it immediately", cmd)
 			}
 
 			host, _ := os.Hostname()

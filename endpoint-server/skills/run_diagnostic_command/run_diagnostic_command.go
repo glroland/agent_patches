@@ -100,6 +100,14 @@ func NewRunDiagnosticCommandTool() (tool.Tool, error) {
 // ValidateForTest exposes validateCommand for package-external tests.
 func ValidateForTest(cmd string) error { return validateCommand(cmd) }
 
+// IsDiagnosticEligible reports whether cmd would be permitted to run
+// unattended via run_diagnostic_command (i.e. validateCommand finds no
+// allowlist or denylist violation). Other skills that accept a free-form
+// command — notably run_approved_command — use this to detect and reject
+// read-only commands that the model mistakenly routed through the approval
+// flow instead of running immediately.
+func IsDiagnosticEligible(cmd string) bool { return validateCommand(cmd) == nil }
+
 // validateCommand applies the two-layer safety check.
 // Returns a non-nil error (with a message suitable for returning to the model)
 // if the command is not permitted for unattended execution.
