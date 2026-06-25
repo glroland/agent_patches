@@ -140,7 +140,7 @@ export default function Dashboard() {
         <StatCard
           label="Open recommendations"
           value={stats.openRecommendations}
-          hint="Suggestions from agents, no action taken yet"
+          hint="Suggestions from agents"
         />
       </div>
 

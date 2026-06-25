@@ -7,13 +7,13 @@ export default function StatCard({ label, value, hint, tone = 'default', icon })
   };
 
   return (
-    <div className="rounded-xl border border-navy-200 bg-white p-5 shadow-sm shadow-black/20">
+    <div className="rounded-xl border border-navy-200 bg-white p-3 shadow-sm shadow-black/20">
       <div className="flex items-center justify-between">
         <p className="text-xs font-medium uppercase tracking-wide text-navy-500">{label}</p>
         {icon && <div className="text-navy-500">{icon}</div>}
       </div>
-      <p className={`mt-2 text-3xl font-semibold ${toneStyles[tone]}`}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-navy-500">{hint}</p>}
+      <p className={`mt-1 text-2xl font-semibold ${toneStyles[tone]}`}>{value}</p>
+      {hint && <p className="mt-0.5 text-xs text-navy-500">{hint}</p>}
     </div>
   );
 }
