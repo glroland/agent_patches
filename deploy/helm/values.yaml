@@ -3,6 +3,16 @@ global:
   tag: "23"
   clusterDomain: apps.ocp.home.glroland.com
 
+  # Optional OpenTelemetry trace export — same OTEL_* env var names used by
+  # endpoint-server. Centralized here rather than per-chart since
+  # central-backend and central-ui both point at the same collector.
+  # Unset (the default) disables tracing entirely for both.
+  otelExporterOtlpEndpoint: "http://eclipse.home.glroland.com:4317"
+  otelResourceAttributes: ""
+  otelExporterOtlpHeaders: ""
+  otelTracesSampler: ""
+  otelTracesSamplerArg: ""
+
 central-backend:
   image:
     name: central-backend

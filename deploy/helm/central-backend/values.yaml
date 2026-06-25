@@ -66,10 +66,6 @@ env:
   # route.timeout above, even after AGENT_MESSAGE_TIMEOUT_MS in the worst
   # case (chat routes to an agent after the intelligence call).
   # INTELLIGENCE_TIMEOUT_MS: "90000"
-  # Optional OpenTelemetry trace export — same OTEL_* env var names used by
-  # endpoint-server and central-ui. Unset (the default) disables tracing.
-  # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
-  # OTEL_SERVICE_NAME: "central-backend"
 
 nodeSelector: {}
 

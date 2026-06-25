@@ -36,6 +36,26 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
                   key: AGENT_AUTH_TOKEN
+            {{- if .Values.global.otelExporterOtlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.global.otelExporterOtlpEndpoint | quote }}
+            {{- end }}
+            {{- if .Values.global.otelResourceAttributes }}
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: {{ .Values.global.otelResourceAttributes | quote }}
+            {{- end }}
+            {{- if .Values.global.otelExporterOtlpHeaders }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              value: {{ .Values.global.otelExporterOtlpHeaders | quote }}
+            {{- end }}
+            {{- if .Values.global.otelTracesSampler }}
+            - name: OTEL_TRACES_SAMPLER
+              value: {{ .Values.global.otelTracesSampler | quote }}
+            {{- end }}
+            {{- if .Values.global.otelTracesSamplerArg }}
+            - name: OTEL_TRACES_SAMPLER_ARG
+              value: {{ .Values.global.otelTracesSamplerArg | quote }}
+            {{- end }}
             {{- if .Values.intelligence.baseUrl }}
             - name: INTELLIGENCE_BASE_URL
               value: {{ .Values.intelligence.baseUrl | quote }}
