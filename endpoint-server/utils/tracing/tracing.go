@@ -60,8 +60,12 @@ func Setup(ctx context.Context, defaultServiceName string) (shutdown func(contex
 
 	// resource.WithFromEnv reads OTEL_SERVICE_NAME/OTEL_RESOURCE_ATTRIBUTES
 	// and, when set, overrides the default attribute supplied here.
+	// resource.WithHost adds host.name (the OS hostname) — every endpoint-server
+	// agent shares the same service.name, so this is what distinguishes which
+	// managed host a given trace/span actually came from.
 	res, err := resource.New(ctx,
 		resource.WithAttributes(semconv.ServiceNameKey.String(defaultServiceName)),
+		resource.WithHost(),
 		resource.WithFromEnv(),
 	)
 	if err != nil {
