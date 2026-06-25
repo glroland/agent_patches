@@ -11,6 +11,11 @@ WorkingDirectory=/opt/agent_patches
 ExecStart=/opt/agent_patches/bin/patches-endpoint-server
 Environment=AGENT_PATCHES_CONFIG=/opt/agent_patches/config/config.yaml
 
+# Optional OpenTelemetry trace export — same OTEL_* env var names used by
+# central-backend/central-ui. Unset (the default) keeps tracing disabled.
+#Environment=OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+#Environment=OTEL_SERVICE_NAME=endpoint-server
+
 Restart=on-failure
 RestartSec=10s
 TimeoutStopSec=35

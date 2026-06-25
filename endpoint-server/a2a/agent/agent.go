@@ -5,10 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net/http"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/utils/config"
@@ -36,7 +38,9 @@ func NewWithSystemPrompt(tools []tool.Tool, cfg *config.Settings, systemPrompt s
 		"max_iterations", cfg.Agent.MaxIter,
 		"tools", len(tools),
 	)
-	opts := []option.RequestOption{}
+	opts := []option.RequestOption{
+		option.WithHTTPClient(&http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}),
+	}
 	if cfg.Agent.APIKey != "" {
 		opts = append(opts, option.WithAPIKey(cfg.Agent.APIKey))
 	}

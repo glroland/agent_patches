@@ -1,3 +1,16 @@
+# OpenTelemetry trace export is configured entirely through environment
+# variables (not this file), using the same standard OTEL_* names as
+# central-backend and central-ui:
+#   OTEL_EXPORTER_OTLP_ENDPOINT   collector base URL, e.g. http://otel-collector:4318
+#                                 unset (the default) disables tracing entirely.
+#   OTEL_SERVICE_NAME             defaults to "endpoint-server"
+#   OTEL_RESOURCE_ATTRIBUTES      extra comma-separated key=value resource attrs
+#   OTEL_EXPORTER_OTLP_HEADERS    comma-separated key=value auth headers
+#   OTEL_TRACES_SAMPLER           default: parentbased_always_on
+#   OTEL_TRACES_SAMPLER_ARG       sampler argument (e.g. a ratio)
+# See deploy/linux/agent_patches.service for where to set these for a
+# systemd-managed deployment.
+
 agent:
   model: gpt-4o
   max_tokens: 4096

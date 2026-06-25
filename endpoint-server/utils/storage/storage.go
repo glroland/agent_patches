@@ -11,8 +11,17 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"agent_patches/endpoint-server/a2a/tool"
 )
+
+// tracer is a no-op until tracing.Setup installs a global TracerProvider, so
+// every tool execution span below is inert when tracing is unconfigured.
+var tracer = otel.Tracer("agent_patches/endpoint-server/utils/storage")
 
 // TaskRecord captures a single tool execution persisted to the tasks file.
 type TaskRecord struct {
@@ -111,9 +120,17 @@ func (t *storedTool) Description() string          { return t.inner.Description(
 func (t *storedTool) InputSchema() json.RawMessage { return t.inner.InputSchema() }
 
 func (t *storedTool) Execute(ctx context.Context, input json.RawMessage) (string, error) {
+	ctx, span := tracer.Start(ctx, "tool."+t.inner.Name(),
+		trace.WithAttributes(attribute.String("tool.name", t.inner.Name())))
+	defer span.End()
+
 	slog.Info("skill: called", "skill", t.inner.Name(), "input", string(input))
 
 	result, execErr := t.inner.Execute(ctx, input)
+	if execErr != nil {
+		span.RecordError(execErr)
+		span.SetStatus(codes.Error, execErr.Error())
+	}
 
 	record := TaskRecord{
 		ID:         fmt.Sprintf("%x", time.Now().UnixNano()),

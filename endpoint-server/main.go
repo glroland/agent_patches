@@ -15,6 +15,7 @@ import (
 
 	"github.com/a2aproject/a2a-go/v2/a2a"
 	"github.com/a2aproject/a2a-go/v2/a2asrv"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"agent_patches/endpoint-server/a2a/agent"
 	"agent_patches/endpoint-server/a2a/executor"
@@ -46,6 +47,7 @@ import (
 	"agent_patches/endpoint-server/utils/logger"
 	"agent_patches/endpoint-server/utils/notifier"
 	"agent_patches/endpoint-server/utils/storage"
+	"agent_patches/endpoint-server/utils/tracing"
 )
 
 func main() {
@@ -78,6 +80,16 @@ func runServer(ctx context.Context) {
 		slog.Error("failed to open log file", "error", err)
 		return
 	}
+
+	shutdownTracing := tracing.Setup(ctx, "endpoint-server")
+	defer func() {
+		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := shutdownTracing(shutCtx); err != nil {
+			slog.Warn("tracing: shutdown error", "error", err)
+		}
+	}()
+
 	slog.Info("agent_patches starting",
 		"model", cfg.Agent.Model,
 		"security", cfg.Security.Scheme,
@@ -298,7 +310,7 @@ func runServer(ctx context.Context) {
 
 	srv := &http.Server{
 		Addr:         addr,
-		Handler:      mux,
+		Handler:      otelhttp.NewHandler(mux, "endpoint-server"),
 		ReadTimeout:  30 * time.Second,
 		WriteTimeout: 5 * time.Minute,
 		IdleTimeout:  60 * time.Second,

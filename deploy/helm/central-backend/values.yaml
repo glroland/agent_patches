@@ -61,6 +61,10 @@ env:
   AGENT_POLL_TIMEOUT_MS: "3000"
   AGENT_MESSAGE_TIMEOUT_MS: "180000"
   LOG_LEVEL: "info"
+  # Optional OpenTelemetry trace export — same OTEL_* env var names used by
+  # endpoint-server and central-ui. Unset (the default) disables tracing.
+  # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"
+  # OTEL_SERVICE_NAME: "central-backend"
 
 nodeSelector: {}
 
