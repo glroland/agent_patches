@@ -54,6 +54,13 @@ intelligence:
 route:
   timeout: "300s"
 
+# OTel resource service.name for this component. The collector endpoint and
+# other OTel export settings are centralized at the root chart's
+# global.otel* values (see deploy/helm/values.yaml) since they're shared
+# across components; service name is per-component, so it lives here.
+otel:
+  serviceName: "central-backend"
+
 env:
   HOST: "0.0.0.0"
   PORT: "8080"
