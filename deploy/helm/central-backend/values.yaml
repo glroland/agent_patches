@@ -61,6 +61,11 @@ env:
   AGENT_POLL_TIMEOUT_MS: "3000"
   AGENT_MESSAGE_TIMEOUT_MS: "180000"
   LOG_LEVEL: "info"
+  # Timeout (ms) for calls to the intelligence endpoint (fleet chat, daily
+  # briefing, periodic analysis). Default 90000 — keep it well under
+  # route.timeout above, even after AGENT_MESSAGE_TIMEOUT_MS in the worst
+  # case (chat routes to an agent after the intelligence call).
+  # INTELLIGENCE_TIMEOUT_MS: "90000"
   # Optional OpenTelemetry trace export — same OTEL_* env var names used by
   # endpoint-server and central-ui. Unset (the default) disables tracing.
   # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector:4318"

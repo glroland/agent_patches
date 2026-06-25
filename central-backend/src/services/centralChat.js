@@ -117,6 +117,8 @@ export async function chat(message, history = []) {
   const client = new OpenAI({
     apiKey: config.intelligence.apiKey,
     baseURL: config.intelligence.baseUrl,
+    timeout: config.intelligence.timeoutMs,
+    maxRetries: 0, // fail fast — don't compound the timeout with the SDK's default retries
   });
 
   const agents = getFleet();

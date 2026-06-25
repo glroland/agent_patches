@@ -195,6 +195,8 @@ export function start() {
   _client = new OpenAI({
     apiKey: config.intelligence.apiKey,
     baseURL: config.intelligence.baseUrl,
+    timeout: config.intelligence.timeoutMs,
+    maxRetries: 0,
   });
 
   // First run deferred 15 s so the initial poll cycle can complete first.

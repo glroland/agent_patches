@@ -139,7 +139,12 @@ async function generate() {
   try {
     logger.info(`briefing: generating (model: ${model})`);
 
-    const client = new OpenAI({ apiKey: config.intelligence.apiKey, baseURL });
+    const client = new OpenAI({
+      apiKey: config.intelligence.apiKey,
+      baseURL,
+      timeout: config.intelligence.timeoutMs,
+      maxRetries: 0,
+    });
     const context = serializeForBriefing(agents, nowMs);
 
     const response = await client.chat.completions.create({

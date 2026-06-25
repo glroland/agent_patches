@@ -50,5 +50,10 @@ export const config = {
     model: process.env.INTELLIGENCE_MODEL || 'gpt-4o',
     // How often (in minutes) to re-analyse the fleet. 0 = once on startup only.
     intervalMinutes: Number(process.env.INTELLIGENCE_INTERVAL_MINUTES) || 30,
+    // Timeout (ms) for calls to the intelligence endpoint. Without this, a
+    // slow/unresponsive local model can hang a request until an upstream
+    // proxy kills it (e.g. the dashboard chat returning a bare 504) instead
+    // of central-backend failing fast with a clear message.
+    timeoutMs: Number(process.env.INTELLIGENCE_TIMEOUT_MS) || 90000,
   },
 };
