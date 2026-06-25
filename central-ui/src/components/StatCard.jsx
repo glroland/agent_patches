@@ -7,8 +7,8 @@ export default function StatCard({ label, value, hint, tone = 'default', icon })
   };
 
   return (
-    <div className="rounded-xl border border-navy-200 bg-white p-3 shadow-sm shadow-black/20">
-      <div className="flex items-center justify-between">
+    <div className="rounded-xl border border-navy-200 bg-white p-3 text-center shadow-sm shadow-black/20">
+      <div className="flex items-center justify-center gap-1.5">
         <p className="text-xs font-medium uppercase tracking-wide text-navy-500">{label}</p>
         {icon && <div className="text-navy-500">{icon}</div>}
       </div>
