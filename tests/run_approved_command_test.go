@@ -92,6 +92,37 @@ func TestRunApprovedCommandTool_RejectsNoOpPlaceholder(t *testing.T) {
 	}
 }
 
+// Reproduces a second reported variant: on Linux, the model used the shell
+// no-op builtin "true" (always succeeds, does nothing) as a placeholder
+// command instead of skipping the approval entirely. Unlike the English
+// no-op phrases above, "true" is a real, executable shell command, so it
+// is not caught by isNoOpCommand — it needs its own check.
+func TestRunApprovedCommandTool_RejectsNoOpShellBuiltin(t *testing.T) {
+	for _, cmd := range []string{"true", "True", "  true  ", ":"} {
+		tool, mem := newRunApprovedCommandTool(t)
+
+		_, err := tool.Execute(context.Background(), runApprovedCommandInput(t, cmd))
+		if err == nil {
+			t.Fatalf("Execute(%q): want error for no-op shell builtin, got nil", cmd)
+		}
+
+		var entries []map[string]any
+		_ = mem.Domain("timeline").ReadCurrent(&entries)
+		if len(entries) != 0 {
+			t.Errorf("Execute(%q): timeline entries = %d, want 0 (no approval should have been created)", cmd, len(entries))
+		}
+	}
+}
+
+// A "true" that is part of a larger, genuinely state-modifying expression
+// must not be caught by the no-op builtin check — only a bare "true" (or
+// ":") as the entire command is a placeholder.
+func TestRunApprovedCommandTool_DoesNotRejectTrueWithinLargerCommand(t *testing.T) {
+	if run_approved_command.IsNoOpShellBuiltinForTest("systemctl restart foo || true") {
+		t.Error(`"systemctl restart foo || true" should not be treated as a no-op placeholder`)
+	}
+}
+
 func TestRunApprovedCommandTool_RejectsEchoStatus(t *testing.T) {
 	tool, _ := newRunApprovedCommandTool(t)
 

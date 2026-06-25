@@ -45,6 +45,24 @@ func isNoOpCommand(s string) bool {
 	return false
 }
 
+// noOpShellBuiltins are shell idioms that intentionally do nothing and
+// always succeed — used as a placeholder "command" when the model has
+// nothing to propose but the tool still requires one.
+var noOpShellBuiltins = map[string]bool{
+	"true": true, ":": true,
+}
+
+// isNoOpShellBuiltin reports whether s, taken as a whole, is one of
+// noOpShellBuiltins. Commands that merely contain "true" as part of a larger
+// expression (e.g. "systemctl restart foo || true") are not affected, since
+// the comparison is against the full trimmed command, not a substring.
+func isNoOpShellBuiltin(s string) bool {
+	return noOpShellBuiltins[strings.ToLower(strings.TrimSpace(s))]
+}
+
+// IsNoOpShellBuiltinForTest exposes isNoOpShellBuiltin for package-external tests.
+func IsNoOpShellBuiltinForTest(s string) bool { return isNoOpShellBuiltin(s) }
+
 // isEchoStatusCommand reports whether s is a bare echo (or PowerShell
 // Write-Output / Write-Host) with no output redirection or pipe — i.e. a
 // status message that belongs in response text, not in an approval request.
@@ -98,6 +116,9 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			}
 			if isNoOpCommand(cmd) {
 				return "", fmt.Errorf("run_approved_command: %q is not an executable command — if no corrective action is needed, write your conclusion in response text or call report_findings instead of submitting a placeholder approval", cmd)
+			}
+			if isNoOpShellBuiltin(cmd) {
+				return "", fmt.Errorf("run_approved_command: %q is a no-op placeholder, not a real action — if no corrective action is needed, write your conclusion in response text or call report_findings instead of submitting a placeholder approval", cmd)
 			}
 			if isEchoStatusCommand(cmd) {
 				return "", fmt.Errorf("run_approved_command: echo is not a state-modifying command — write the message in your response text or call report_findings instead of routing it through an approval request")
