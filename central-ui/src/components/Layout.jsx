@@ -4,14 +4,14 @@ import { useFleetSocket } from '../hooks/useFleetSocket';
 import logo from '../assets/logo.png';
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: DashboardIcon, exact: true },
-  { to: '/issues', label: 'Issues & Concerns', icon: AlertIcon },
-  { to: '/approvals', label: 'Approvals', icon: HandIcon },
-  { to: '/agents', label: 'Agentic Fleet', icon: ServerIcon },
-  { to: '/activity', label: 'Fleet Activity', icon: BoltIcon },
-  { to: '/intelligence', label: 'Fleet Intelligence', icon: LightbulbIcon },
-  { to: '/chat', label: 'Fleet Chat', icon: ChatIcon },
-  { to: '/admin', label: 'Admin', icon: WrenchIcon },
+  { to: '/', label: 'Dashboard', shortLabel: 'Dashboard', icon: DashboardIcon, exact: true },
+  { to: '/issues', label: 'Issues & Concerns', shortLabel: 'Issues', icon: AlertIcon },
+  { to: '/approvals', label: 'Approvals', shortLabel: 'Approvals', icon: HandIcon },
+  { to: '/agents', label: 'Agentic Fleet', shortLabel: 'Fleet', icon: ServerIcon },
+  { to: '/activity', label: 'Fleet Activity', shortLabel: 'Activity', icon: BoltIcon },
+  { to: '/intelligence', label: 'Fleet Intelligence', shortLabel: 'Intel', icon: LightbulbIcon },
+  { to: '/chat', label: 'Fleet Chat', shortLabel: 'Chat', icon: ChatIcon },
+  { to: '/admin', label: 'Admin', shortLabel: 'Admin', icon: WrenchIcon },
 ];
 
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -48,22 +48,24 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
-      <aside className="flex h-full w-64 flex-col overflow-y-auto border-r border-navy-200 bg-navy-50 px-4 py-6">
-        <div className="mb-8 flex flex-col items-center px-2 text-center">
-          <img src={logo} alt="Agent Patches" className="h-48 w-48 rounded-lg object-contain" />
+      <aside className="flex h-full w-24 flex-col overflow-y-auto border-r border-navy-200 bg-navy-50 px-2 py-4">
+        <div className="-mx-2 mb-4 flex flex-col items-center">
+          <img src={logo} alt="Agent Patches" className="h-20 w-20 rounded-lg object-contain" />
         </div>
 
         <nav className="flex flex-col gap-1">
-          {navItems.map(({ to, label, icon: Icon, exact }) => {
+          {navItems.map(({ to, label, shortLabel, icon: Icon, exact }) => {
             const badge = badgeFor[to];
             const isApprovals = to === '/approvals';
+            const dotColor = isApprovals && urgency === 'old' ? 'bg-rose-500' : 'bg-amber-500';
             return (
               <NavLink
                 key={to}
                 to={to}
                 end={exact}
+                title={label}
                 className={({ isActive }) =>
-                  `flex items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
+                  `flex flex-col items-center gap-1 rounded-lg px-1 py-2 text-center transition-colors ${
                     isActive
                       ? 'bg-navy-100 text-navy-700'
                       : isApprovals
@@ -72,46 +74,41 @@ export default function Layout() {
                   }`
                 }
               >
-                <span className="flex items-center gap-3">
-                  <Icon className="h-4.5 w-4.5" />
-                  {label}
+                <span className="relative flex h-5 w-5 items-center justify-center">
+                  <Icon className="h-5 w-5" />
+                  {isApprovals && summary?.pendingApprovalCount > 0 ? (
+                    <span className={`absolute -right-2 -top-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full px-1 text-[9px] font-bold text-white ${dotColor}`}>
+                      {summary.pendingApprovalCount}
+                    </span>
+                  ) : !!badge ? (
+                    <span className="absolute -right-2 -top-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-rose-500 px-1 text-[9px] font-bold text-white">
+                      {badge}
+                    </span>
+                  ) : null}
                 </span>
-                {isApprovals && summary?.pendingApprovalCount > 0 ? (
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                    urgency === 'old'
-                      ? 'bg-rose-100 text-rose-700'
-                      : 'bg-amber-100 text-amber-700'
-                  }`}>
-                    {summary.pendingApprovalCount}
-                  </span>
-                ) : !!badge ? (
-                  <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
-                    {badge}
-                  </span>
-                ) : null}
+                <span className="text-[11px] font-medium leading-tight">{shortLabel}</span>
               </NavLink>
             );
           })}
         </nav>
 
-        <div className="mt-auto rounded-lg border border-navy-200 bg-white p-3">
+        <div className="mt-auto rounded-lg border border-navy-200 bg-white p-2 text-center">
           {summary ? (
             <>
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-xs font-medium text-navy-700">{summary.totalAgents} agents enrolled</p>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <span
-                    className={`h-2 w-2 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}
-                  />
-                  <span className="text-xs text-navy-500">{connected ? 'Live' : 'Reconnecting...'}</span>
-                </span>
+              <p className="text-base font-semibold text-navy-900">{summary.totalAgents}</p>
+              <p className="text-[9px] uppercase tracking-wide text-navy-500">agents</p>
+              {summary.attentionCount > 0 && (
+                <p className="mt-1 text-[10px] font-medium text-amber-700">{summary.attentionCount} need attn</p>
+              )}
+              <div className="mt-1.5 flex items-center justify-center gap-1">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'}`}
+                />
+                <span className="text-[9px] text-navy-500">{connected ? 'Live' : 'Offline'}</span>
               </div>
-              <p className="mt-1 text-xs text-navy-500">
-                {summary.totalAgents - summary.attentionCount} healthy &middot; {summary.attentionCount} need attention
-              </p>
             </>
           ) : (
-            <p className="text-xs text-navy-500">Loading fleet summary...</p>
+            <p className="text-[9px] text-navy-500">Loading...</p>
           )}
         </div>
       </aside>
