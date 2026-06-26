@@ -273,7 +273,11 @@ function InteractTab({ agent }) {
       await decideApproval(entry.id, decision, agent.id);
       setApprovalDecisions((prev) => ({ ...prev, [entry.id]: { decision } }));
     } catch (err) {
-      setApprovalDecisions((prev) => ({ ...prev, [entry.id]: { error: err.message } }));
+      if (err.message.includes('404') || err.message.toLowerCase().includes('not found')) {
+        setApprovalDecisions((prev) => ({ ...prev, [entry.id]: { decision: 'stale' } }));
+      } else {
+        setApprovalDecisions((prev) => ({ ...prev, [entry.id]: { error: err.message } }));
+      }
     }
   };
 
@@ -302,9 +306,11 @@ function InteractTab({ agent }) {
                       </p>
                     )}
                     {decided ? (
-                      <p className={`mt-2 text-xs font-medium ${decided === 'approved' ? 'text-emerald-700' : 'text-rose-700'}`}>
+                      <p className={`mt-2 text-xs font-medium ${decided === 'approved' ? 'text-emerald-700' : decided === 'stale' ? 'text-navy-500' : 'text-rose-700'}`}>
                         {decided === 'approved'
                           ? '✓ Approved — agent will proceed'
+                          : decided === 'stale'
+                          ? 'No longer pending — already resolved or expired.'
                           : '✗ Rejected — agent will not proceed'}
                       </p>
                     ) : state?.error ? (

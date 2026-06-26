@@ -62,6 +62,13 @@ func (s *Service) Handler() http.Handler {
 
 		var entry reqapproval.ApprovalEntry
 		if err := s.mem.Attrs().Get(attrKey, &entry); err != nil {
+			// Attrs entry is gone — the agent already processed this approval.
+			// Remove the stale timeline entry so the next poll clears it from the UI.
+			if removeErr := reqapproval.RemoveFromTimeline(s.mem, id); removeErr != nil {
+				slog.Warn("approvalapi: failed to remove stale timeline entry", "id", id, "error", removeErr)
+			} else {
+				slog.Info("approvalapi: removed stale timeline entry for already-processed approval", "id", id)
+			}
 			http.Error(w, "approval not found", http.StatusNotFound)
 			return
 		}

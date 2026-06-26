@@ -19,7 +19,11 @@ export default function Approvals() {
       await decideApproval(entry.id, decision, entry.agentId);
       setDecisions((prev) => ({ ...prev, [entry.id]: { status: decision, loading: false, error: null } }));
     } catch (err) {
-      setDecisions((prev) => ({ ...prev, [entry.id]: { status: null, loading: false, error: err.message } }));
+      if (err.message.includes('404') || err.message.toLowerCase().includes('not found')) {
+        setDecisions((prev) => ({ ...prev, [entry.id]: { status: 'stale', loading: false, error: null } }));
+      } else {
+        setDecisions((prev) => ({ ...prev, [entry.id]: { status: null, loading: false, error: err.message } }));
+      }
     }
   };
 
@@ -94,7 +98,10 @@ export default function Approvals() {
             {resolved.map((entry) => (
               <div key={entry.id} className="flex items-center justify-between gap-4 rounded-lg border border-navy-200 p-3">
                 <div className="flex items-center gap-3">
-                  <Badge variant={decisions[entry.id].status}>{decisions[entry.id].status}</Badge>
+                  {decisions[entry.id].status === 'stale'
+                    ? <Badge variant="neutral">No longer pending</Badge>
+                    : <Badge variant={decisions[entry.id].status}>{decisions[entry.id].status}</Badge>
+                  }
                   <div>
                     <p className="text-sm font-medium text-navy-900">{entry.title}</p>
                     <Link to={`/agents/${entry.agentId}`} className="text-xs font-medium text-navy-600 hover:text-navy-800">
