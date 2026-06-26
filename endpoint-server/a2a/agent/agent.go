@@ -66,7 +66,10 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("model", a.cfg.Agent.Model),
-			attribute.Int("input.length", len(input)),
+			attribute.Int("llm.request.max_tokens", a.cfg.Agent.MaxTokens),
+			attribute.Int("llm.request.max_iterations", a.cfg.Agent.MaxIter),
+			attribute.String("llm.system_prompt", a.systemPrompt),
+			attribute.String("llm.user_input", input),
 		),
 	)
 	defer span.End()
@@ -115,8 +118,11 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 			trace.WithAttributes(
 				attribute.Int("iteration", iter),
 				attribute.String("model", a.cfg.Agent.Model),
+				attribute.Int("llm.request.tool_count", len(oaiTools)),
+				attribute.String("llm.request.messages", marshalJSON(messages)),
 			),
 		)
+
 		resp, err := a.client.Chat.Completions.New(inferCtx, req)
 		if err != nil {
 			inferSpan.RecordError(err)
@@ -127,14 +133,16 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 			slog.Error("agent: API call failed", "error", err)
 			return "", fmt.Errorf("agent run failed: %w", err)
 		}
+
 		inferSpan.SetAttributes(
 			attribute.Int64("llm.usage.prompt_tokens", resp.Usage.PromptTokens),
 			attribute.Int64("llm.usage.completion_tokens", resp.Usage.CompletionTokens),
 			attribute.Int64("llm.usage.total_tokens", resp.Usage.TotalTokens),
 		)
-		inferSpan.End()
 
 		if len(resp.Choices) == 0 {
+			inferSpan.SetStatus(codes.Error, "empty response from API")
+			inferSpan.End()
 			err := fmt.Errorf("agent: empty response from API")
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
@@ -142,6 +150,15 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 		}
 
 		choice := resp.Choices[0]
+		inferSpan.SetAttributes(attribute.String("llm.response.finish_reason", string(choice.FinishReason)))
+		if choice.Message.Content != "" {
+			inferSpan.SetAttributes(attribute.String("llm.response.content", choice.Message.Content))
+		}
+		if len(choice.Message.ToolCalls) > 0 {
+			inferSpan.SetAttributes(attribute.String("llm.response.tool_calls", marshalJSON(choice.Message.ToolCalls)))
+		}
+		inferSpan.SetStatus(codes.Ok, "")
+		inferSpan.End()
 
 		if choice.FinishReason != "tool_calls" {
 			output := choice.Message.Content
@@ -190,7 +207,10 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 			slog.Debug("agent: executing tool", "tool", tc.Function.Name)
 			toolCtx, toolSpan := otel.Tracer("agent_patches/agent").Start(ctx, "tool.call",
 				trace.WithSpanKind(trace.SpanKindInternal),
-				trace.WithAttributes(attribute.String("tool.name", tc.Function.Name)),
+				trace.WithAttributes(
+					attribute.String("tool.name", tc.Function.Name),
+					attribute.String("tool.arguments", tc.Function.Arguments),
+				),
 			)
 			result, execErr := t.Execute(toolCtx, json.RawMessage(tc.Function.Arguments))
 			if execErr != nil {
@@ -201,6 +221,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 				messages = append(messages, openai.ToolMessage(fmt.Sprintf("error: %v", execErr), tc.ID))
 				continue
 			}
+			toolSpan.SetAttributes(attribute.String("tool.result", result))
 			toolSpan.SetStatus(codes.Ok, "")
 			toolSpan.End()
 			lastToolResult[sig] = result
@@ -212,4 +233,14 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 	span.RecordError(err)
 	span.SetStatus(codes.Error, err.Error())
 	return "", err
+}
+
+// marshalJSON serialises v to a JSON string for use as a span attribute.
+// Returns a descriptive placeholder on error so spans are never silently empty.
+func marshalJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprintf("<marshal error: %v>", err)
+	}
+	return string(b)
 }
