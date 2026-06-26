@@ -91,6 +91,7 @@ async function toFleetAgent(inventoryAgent) {
     lastPoll: statusBlock.lastPoll ?? null,
     currentTask: statusBlock.currentTask ?? null,
     lastPatchedAt: data?.lastPatchedAt ?? null,
+    buildTime: agentInfo.buildTime ?? null,
     timeline,
     diskTrends: data?.diskTrends ?? null,
     smartTrends: data?.smartTrends ?? null,

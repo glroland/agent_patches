@@ -8,9 +8,10 @@ import "encoding/json"
 // AgentInfo describes the identity of this agent's host. Operator-assigned
 // metadata (role, tags) lives in central-backend's inventory, not here.
 type AgentInfo struct {
-	Hostname string `json:"hostname"`
-	Platform string `json:"platform"`
-	OS       string `json:"os"`
+	Hostname  string `json:"hostname"`
+	Platform  string `json:"platform"`
+	OS        string `json:"os"`
+	BuildTime string `json:"buildTime,omitempty"`
 }
 
 // StatusBlock describes the agent's current activity state.

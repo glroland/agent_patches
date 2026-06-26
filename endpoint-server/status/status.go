@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"agent_patches/endpoint-server/buildinfo"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/capture_system_info"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
@@ -116,9 +117,10 @@ func (s *Service) build() Response {
 
 	return Response{
 		Agent: AgentInfo{
-			Hostname: s.info.Hostname,
-			Platform: s.info.OS,
-			OS:       osLabel(s.info),
+			Hostname:  s.info.Hostname,
+			Platform:  s.info.OS,
+			OS:        osLabel(s.info),
+			BuildTime: buildinfo.BuildTime,
 		},
 		Status: StatusBlock{
 			State:        state,

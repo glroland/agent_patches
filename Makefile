@@ -4,6 +4,8 @@ SRC_DIR    := ./endpoint-server
 CLI_DIR    := ./cli
 TARGET_DIR := target
 GO         := go
+BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+LDFLAGS    := -ldflags "-X agent_patches/endpoint-server/buildinfo.BuildTime=$(BUILD_TIME)"
 
 # Release subdirectories per platform
 LINUX_AMD64_DIR   := $(TARGET_DIR)/linux-x86_64
@@ -49,7 +51,7 @@ build: fmt vet build-server build-cli
 ## build-server: compile the patches-endpoint-server binary for the current platform
 build-server:
 	mkdir -p $(TARGET_DIR)
-	$(GO) build -o $(TARGET_DIR)/$(BINARY) $(SRC_DIR)
+	$(GO) build $(LDFLAGS) -o $(TARGET_DIR)/$(BINARY) $(SRC_DIR)
 
 ## build-cli: compile the patches-cli binary for the current platform
 build-cli:
@@ -62,11 +64,11 @@ release: clean release-server release-cli
 ## release-server: cross-compile patches-endpoint-server for all target platforms
 release-server:
 	mkdir -p $(LINUX_AMD64_DIR) $(LINUX_ARM64_DIR) $(MAC_AMD64_DIR) $(MAC_ARM64_DIR) $(WINDOWS_AMD64_DIR)
-	GOOS=linux   GOARCH=amd64 $(GO) build -o $(LINUX_AMD64_DIR)/$(BINARY)          $(SRC_DIR)
-	GOOS=linux   GOARCH=arm64 $(GO) build -o $(LINUX_ARM64_DIR)/$(BINARY)          $(SRC_DIR)
-	GOOS=darwin  GOARCH=amd64 $(GO) build -o $(MAC_AMD64_DIR)/$(BINARY)            $(SRC_DIR)
-	GOOS=darwin  GOARCH=arm64 $(GO) build -o $(MAC_ARM64_DIR)/$(BINARY)            $(SRC_DIR)
-	GOOS=windows GOARCH=amd64 $(GO) build -o $(WINDOWS_AMD64_DIR)/$(BINARY).exe    $(SRC_DIR)
+	GOOS=linux   GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(LINUX_AMD64_DIR)/$(BINARY)          $(SRC_DIR)
+	GOOS=linux   GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(LINUX_ARM64_DIR)/$(BINARY)          $(SRC_DIR)
+	GOOS=darwin  GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(MAC_AMD64_DIR)/$(BINARY)            $(SRC_DIR)
+	GOOS=darwin  GOARCH=arm64 $(GO) build $(LDFLAGS) -o $(MAC_ARM64_DIR)/$(BINARY)            $(SRC_DIR)
+	GOOS=windows GOARCH=amd64 $(GO) build $(LDFLAGS) -o $(WINDOWS_AMD64_DIR)/$(BINARY).exe    $(SRC_DIR)
 
 ## release-cli: cross-compile patches-cli for all target platforms
 release-cli:

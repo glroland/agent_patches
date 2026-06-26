@@ -56,7 +56,9 @@ export default function AgentDetail() {
               <Badge variant={agent.status}>{agent.statusLabel}</Badge>
             </div>
             <p className="mt-1 text-sm text-navy-500">
-              {agent.role} &middot; {agent.os} &middot; last polled {relativeTime(agent.lastPoll)}
+              {agent.role} &middot; {agent.os}
+              {agent.buildTime && <> &middot; built {agent.buildTime}</>}
+              {' '}&middot; last polled {relativeTime(agent.lastPoll)}
             </p>
           </div>
           <div className="flex gap-2">
