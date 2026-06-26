@@ -11,6 +11,10 @@ import (
 	"github.com/openai/openai-go/option"
 	"github.com/openai/openai-go/packages/param"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/utils/config"
@@ -58,6 +62,15 @@ func NewWithSystemPrompt(tools []tool.Tool, cfg *config.Settings, systemPrompt s
 // Run executes the agent loop for the given input and returns the final
 // text response. It satisfies the a2a.Runner interface.
 func (a *Agent) Run(ctx context.Context, input string) (string, error) {
+	ctx, span := otel.Tracer("agent_patches/agent").Start(ctx, "agent.run",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(
+			attribute.String("model", a.cfg.Agent.Model),
+			attribute.Int("input.length", len(input)),
+		),
+	)
+	defer span.End()
+
 	slog.Debug("agent: run started", "input_len", len(input))
 
 	toolIndex := make(map[string]tool.Tool, len(a.tools))
@@ -97,13 +110,35 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 			req.Tools = oaiTools
 		}
 
-		resp, err := a.client.Chat.Completions.New(ctx, req)
+		inferCtx, inferSpan := otel.Tracer("agent_patches/agent").Start(ctx, "llm.inference",
+			trace.WithSpanKind(trace.SpanKindInternal),
+			trace.WithAttributes(
+				attribute.Int("iteration", iter),
+				attribute.String("model", a.cfg.Agent.Model),
+			),
+		)
+		resp, err := a.client.Chat.Completions.New(inferCtx, req)
 		if err != nil {
+			inferSpan.RecordError(err)
+			inferSpan.SetStatus(codes.Error, err.Error())
+			inferSpan.End()
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			slog.Error("agent: API call failed", "error", err)
 			return "", fmt.Errorf("agent run failed: %w", err)
 		}
+		inferSpan.SetAttributes(
+			attribute.Int64("llm.usage.prompt_tokens", resp.Usage.PromptTokens),
+			attribute.Int64("llm.usage.completion_tokens", resp.Usage.CompletionTokens),
+			attribute.Int64("llm.usage.total_tokens", resp.Usage.TotalTokens),
+		)
+		inferSpan.End()
+
 		if len(resp.Choices) == 0 {
-			return "", fmt.Errorf("agent: empty response from API")
+			err := fmt.Errorf("agent: empty response from API")
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
+			return "", err
 		}
 
 		choice := resp.Choices[0]
@@ -111,6 +146,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 		if choice.FinishReason != "tool_calls" {
 			output := choice.Message.Content
 			slog.Debug("agent: run completed", "output_len", len(output))
+			span.SetStatus(codes.Ok, "")
 			return output, nil
 		}
 
@@ -152,16 +188,28 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 			}
 
 			slog.Debug("agent: executing tool", "tool", tc.Function.Name)
-			result, execErr := t.Execute(ctx, json.RawMessage(tc.Function.Arguments))
+			toolCtx, toolSpan := otel.Tracer("agent_patches/agent").Start(ctx, "tool.call",
+				trace.WithSpanKind(trace.SpanKindInternal),
+				trace.WithAttributes(attribute.String("tool.name", tc.Function.Name)),
+			)
+			result, execErr := t.Execute(toolCtx, json.RawMessage(tc.Function.Arguments))
 			if execErr != nil {
+				toolSpan.RecordError(execErr)
+				toolSpan.SetStatus(codes.Error, execErr.Error())
+				toolSpan.End()
 				slog.Warn("agent: tool error", "tool", tc.Function.Name, "error", execErr)
 				messages = append(messages, openai.ToolMessage(fmt.Sprintf("error: %v", execErr), tc.ID))
 				continue
 			}
+			toolSpan.SetStatus(codes.Ok, "")
+			toolSpan.End()
 			lastToolResult[sig] = result
 			messages = append(messages, openai.ToolMessage(result, tc.ID))
 		}
 	}
 
-	return "", fmt.Errorf("agent: max iterations (%d) exceeded", a.cfg.Agent.MaxIter)
+	err := fmt.Errorf("agent: max iterations (%d) exceeded", a.cfg.Agent.MaxIter)
+	span.RecordError(err)
+	span.SetStatus(codes.Error, err.Error())
+	return "", err
 }

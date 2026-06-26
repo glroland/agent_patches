@@ -10,6 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
+
 	"agent_patches/endpoint-server/a2a/agent"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/a2a/tool"
@@ -134,6 +139,12 @@ func (l *Loop) tick(ctx context.Context) {
 func (l *Loop) execute(ctx context.Context, r *Responsibility) {
 	defer r.Running.Store(false)
 
+	ctx, span := otel.Tracer("agent_patches/loop").Start(ctx, "responsibility.run",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(attribute.String("responsibility.name", r.cfg.Name)),
+	)
+	defer span.End()
+
 	log := slog.With("responsibility", r.cfg.Name)
 	log.Info("loop: responsibility started")
 
@@ -141,9 +152,12 @@ func (l *Loop) execute(ctx context.Context, r *Responsibility) {
 	result, err := a.Run(ctx, r.cfg.Instruction)
 	if err != nil {
 		log.Error("loop: responsibility failed", "error", err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 	} else {
 		log.Info("loop: responsibility completed", "output_len", len(result))
 		log.Debug("loop: responsibility output", "output", result)
+		span.SetStatus(codes.Ok, "")
 	}
 
 	l.persistRunState(r, result, err)
