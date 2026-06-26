@@ -1,5 +1,7 @@
 // Client for talking to an individual endpoint-server's HTTP API.
 
+import { logger } from '../utils/logger.js';
+
 const DEFAULT_TIMEOUT_MS = 3000;
 
 // Sending a chat message runs the agent's full tool-use loop, which can take
@@ -128,6 +130,7 @@ export class AgentClient {
   async sendMessage(text, { timeoutMs = DEFAULT_MESSAGE_TIMEOUT_MS } = {}) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
+    logger.debug(`agentClient.sendMessage: sending to ${this.baseUrl}`, { textLength: text.length, timeoutMs });
     try {
       const headers = { 'Content-Type': 'application/json' };
       if (this.authToken) {
@@ -141,7 +144,7 @@ export class AgentClient {
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: crypto.randomUUID(),
-          method: 'SendMessage',
+          method: 'message/send',
           params: {
             message: {
               kind: 'message',
@@ -153,16 +156,29 @@ export class AgentClient {
         }),
       });
 
+      logger.debug(`agentClient.sendMessage: response from ${this.baseUrl}`, { status: res.status, ok: res.ok });
+
       if (!res.ok) {
-        throw new Error(`agent returned ${res.status} ${res.statusText}`);
+        const errBody = await res.text().catch(() => '');
+        logger.warn(`agentClient.sendMessage: non-2xx from ${this.baseUrl}`, { status: res.status, body: errBody });
+        throw new Error(`agent returned ${res.status} ${res.statusText}${errBody ? ': ' + errBody : ''}`);
       }
 
       const body = await res.json();
       if (body.error) {
+        logger.warn(`agentClient.sendMessage: JSON-RPC error from ${this.baseUrl}`, { error: body.error });
         throw new Error(`agent error: ${body.error.message ?? JSON.stringify(body.error)}`);
       }
 
-      return extractText(body.result);
+      const reply = extractText(body.result);
+      logger.debug(`agentClient.sendMessage: success`, { baseUrl: this.baseUrl, replyLength: reply.length });
+      return reply;
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        logger.warn(`agentClient.sendMessage: timed out after ${timeoutMs}ms`, { baseUrl: this.baseUrl });
+        throw new Error(`agent timed out after ${timeoutMs}ms`);
+      }
+      throw err;
     } finally {
       clearTimeout(timer);
     }

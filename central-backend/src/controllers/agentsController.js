@@ -1,6 +1,7 @@
 import { notImplemented } from '../utils/notImplemented.js';
 import * as fleet from '../services/fleet.js';
 import { pendingApprovals } from '../services/activity.js';
+import { logger } from '../utils/logger.js';
 
 // GET /api/agents — the Agents screen's fleet list: one row per agent with
 // enough detail to render its card without a follow-up request.
@@ -111,13 +112,18 @@ export async function sendAgentMessage(req, res, next) {
       return res.status(400).json({ error: 'invalid_request', message: '"message" is required' });
     }
 
+    logger.info(`agentsController.sendAgentMessage: relaying message to agent`, { agentId: req.params.id, messageLength: message.length });
+
     const reply = await fleet.sendAgentMessage(req.params.id, message);
     if (reply === undefined) {
+      logger.warn(`agentsController.sendAgentMessage: agent not found in inventory`, { agentId: req.params.id });
       return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
     }
 
+    logger.info(`agentsController.sendAgentMessage: reply received`, { agentId: req.params.id, replyLength: reply.length });
     res.json({ reply });
   } catch (err) {
+    logger.error(`agentsController.sendAgentMessage: failed`, { agentId: req.params.id, error: err.message });
     res.status(502).json({ error: 'agent_unreachable', message: err.message });
   }
 }
