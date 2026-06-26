@@ -389,6 +389,42 @@ func (a *AttrsStore) Set(key string, value any) error {
 	return nil
 }
 
+// Delete removes key from attrs.json. It is a no-op if the key does not exist.
+// A nil AttrsStore is safe to call.
+func (a *AttrsStore) Delete(key string) error {
+	if a == nil {
+		return nil
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	attrs := make(map[string]json.RawMessage)
+	if raw, err := os.ReadFile(a.path); err == nil {
+		_ = json.Unmarshal(raw, &attrs)
+	}
+
+	if _, ok := attrs[key]; !ok {
+		return nil
+	}
+	delete(attrs, key)
+
+	out, err := json.MarshalIndent(attrs, "", "  ")
+	if err != nil {
+		return fmt.Errorf("memory: marshal attrs: %w", err)
+	}
+
+	tmp := a.path + ".tmp"
+	if err := os.WriteFile(tmp, out, 0o644); err != nil {
+		return fmt.Errorf("memory: write attrs tmp: %w", err)
+	}
+	if err := os.Rename(tmp, a.path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("memory: rename attrs: %w", err)
+	}
+	return nil
+}
+
 // All returns every key/value pair in attrs.json. Returns nil, nil if the
 // file does not exist yet. A nil AttrsStore returns nil, nil.
 func (a *AttrsStore) All() (map[string]json.RawMessage, error) {

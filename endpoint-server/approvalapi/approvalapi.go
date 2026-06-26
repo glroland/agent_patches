@@ -73,6 +73,13 @@ func (s *Service) Handler() http.Handler {
 			case "timed_out":
 				msg = "approval timed out waiting for a decision and was requeued or escalated"
 			}
+			if err := s.mem.Attrs().Delete(attrKey); err != nil {
+				slog.Warn("approvalapi: failed to delete stale approval attrs", "id", id, "error", err)
+			}
+			if err := reqapproval.RemoveFromTimeline(s.mem, id); err != nil {
+				slog.Warn("approvalapi: failed to remove stale approval from timeline", "id", id, "error", err)
+			}
+			slog.Info("approvalapi: purged stale approval on conflict", "id", id, "status", entry.Status)
 			http.Error(w, msg, http.StatusConflict)
 			return
 		}

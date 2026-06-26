@@ -281,6 +281,27 @@ func PatchTimeline(mem *memory.Store, id, newStatus string) error {
 	return nil
 }
 
+// RemoveFromTimeline removes the entry with the given id from the timeline.
+// It is a no-op if no matching entry exists. Exported so approvalapi can call
+// it when purging a stale approval on a 409 Conflict response.
+func RemoveFromTimeline(mem *memory.Store, id string) error {
+	d := mem.Domain("timeline")
+	var entries []status.TimelineEntry
+	if err := d.ReadCurrent(&entries); err != nil {
+		return err
+	}
+	filtered := entries[:0]
+	for _, e := range entries {
+		if e.ID != id {
+			filtered = append(filtered, e)
+		}
+	}
+	if len(filtered) == len(entries) {
+		return nil
+	}
+	return d.Write(filtered)
+}
+
 // patchAttrs updates the status fields on an existing approval attrs entry.
 func patchAttrs(mem *memory.Store, key, newStatus, reason string, decidedAt *time.Time) error {
 	var entry ApprovalEntry
