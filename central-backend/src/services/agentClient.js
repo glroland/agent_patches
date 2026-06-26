@@ -144,7 +144,7 @@ export class AgentClient {
         body: JSON.stringify({
           jsonrpc: '2.0',
           id: crypto.randomUUID(),
-          method: 'message/send',
+          method: 'SendMessage',
           params: {
             message: {
               kind: 'message',
