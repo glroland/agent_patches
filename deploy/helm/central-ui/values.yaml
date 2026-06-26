@@ -32,6 +32,22 @@ route:
   timeout: "300s"
   proxyReadTimeout: "300s"
 
+# OTel collector endpoint is centralized at the root chart's
+# global.otelExporterOtlpEndpoint (see deploy/helm/values.yaml) rather than
+# managed here, since central-backend and central-ui share the same
+# collector. nginx proxies the fixed path /v1/traces to it so the browser
+# bundle never needs to know the collector's address and never hits CORS —
+# see entrypoint.sh / nginx.conf.template. Unset (the default) leaves
+# /v1/traces pointed at a harmless loopback placeholder.
+env: {}
+
+# OTel resource service.name for this component (per-component, unlike the
+# shared collector endpoint above). entrypoint.sh writes this into a small
+# runtime-config script the browser bundle reads at startup, since a static
+# bundle can't read container env vars directly.
+otel:
+  serviceName: "central-ui"
+
 nodeSelector: {}
 
 tolerations: []

@@ -81,7 +81,13 @@ func runServer(ctx context.Context) {
 		return
 	}
 
-	shutdownTracing := tracing.Setup(ctx, "endpoint-server")
+	tracingServiceName := "endpoint-server"
+	if fqdn, ok := lookupFQDN(); ok {
+		tracingServiceName = "endpoint-server-" + fqdn
+	} else if h, err := os.Hostname(); err == nil && h != "" {
+		tracingServiceName = "endpoint-server-" + h
+	}
+	shutdownTracing := tracing.Setup(ctx, tracingServiceName)
 	defer func() {
 		shutCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

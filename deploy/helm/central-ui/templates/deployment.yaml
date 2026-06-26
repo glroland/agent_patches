@@ -25,6 +25,14 @@ spec:
           env:
             - name: BACKEND_URL
               value: {{ printf "https://%s-backend.%s" .Release.Name .Values.global.clusterDomain | quote }}
+            {{- if .Values.global.otelExporterOtlpEndpoint }}
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.global.otelExporterOtlpEndpoint | quote }}
+            {{- end }}
+            {{- if .Values.otel.serviceName }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.otel.serviceName | quote }}
+            {{- end }}
             {{- range $key, $value := .Values.env }}
             - name: {{ $key }}
               value: {{ $value | quote }}

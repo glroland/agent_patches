@@ -63,6 +63,19 @@ http {
             proxy_read_timeout 3600s;
         }
 
+        # Same-origin proxy for browser-side OpenTelemetry trace export
+        # (src/tracing.js), so the bundle never needs to know the collector's
+        # address and never hits CORS. OTEL_EXPORTER_OTLP_ENDPOINT is the
+        # same env var used by central-backend/endpoint-server; when unset,
+        # entrypoint.sh defaults it to a loopback placeholder so nginx still
+        # starts — requests here just get connection-refused, which the
+        # exporter already treats as a non-fatal export failure.
+        location /v1/traces {
+
+            proxy_pass ${OTEL_EXPORTER_OTLP_ENDPOINT}/v1/traces;
+            proxy_set_header Host $proxy_host;
+        }
+
     }
 
 }

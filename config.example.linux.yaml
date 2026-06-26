@@ -3,14 +3,13 @@
 # central-backend and central-ui:
 #   OTEL_EXPORTER_OTLP_ENDPOINT   collector base URL, e.g. http://otel-collector:4318
 #                                 unset (the default) disables tracing entirely.
-#   OTEL_SERVICE_NAME             defaults to "endpoint-server"
+#   OTEL_SERVICE_NAME             defaults to "endpoint-server-<FQDN>" (e.g.
+#                                 "endpoint-server-excess.home.glroland.com");
+#                                 set only to override the auto-detected name.
 #   OTEL_RESOURCE_ATTRIBUTES      extra comma-separated key=value resource attrs
 #   OTEL_EXPORTER_OTLP_HEADERS    comma-separated key=value auth headers
 #   OTEL_TRACES_SAMPLER           default: parentbased_always_on
 #   OTEL_TRACES_SAMPLER_ARG       sampler argument (e.g. a ratio)
-# Every agent also auto-reports host.name (its own OS hostname) as a
-# resource attribute, so leave OTEL_SERVICE_NAME at its default across all
-# hosts — host.name is what distinguishes which agent a trace came from.
 # See deploy/linux/agent_patches.service for where to set these for a
 # systemd-managed deployment.
 
