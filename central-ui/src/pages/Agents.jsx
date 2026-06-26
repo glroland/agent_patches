@@ -20,6 +20,13 @@ export default function Agents() {
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
+  const newestBuildTime = useMemo(() => {
+    if (!agents) return null;
+    const times = agents.map((a) => a.buildTime).filter(Boolean).filter((t) => t !== 'dev');
+    if (times.length === 0) return null;
+    return times.reduce((best, t) => (t > best ? t : best));
+  }, [agents]);
+
   const filtered = useMemo(() => {
     if (!agents) return [];
     return agents.filter((a) => {
@@ -81,7 +88,14 @@ export default function Agents() {
                   <p className="font-semibold text-black">{agent.hostname}</p>
                   <p className="text-xs text-navy-500">{agent.role} &middot; {agent.os}</p>
                 </div>
-                <Badge variant={agent.status}>{agent.statusLabel}</Badge>
+                <div className="flex items-center gap-2">
+                  {agent.buildTime === 'dev' ? (
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">Dev Build</span>
+                  ) : newestBuildTime && agent.buildTime && agent.buildTime < newestBuildTime ? (
+                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">Out of Date</span>
+                  ) : null}
+                  <Badge variant={agent.status}>{agent.statusLabel}</Badge>
+                </div>
               </div>
 
               <div className="mt-4">

@@ -48,7 +48,7 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-white">
-      <aside className="flex h-full w-[94px] flex-col overflow-y-auto border-r border-navy-200 bg-navy-50 px-2 py-4">
+      <aside className="flex h-full w-[94px] flex-col overflow-y-auto border-r border-navy-200 bg-navy-50 px-2 pb-4 pt-1">
         <div className="-mx-2 mb-4 flex flex-col items-center">
           <img src={logo} alt="Agent Patches" className="h-[100px] w-[100px] rounded-lg object-contain" />
         </div>
