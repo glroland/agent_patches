@@ -119,7 +119,15 @@ func countDStateProcs() int {
 // "umount -l", which detaches it immediately and cleans up references
 // as they are released. This is the safe way to handle a hung NFS mount.
 func lazyUnmount(ctx context.Context, mount string) error {
-	out, err := exec.CommandContext(ctx, "umount", "-l", mount).CombinedOutput()
+	// umount requires root; use sudo -n when running as a non-root user so
+	// the /etc/sudoers.d/agent_patches allowlist applies.
+	var cmd *exec.Cmd
+	if os.Getuid() != 0 {
+		cmd = exec.CommandContext(ctx, "sudo", "-n", "umount", "-l", mount) //nolint:gosec
+	} else {
+		cmd = exec.CommandContext(ctx, "umount", "-l", mount) //nolint:gosec
+	}
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("umount -l %s: %w: %s", mount, err, strings.TrimSpace(string(out)))
 	}

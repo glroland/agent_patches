@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"runtime"
 	"strings"
 	"time"
 
@@ -158,7 +159,16 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout)
 			defer cancel()
 
-			execCmd := exec.CommandContext(cmdCtx, "sh", "-c", cmd) //nolint:gosec
+			// Use sudo -n on Linux when running as a non-root user so approved
+			// commands can perform privileged operations (e.g. systemctl restart,
+			// snap remove). The HITL gate ensures the operator has already seen
+			// and approved the exact command text before we reach this point.
+			var execCmd *exec.Cmd
+			if runtime.GOOS == "linux" && os.Getuid() != 0 {
+				execCmd = exec.CommandContext(cmdCtx, "sudo", "-n", "sh", "-c", cmd) //nolint:gosec
+			} else {
+				execCmd = exec.CommandContext(cmdCtx, "sh", "-c", cmd) //nolint:gosec
+			}
 			out, execErr := execCmd.CombinedOutput()
 			output := strings.TrimRight(string(out), "\n")
 

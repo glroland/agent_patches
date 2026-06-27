@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"os/exec"
+	"runtime"
 )
 
 // CheckSmart resolves device to its underlying physical disk(s) (following
@@ -37,16 +39,23 @@ func checkSmartDevice(ctx context.Context, device string) SmartReport {
 		return report
 	}
 
+	// smartctl typically requires root; use sudo -n on Linux when running as
+	// a non-root user so the /etc/sudoers.d/agent_patches allowlist applies.
+	cmdName := "smartctl"
 	args := []string{"-H", "-A", "-j", device}
-	slog.Info("check_drives: running command", "command", "smartctl", "args", args)
-	data, err := exec.CommandContext(ctx, "smartctl", args...).Output() //nolint:gosec
+	if runtime.GOOS == "linux" && os.Getuid() != 0 {
+		args = append([]string{"-n", "smartctl"}, args...)
+		cmdName = "sudo"
+	}
+	slog.Info("check_drives: running command", "command", cmdName, "args", args)
+	data, err := exec.CommandContext(ctx, cmdName, args...).Output() //nolint:gosec
 	if err != nil && len(data) == 0 {
-		slog.Info("check_drives: command failed", "command", "smartctl", "device", device, "error", err)
+		slog.Info("check_drives: command failed", "command", cmdName, "device", device, "error", err)
 		return report
 	}
 	// smartctl's exit code encodes warning bits even when the JSON payload is
 	// valid and useful, so a non-nil err with output is not fatal.
-	slog.Info("check_drives: command finished", "command", "smartctl", "device", device,
+	slog.Info("check_drives: command finished", "command", cmdName, "device", device,
 		"output_len", len(data), "exit_error", err)
 
 	var out smartctlOutput

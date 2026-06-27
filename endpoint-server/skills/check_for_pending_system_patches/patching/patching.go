@@ -517,6 +517,14 @@ func tokenise(values ...string) []string {
 type realCommander struct{}
 
 func (r *realCommander) Run(ctx context.Context, name string, args ...string) (string, error) {
+	// Prepend sudo -n on Linux when running as a non-root user so package
+	// manager and shutdown commands have the privilege they need via the
+	// /etc/sudoers.d/agent_patches allowlist.
+	if runtime.GOOS == "linux" && os.Getuid() != 0 {
+		args = append([]string{"-n", name}, args...)
+		name = "sudo"
+	}
+
 	slog.Info("patching: running command", "command", name, "args", args)
 	start := time.Now()
 

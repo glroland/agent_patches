@@ -10,6 +10,7 @@
 #   SSH_KEY                 Path to a private key (-i flag)
 #   LINUX_RESPONSIBILITIES  Path to linux-responsibilities.yaml (optional)
 #   WINDOWS_RESPONSIBILITIES Path to windows-responsibilities.yaml (optional)
+#   SUDOERS_FILE            Path to sudoers drop-in (default: <service-file-dir>/sudoers.d/agent_patches)
 
 set -uo pipefail
 
@@ -41,7 +42,9 @@ WINDOWS_RESPONSIBILITIES="${WINDOWS_RESPONSIBILITIES:-}"
 
 # Linux-specific env vars.
 #   LINUX_RESPONSIBILITIES  Path to linux-responsibilities.yaml
+#   SUDOERS_FILE            Path to agent_patches sudoers drop-in (default: auto-detected)
 LINUX_RESPONSIBILITIES="${LINUX_RESPONSIBILITIES:-}"
+SUDOERS_FILE="${SUDOERS_FILE:-$(dirname "$SERVICE_FILE")/sudoers.d/agent_patches}"
 
 for f in "$INVENTORY_CSV" "$BINARY" "$SERVICE_FILE"; do
     if [[ ! -f "$f" ]]; then
@@ -199,29 +202,39 @@ fi
 
 # ── System user ──────────────────────────────────────────────────────────────
 step "Checking service user '$SERVICE_USER'..."
+if [[ -f /usr/sbin/nologin ]]; then NOLOGIN=/usr/sbin/nologin
+else                                 NOLOGIN=/sbin/nologin
+fi
 if id "$SERVICE_USER" &>/dev/null; then
     ok "user already exists"
+    # Remove from sudo/wheel groups if previously granted — privilege is now
+    # granted per-command via /etc/sudoers.d/agent_patches instead.
+    if gpasswd -d "$SERVICE_USER" sudo  2>/dev/null; then warn "removed $SERVICE_USER from sudo group (now using sudoers.d instead)"; fi
+    if gpasswd -d "$SERVICE_USER" wheel 2>/dev/null; then warn "removed $SERVICE_USER from wheel group (now using sudoers.d instead)"; fi
 else
-    if [[ -f /usr/sbin/nologin ]]; then NOLOGIN=/usr/sbin/nologin
-    else                                 NOLOGIN=/sbin/nologin
-    fi
-    if getent group sudo &>/dev/null; then SUDO_GROUP=sudo
-    else                                    SUDO_GROUP=wheel
-    fi
     useradd --system --no-create-home \
             --shell "$NOLOGIN" \
-            --groups "$SUDO_GROUP" \
             "$SERVICE_USER"
-    ok "created (shell: $NOLOGIN, group: $SUDO_GROUP)"
+    ok "created (shell: $NOLOGIN)"
 fi
+
+# Additive group memberships so the agent can read logs and docker state.
+# Best effort — groups vary by distro; silence errors for absent groups.
+for grp in adm docker systemd-journal; do
+    if getent group "$grp" &>/dev/null; then
+        usermod -aG "$grp" "$SERVICE_USER" 2>/dev/null && ok "added to group $grp" || warn "failed to add to group $grp"
+    fi
+done
 
 # ── Directory structure ───────────────────────────────────────────────────────
 step "Creating directory structure under $INSTALL_ROOT..."
 mkdir -p "$INSTALL_ROOT"/{bin,config,data,logs}
-chmod 750 "$INSTALL_ROOT"
-chmod 755 "$INSTALL_ROOT/bin"
+chmod 755 "$INSTALL_ROOT" "$INSTALL_ROOT/bin"
 chmod 750 "$INSTALL_ROOT"/{config,data,logs}
-chown -R "$SERVICE_USER:$SERVICE_USER" "$INSTALL_ROOT"
+# root owns the install root and binary directory so the service account
+# cannot replace its own executable; service account owns writable dirs only.
+chown root:root "$INSTALL_ROOT" "$INSTALL_ROOT/bin"
+chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_ROOT"/{config,data,logs}
 ok "directories ready"
 
 # ── Stop running instance first (before replacing binary) ─────────────────────
@@ -236,9 +249,24 @@ fi
 
 # ── Binary ───────────────────────────────────────────────────────────────────
 step "Installing binary..."
-install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 755 \
+install -o root -g root -m 755 \
     /tmp/patches-endpoint-server "$INSTALL_ROOT/bin/patches-endpoint-server"
 ok "installed to $INSTALL_ROOT/bin/patches-endpoint-server"
+
+# ── Sudoers drop-in ──────────────────────────────────────────────────────────
+step "Installing sudoers drop-in..."
+if [[ -f /tmp/agent_patches_sudoers ]]; then
+    install -o root -g root -m 440 \
+        /tmp/agent_patches_sudoers /etc/sudoers.d/agent_patches
+    if visudo -c -f /etc/sudoers.d/agent_patches 2>&1; then
+        ok "installed /etc/sudoers.d/agent_patches"
+    else
+        warn "sudoers file has syntax errors — removing to prevent system lockout"
+        rm -f /etc/sudoers.d/agent_patches
+    fi
+else
+    warn "no sudoers file found in /tmp — skipping (existing file preserved)"
+fi
 
 # ── Systemd unit ─────────────────────────────────────────────────────────────
 step "Installing systemd unit..."
@@ -252,7 +280,7 @@ ok "daemon reloaded"
 # ── Config ────────────────────────────────────────────────────────────────────
 step "Deploying config..."
 if [[ -f /tmp/endpoint-server-config.yaml ]]; then
-    install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 640 \
+    install -o root -g "$SERVICE_USER" -m 640 \
         /tmp/endpoint-server-config.yaml "$INSTALL_ROOT/config/config.yaml"
     ok "config written to $INSTALL_ROOT/config/config.yaml"
 else
@@ -262,7 +290,7 @@ fi
 # ── OS responsibilities ───────────────────────────────────────────────────────
 step "Deploying OS responsibilities..."
 if [[ -f /tmp/linux-responsibilities.yaml ]]; then
-    install -o "$SERVICE_USER" -g "$SERVICE_USER" -m 640 \
+    install -o root -g "$SERVICE_USER" -m 640 \
         /tmp/linux-responsibilities.yaml "$INSTALL_ROOT/config/linux-responsibilities.yaml"
     ok "responsibilities written to $INSTALL_ROOT/config/linux-responsibilities.yaml"
 else
@@ -281,6 +309,7 @@ rm -f /tmp/patches-endpoint-server \
       /tmp/agent_patches.service \
       /tmp/endpoint-server-config.yaml \
       /tmp/linux-responsibilities.yaml \
+      /tmp/agent_patches_sudoers \
       /tmp/agent_patches_setup.*.sh
 ok "done"
 REMOTE_SCRIPT
@@ -466,6 +495,11 @@ deploy_host() {
     elif [[ -n "$LINUX_RESPONSIBILITIES" ]]; then
         echo "│  ⚠ WARNING: linux-responsibilities.yaml not found ($LINUX_RESPONSIBILITIES) — skipping"
     fi
+    if [[ -n "$SUDOERS_FILE" && -f "$SUDOERS_FILE" ]]; then
+        files+=("$SUDOERS_FILE")
+    elif [[ -n "$SUDOERS_FILE" ]]; then
+        echo "│  ⚠ WARNING: sudoers file not found ($SUDOERS_FILE) — agent will run without privilege separation"
+    fi
 
     echo "│  Connecting as ${host_user}@${host}"
     if ! "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" true 2>&1 | sed 's/^/│  /'; then
@@ -497,6 +531,14 @@ deploy_host() {
             "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
                 "mv /tmp/$resp_base /tmp/linux-responsibilities.yaml" 2>/dev/null || true
         fi
+    fi
+
+    # Rename the sudoers file to the expected name on the remote
+    if [[ -n "$SUDOERS_FILE" && -f "$SUDOERS_FILE" ]]; then
+        local sudoers_base
+        sudoers_base=$(basename "$SUDOERS_FILE")
+        "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
+            "cp /tmp/$sudoers_base /tmp/agent_patches_sudoers" 2>/dev/null || true
     fi
 
     # Rename the setup script to its expected name

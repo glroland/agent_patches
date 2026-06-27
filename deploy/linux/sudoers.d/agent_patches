@@ -1,0 +1,48 @@
+# /etc/sudoers.d/agent_patches
+# Least-privilege sudoers for the agent_patches service account.
+# This file grants ONLY the specific privileged commands the endpoint-server
+# needs. The process runs as the dedicated 'agent_patches' system user and
+# never holds membership in the sudo/wheel group.
+
+Defaults:agent_patches !requiretty
+Defaults:agent_patches !lecture
+
+# ── Package management ────────────────────────────────────────────────────────
+# Debian/Ubuntu
+agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get update
+agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get update -q
+agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get upgrade --dry-run
+agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get upgrade -y
+
+# Fedora/RHEL
+agent_patches ALL=(root) NOPASSWD: /usr/bin/dnf check-update
+agent_patches ALL=(root) NOPASSWD: /usr/bin/dnf update -y
+agent_patches ALL=(root) NOPASSWD: /usr/bin/yum check-update
+agent_patches ALL=(root) NOPASSWD: /usr/bin/yum update -y
+
+# Reboot check (exits 1 when reboot is required — not an error)
+agent_patches ALL=(root) NOPASSWD: /usr/bin/needs-restarting -r
+agent_patches ALL=(root) NOPASSWD: /usr/sbin/needs-restarting -r
+
+# ── SMART disk health checks ──────────────────────────────────────────────────
+# Debian path
+agent_patches ALL=(root) NOPASSWD: /usr/sbin/smartctl -H -A -j *
+# Fedora/others path
+agent_patches ALL=(root) NOPASSWD: /usr/bin/smartctl -H -A -j *
+
+# ── NFS lazy unmount ──────────────────────────────────────────────────────────
+# Only triggered when check_nfs detects a hung mount; -l detaches immediately.
+agent_patches ALL=(root) NOPASSWD: /usr/bin/umount -l *
+agent_patches ALL=(root) NOPASSWD: /bin/umount -l *
+
+# ── Reboot ────────────────────────────────────────────────────────────────────
+# Only issued by the patching skill after confirming a completed update cycle.
+agent_patches ALL=(root) NOPASSWD: /sbin/shutdown -r now
+agent_patches ALL=(root) NOPASSWD: /usr/sbin/shutdown -r now
+
+# ── Operator-approved commands ────────────────────────────────────────────────
+# run_approved_command ALWAYS requires explicit operator approval via the
+# central dashboard before this code path is reached. The operator sees
+# and approves the exact command text before it executes.
+agent_patches ALL=(root) NOPASSWD: /bin/sh -c *
+agent_patches ALL=(root) NOPASSWD: /usr/bin/sh -c *
