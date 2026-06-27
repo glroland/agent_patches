@@ -9,7 +9,7 @@ function authHeaders() {
 
 function handleUnauth() {
   clearToken();
-  window.location.href = '/';
+  window.location.href = '/login';
 }
 
 async function getJSON(path) {

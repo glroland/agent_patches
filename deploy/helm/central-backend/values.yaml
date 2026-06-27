@@ -22,10 +22,12 @@ resources:
     memory: 64Mi
 
 # Name of the pre-existing Secret that holds sensitive credentials.
-# Create it manually before first sync (add INTELLIGENCE_API_KEY only if using fleet intelligence):
+# Create it manually before first sync:
 #   kubectl -n agent-patches create secret generic central-backend-secrets \
 #     --from-literal=AGENT_AUTH_TOKEN=<token> \
-#     --from-literal=INTELLIGENCE_API_KEY=<key>
+#     --from-literal=OAUTH_CLIENT_SECRET=<oauth-client-secret> \
+#     --from-literal=SESSION_SECRET=$(openssl rand -hex 32) \
+#     --from-literal=INTELLIGENCE_API_KEY=<key>   # only if using fleet intelligence
 secret:
   name: central-backend-secrets
 
@@ -91,6 +93,9 @@ openshift:
   # Name of the OAuthClient registered in OpenShift (must match the resource name).
   # OAuth server URLs are derived from global.clusterDomain — no need to set them here.
   oauthClientId: "agent-patches"
+  # Set to true when the cluster ingress uses a self-signed or internal CA that
+  # Node.js does not trust by default (common in home-lab / air-gapped clusters).
+  tlsInsecure: true
 
 nodeSelector: {}
 

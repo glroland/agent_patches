@@ -77,5 +77,12 @@ export const config = {
     // SubjectAccessReview check performed at login to enforce cluster-admin.
     sarResource: process.env.OAUTH_SAR_RESOURCE || 'nodes',
     sarVerb: process.env.OAUTH_SAR_VERB || 'list',
+    // Skip TLS verification for calls to the OAuth Route endpoint.
+    // Required when the cluster ingress uses a self-signed / internal CA.
+    tlsInsecure: process.env.OAUTH_TLS_INSECURE === 'true',
+  },
+  session: {
+    // HMAC secret for signing session JWTs. Set SESSION_SECRET in the secret.
+    secret: process.env.SESSION_SECRET || 'dev-insecure-please-set-SESSION_SECRET',
   },
 };

@@ -50,11 +50,10 @@ export function clearToken() {
 
 // ── Login redirect ─────────────────────────────────────────────────────────────
 
-export async function startLogin({ clientId, authorizeUrl }) {
+export async function startLogin({ clientId, authorizeUrl }, returnUrl = '/') {
   const state        = generateState();
   const verifier     = await generateCodeVerifier();
   const challenge    = await generateCodeChallenge(verifier);
-  const returnUrl    = window.location.pathname + window.location.search;
   const redirectUri  = `${window.location.origin}/oauth/callback`;
 
   sessionStorage.setItem(STATE_KEY,    state);

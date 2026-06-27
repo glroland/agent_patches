@@ -42,6 +42,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.secret.name }}
                   key: OAUTH_CLIENT_SECRET
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: SESSION_SECRET
+            - name: OAUTH_TLS_INSECURE
+              value: {{ .Values.openshift.tlsInsecure | quote }}
             - name: CORS_ORIGIN
               value: {{ printf "https://%s-ui.%s" .Release.Name .Values.global.clusterDomain | quote }}
             - name: AGENT_INVENTORY_FILE

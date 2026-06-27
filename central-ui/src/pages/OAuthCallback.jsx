@@ -24,7 +24,7 @@ export default function OAuthCallback() {
         // Render error inline; don't throw (avoids React error boundary noise).
         console.error('OAuth callback error:', err);
         // Replace state so error shows instead of blank screen.
-        navigate(`/?login_error=${encodeURIComponent(err.message)}`, { replace: true });
+        navigate(`/login?error=${encodeURIComponent(err.message)}`, { replace: true });
       });
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
