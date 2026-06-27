@@ -105,3 +105,8 @@ export function clearAgentMemory(id) {
 export function clearAllAgentsMemory() {
   return deleteJSON('/admin/memory');
 }
+
+// Token usage, queue depth, and per-endpoint stats from the LLM gateway.
+export function fetchGatewayStats() {
+  return getJSON('/gateway/stats');
+}

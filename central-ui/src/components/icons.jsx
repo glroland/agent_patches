@@ -147,3 +147,9 @@ export const ChevronRightIcon = (props) => (
     <path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+export const ChartIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={base} {...props}>
+    <path d="M4 20V14M8 20V8M12 20V12M16 20V4M20 20V10" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);

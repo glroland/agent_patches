@@ -9,6 +9,7 @@ import FleetChat from './pages/FleetChat';
 import FleetIntelligence from './pages/FleetIntelligence';
 import ActivityFeed from './pages/ActivityFeed';
 import Admin from './pages/Admin';
+import Statistics from './pages/Statistics';
 import { FleetSocketProvider } from './hooks/useFleetSocket';
 import { ChatHistoryProvider } from './hooks/useChatHistory';
 
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/chat" element={<FleetChat />} />
           <Route path="/intelligence" element={<FleetIntelligence />} />
           <Route path="/activity" element={<ActivityFeed />} />
+          <Route path="/statistics" element={<Statistics />} />
           <Route path="/admin" element={<Admin />} />
         </Route>
       </Routes>
