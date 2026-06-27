@@ -61,6 +61,12 @@ route:
 otel:
   serviceName: "central-backend"
 
+# LLM gateway stats integration. statsUrl must be the internal ClusterIP
+# address of the llm-gateway service so central-backend can reach it
+# without going through the external Route.
+gateway:
+  statsUrl: "http://llm-gateway:8080"
+
 env:
   HOST: "0.0.0.0"
   PORT: "8080"

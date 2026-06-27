@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -37,6 +39,7 @@ type Gateway struct {
 	queue    chan *pending
 	sem      chan struct{} // semaphore: len = active requests, cap = max concurrency
 	timeout  time.Duration
+	tracker  *Tracker
 }
 
 // pending carries everything needed to proxy one request. It is enqueued
@@ -50,6 +53,7 @@ type pending struct {
 	body    []byte
 	w       http.ResponseWriter
 	done    chan struct{} // closed by forward() when the response is fully written
+	host    string       // originating endpoint-server IP for stats tracking
 }
 
 type healthResponse struct {
@@ -73,17 +77,24 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		queue:    make(chan *pending, cfg.MaxQueueDepth),
 		sem:      make(chan struct{}, cfg.MaxConcurrency),
 		timeout:  cfg.RequestTimeout,
+		tracker:  NewTracker(),
 	}
 	go g.dispatcher()
 	return g, nil
 }
 
-// ServeHTTP satisfies http.Handler. GET /health is answered inline;
-// all other requests are queued for the dispatcher.
+// ServeHTTP satisfies http.Handler. GET /health and GET /stats are answered
+// inline; all other requests are queued for the dispatcher.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.Method == http.MethodGet && r.URL.Path == "/health" {
-		g.health(w)
-		return
+	if r.Method == http.MethodGet {
+		switch r.URL.Path {
+		case "/health":
+			g.health(w)
+			return
+		case "/stats":
+			g.tracker.statsHandler(g)(w, r)
+			return
+		}
 	}
 
 	body, err := io.ReadAll(r.Body)
@@ -92,6 +103,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	host := clientHost(r)
 	p := &pending{
 		ctx:     r.Context(),
 		method:  r.Method,
@@ -101,16 +113,19 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		body:    body,
 		w:       w,
 		done:    make(chan struct{}),
+		host:    host,
 	}
 
 	select {
 	case g.queue <- p:
-		// Queued. Block this goroutine until forward() closes p.done,
-		// keeping the HTTP connection alive and the ResponseWriter valid.
+		g.tracker.IncrPending(host)
+		// Block this goroutine until forward() closes p.done, keeping the
+		// HTTP connection alive and the ResponseWriter valid for the dispatcher.
 		<-p.done
 	default:
 		slog.Warn("gateway: queue full, returning 429",
 			"path", r.URL.Path,
+			"host", host,
 			"queue_depth", len(g.queue),
 			"queue_capacity", cap(g.queue),
 			"active_requests", len(g.sem),
@@ -134,17 +149,22 @@ func (g *Gateway) dispatcher() {
 	}
 }
 
-// forward executes the upstream request and streams the response back
-// through p.w. It closes p.done when it returns, unblocking ServeHTTP.
+// forward executes the upstream request, streams the response back through
+// p.w, captures a window of the response body to extract token usage, and
+// records the completed request in the tracker. It always closes p.done
+// and decrements the pending count before returning.
 func (g *Gateway) forward(p *pending) {
-	defer close(p.done)
+	var capturedTokens int64
+	defer func() {
+		g.tracker.Record(p.host, capturedTokens)
+		g.tracker.DecrPending(p.host)
+		close(p.done)
+	}()
 
 	target := *g.upstream
 	target.Path = p.path
 	target.RawQuery = p.query
 
-	// Per-request timeout applied here rather than on the http.Client so
-	// streaming responses are bounded by the same wall-clock limit.
 	ctx, cancel := context.WithTimeout(p.ctx, g.timeout)
 	defer cancel()
 
@@ -166,6 +186,7 @@ func (g *Gateway) forward(p *pending) {
 	slog.Debug("gateway: forwarding",
 		"method", p.method,
 		"path", p.path,
+		"host", p.host,
 		"queue_depth", len(g.queue),
 		"active", len(g.sem),
 	)
@@ -178,7 +199,6 @@ func (g *Gateway) forward(p *pending) {
 			http.Error(p.w, "gateway: upstream timed out", http.StatusGatewayTimeout)
 		case errors.Is(err, context.Canceled):
 			slog.Debug("gateway: upstream request cancelled (client disconnected)", "path", p.path)
-			// Client is gone — nothing useful to write.
 		default:
 			slog.Error("gateway: upstream request failed", "path", p.path, "error", err)
 			http.Error(p.w, "gateway: upstream error: "+err.Error(), http.StatusBadGateway)
@@ -197,15 +217,22 @@ func (g *Gateway) forward(p *pending) {
 	}
 	p.w.WriteHeader(resp.StatusCode)
 
-	// Stream the body, flushing each chunk immediately so SSE and streaming
-	// JSON responses reach the caller without buffering delay.
+	// Tee the response body into a bounded capture buffer so we can extract
+	// token usage stats after forwarding completes. The client receives all
+	// bytes in real time regardless of whether the capture limit is hit.
+	const maxCaptureBytes = 256 * 1024
+	var capBuf bytes.Buffer
+	bodyReader := io.TeeReader(resp.Body, &limitedCapture{w: &capBuf, max: maxCaptureBytes})
+
 	flusher, canFlush := p.w.(http.Flusher)
 	buf := make([]byte, 4096)
 	for {
-		n, readErr := resp.Body.Read(buf)
+		n, readErr := bodyReader.Read(buf)
 		if n > 0 {
 			if _, writeErr := p.w.Write(buf[:n]); writeErr != nil {
 				slog.Debug("gateway: client disconnected mid-response", "path", p.path)
+				// capBuf still has partial data — extract what we can.
+				capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
 				return
 			}
 			if canFlush {
@@ -216,9 +243,11 @@ func (g *Gateway) forward(p *pending) {
 			if !errors.Is(readErr, io.EOF) {
 				slog.Warn("gateway: upstream body read error", "path", p.path, "error", readErr)
 			}
-			return
+			break
 		}
 	}
+
+	capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
 }
 
 func (g *Gateway) health(w http.ResponseWriter) {
@@ -231,4 +260,23 @@ func (g *Gateway) health(w http.ResponseWriter) {
 		MaxConcurrency: cap(g.sem),
 		Upstream:       g.upstream.String(),
 	})
+}
+
+// clientHost returns the originating IP of the request. It checks
+// X-Forwarded-For first (set by HAProxy/OpenShift edge router for
+// Route-terminated connections) and falls back to RemoteAddr.
+func clientHost(r *http.Request) string {
+	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
+		// X-Forwarded-For may be a comma-separated chain; the leftmost entry
+		// is the original client.
+		if i := strings.IndexByte(fwd, ','); i != -1 {
+			fwd = fwd[:i]
+		}
+		return strings.TrimSpace(fwd)
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }

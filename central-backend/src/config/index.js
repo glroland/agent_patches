@@ -56,4 +56,9 @@ export const config = {
     // of central-backend failing fast with a clear message.
     timeoutMs: Number(process.env.INTELLIGENCE_TIMEOUT_MS) || 90000,
   },
+  gateway: {
+    // Internal ClusterIP URL of the llm-gateway service.
+    // e.g. http://llm-gateway:8080  (leave empty to disable the /api/gateway/stats endpoint)
+    statsUrl: process.env.GATEWAY_STATS_URL || '',
+  },
 };

@@ -60,6 +60,10 @@ spec:
             - name: OTEL_TRACES_SAMPLER_ARG
               value: {{ .Values.global.otelTracesSamplerArg | quote }}
             {{- end }}
+            {{- if .Values.gateway.statsUrl }}
+            - name: GATEWAY_STATS_URL
+              value: {{ .Values.gateway.statsUrl | quote }}
+            {{- end }}
             {{- if .Values.intelligence.baseUrl }}
             - name: INTELLIGENCE_BASE_URL
               value: {{ .Values.intelligence.baseUrl | quote }}
