@@ -76,11 +76,11 @@ func TestRequireBearer_WrongScheme_Returns401(t *testing.T) {
 	cases := []struct {
 		header string
 	}{
-		{"Token " + testToken},        // wrong scheme name
-		{"Basic " + testToken},        // basic auth scheme
-		{testToken},                   // raw token, no scheme
-		{"bearer " + testToken},       // lowercase scheme
-		{"BEARER " + testToken},       // uppercase scheme
+		{"Token " + testToken},  // wrong scheme name
+		{"Basic " + testToken},  // basic auth scheme
+		{testToken},             // raw token, no scheme
+		{"bearer " + testToken}, // lowercase scheme
+		{"BEARER " + testToken}, // uppercase scheme
 	}
 	for _, tc := range cases {
 		reached := false

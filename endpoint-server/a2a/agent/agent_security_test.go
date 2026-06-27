@@ -315,10 +315,10 @@ func TestRun_EmptyChoicesArray_ReturnsError(t *testing.T) {
 
 // TestRun_SecondIdenticalCall_ToolNotReexecAndNudgeAppended verifies two
 // properties of the dedup/nudge mechanism:
-//   1. The tool is executed only once — the second identical call uses the
-//      cached result without re-invoking the handler.
-//   2. The result sent to the LLM on the second call includes the nudge suffix
-//      ("You already have this result") to steer the model toward a final answer.
+//  1. The tool is executed only once — the second identical call uses the
+//     cached result without re-invoking the handler.
+//  2. The result sent to the LLM on the second call includes the nudge suffix
+//     ("You already have this result") to steer the model toward a final answer.
 func TestRun_SecondIdenticalCall_ToolNotReexecAndNudgeAppended(t *testing.T) {
 	var execCount int32
 	var capturedNudgeBody string
@@ -367,5 +367,3 @@ func TestRun_SecondIdenticalCall_ToolNotReexecAndNudgeAppended(t *testing.T) {
 			capturedNudgeBody[:min(len(capturedNudgeBody), 300)])
 	}
 }
-
-
