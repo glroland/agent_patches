@@ -33,6 +33,11 @@ spec:
               value: {{ .Values.gateway.maxQueueDepth | quote }}
             - name: GATEWAY_REQUEST_TIMEOUT
               value: {{ .Values.gateway.requestTimeout | quote }}
+            - name: GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: GATEWAY_AUTH_TOKEN
             {{- if .Values.global.otelExporterOtlpEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.global.otelExporterOtlpEndpoint | quote }}

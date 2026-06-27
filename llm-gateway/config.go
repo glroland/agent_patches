@@ -15,6 +15,10 @@ type Config struct {
 	MaxConcurrency int
 	MaxQueueDepth  int
 	RequestTimeout time.Duration
+	// AuthToken is the bearer token callers must supply in
+	// Authorization: Bearer <token>. Empty string disables auth (insecure;
+	// a warning is logged at startup).
+	AuthToken string
 }
 
 // LoadConfig reads configuration from environment variables, applying
@@ -27,6 +31,7 @@ func LoadConfig() (Config, error) {
 		MaxConcurrency: envInt("GATEWAY_MAX_CONCURRENCY", 2),
 		MaxQueueDepth:  envInt("GATEWAY_MAX_QUEUE_DEPTH", 50),
 		RequestTimeout: envDur("GATEWAY_REQUEST_TIMEOUT", 5*time.Minute),
+		AuthToken:      envStr("GATEWAY_AUTH_TOKEN", ""),
 	}
 	if cfg.UpstreamURL == "" {
 		return Config{}, fmt.Errorf("GATEWAY_UPSTREAM_URL is required")

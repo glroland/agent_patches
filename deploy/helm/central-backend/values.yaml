@@ -66,6 +66,10 @@ otel:
 # without going through the external Route.
 gateway:
   statsUrl: "http://llm-gateway:8080"
+  # Name of the Secret that holds GATEWAY_AUTH_TOKEN — the same secret used
+  # by the llm-gateway deployment. central-backend reads the token to
+  # authenticate its /api/gateway/stats calls.
+  secretName: "llm-gateway-secrets"
 
 env:
   HOST: "0.0.0.0"

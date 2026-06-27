@@ -63,6 +63,12 @@ spec:
             {{- if .Values.gateway.statsUrl }}
             - name: GATEWAY_STATS_URL
               value: {{ .Values.gateway.statsUrl | quote }}
+            - name: GATEWAY_AUTH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.gateway.secretName }}
+                  key: GATEWAY_AUTH_TOKEN
+                  optional: true
             {{- end }}
             {{- if .Values.intelligence.baseUrl }}
             - name: INTELLIGENCE_BASE_URL

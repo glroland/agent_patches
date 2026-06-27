@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -22,12 +23,17 @@ func main() {
 		os.Exit(1)
 	}
 
+	if cfg.AuthToken == "" {
+		slog.Warn("gateway: GATEWAY_AUTH_TOKEN is not set — the gateway is open to unauthenticated requests; set this in production")
+	}
+
 	slog.Info("gateway: starting",
 		"listen", cfg.ListenAddr,
 		"upstream", cfg.UpstreamURL,
 		"max_concurrency", cfg.MaxConcurrency,
 		"max_queue_depth", cfg.MaxQueueDepth,
 		"request_timeout", cfg.RequestTimeout,
+		"auth", cfg.AuthToken != "",
 	)
 
 	gw, err := NewGateway(cfg)
@@ -38,7 +44,7 @@ func main() {
 
 	srv := &http.Server{
 		Addr:    cfg.ListenAddr,
-		Handler: gw,
+		Handler: requireBearer(cfg.AuthToken, gw),
 		// ReadHeaderTimeout guards against slowloris-style attacks.
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -62,4 +68,34 @@ func main() {
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("gateway: shutdown error", "error", err)
 	}
+}
+
+// requireBearer is an HTTP middleware that enforces bearer token authentication
+// on all routes except GET /health, which must remain open for Kubernetes
+// liveness and readiness probes. When token is empty the middleware is a
+// no-op (all requests pass through), allowing unauthenticated deployments
+// during development.
+func requireBearer(token string, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// /health must always be reachable by Kubernetes probes.
+		if r.Method == http.MethodGet && r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if token == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		hdr := r.Header.Get("Authorization")
+		got, ok := strings.CutPrefix(hdr, "Bearer ")
+		if !ok || got != token {
+			slog.Warn("gateway: rejected unauthenticated request",
+				"path", r.URL.Path,
+				"remote", r.RemoteAddr,
+			)
+			http.Error(w, "gateway: unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

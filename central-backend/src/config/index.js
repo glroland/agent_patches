@@ -60,5 +60,8 @@ export const config = {
     // Internal ClusterIP URL of the llm-gateway service.
     // e.g. http://llm-gateway:8080  (leave empty to disable the /api/gateway/stats endpoint)
     statsUrl: process.env.GATEWAY_STATS_URL || '',
+    // Bearer token for the gateway — must match GATEWAY_AUTH_TOKEN on the gateway.
+    // Leave empty only if the gateway was also started without a token (dev only).
+    authToken: process.env.GATEWAY_AUTH_TOKEN || '',
   },
 };

@@ -3,6 +3,13 @@ replicaCount: 1
 global:
   clusterDomain: apps.example.com
 
+# Name of the pre-existing Secret that holds the gateway bearer token.
+# Create it before first deploy:
+#   kubectl -n agent-patches create secret generic llm-gateway-secrets \
+#     --from-literal=GATEWAY_AUTH_TOKEN=<your-token>
+secret:
+  name: llm-gateway-secrets
+
 image:
   name: llm-gateway
   pullPolicy: IfNotPresent
