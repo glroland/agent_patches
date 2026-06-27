@@ -14,7 +14,11 @@ spec:
       labels:
         app: {{ .Chart.Name }}
     spec:
+      serviceAccountName: {{ .Chart.Name }}-proxy
       containers:
+        # ── Application container (nginx) ────────────────────────────────────
+        # Binds only to 127.0.0.1 — all traffic must enter via the
+        # oauth-proxy sidecar; the port is never reachable from the pod network.
         - name: {{ .Chart.Name }}
           image: "{{ .Values.global.registry | default .Values.image.registry }}/{{ .Values.image.name }}:{{ .Values.global.tag | default .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -39,6 +43,62 @@ spec:
             {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
+
+        # ── OAuth proxy sidecar ──────────────────────────────────────────────
+        # Intercepts all inbound traffic on port 4180. Unauthenticated requests
+        # are redirected to the OpenShift OAuth server. After login the SAR
+        # policy is evaluated — only users that can list nodes (cluster-admin
+        # by default) are granted access. Authenticated requests are forwarded
+        # to localhost:{{ .Values.containerPort }} (nginx above).
+        - name: oauth-proxy
+          image: {{ .Values.oauthProxy.image | quote }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: proxy
+              containerPort: 4180
+              protocol: TCP
+          args:
+            - --http-address=:4180
+            - --provider=openshift
+            - "--openshift-service-account={{ .Chart.Name }}-proxy"
+            - "--upstream=http://localhost:{{ .Values.containerPort }}"
+            - --cookie-secret-file=/etc/proxy/secrets/session_secret
+            - --openshift-sar={{ .Values.oauthProxy.sar }}
+            - --email-domain=*
+            - --cookie-secure=true
+            - --cookie-httponly=true
+          volumeMounts:
+            - name: proxy-secret
+              mountPath: /etc/proxy/secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /oauth/healthz
+              port: proxy
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /oauth/healthz
+              port: proxy
+            initialDelaySeconds: 5
+            periodSeconds: 30
+
+      volumes:
+        - name: proxy-secret
+          secret:
+            secretName: {{ .Values.oauthProxy.cookieSecretName }}
+            items:
+              - key: session_secret
+                path: session_secret
+
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}
