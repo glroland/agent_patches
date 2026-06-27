@@ -1,0 +1,234 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"net/url"
+	"time"
+)
+
+// hopByHopHeaders are per-connection headers that must not be forwarded
+// to the upstream or returned to the caller (RFC 2616 §13.5.1).
+var hopByHopHeaders = map[string]bool{
+	"Connection":          true,
+	"Keep-Alive":          true,
+	"Proxy-Authenticate":  true,
+	"Proxy-Authorization": true,
+	"Te":                  true,
+	"Trailers":            true,
+	"Transfer-Encoding":   true,
+	"Upgrade":             true,
+}
+
+// Gateway is a queuing reverse proxy. Incoming requests are placed on a
+// bounded FIFO channel. A fixed-size worker pool drains the channel,
+// forwarding each request to the upstream LLM and streaming the response
+// back to the original caller. When the queue is full the gateway returns
+// 429 immediately rather than blocking the caller indefinitely.
+type Gateway struct {
+	upstream *url.URL
+	client   *http.Client
+	queue    chan *pending
+	sem      chan struct{} // semaphore: len = active requests, cap = max concurrency
+	timeout  time.Duration
+}
+
+// pending carries everything needed to proxy one request. It is enqueued
+// by the HTTP handler goroutine and consumed by the dispatcher.
+type pending struct {
+	ctx     context.Context
+	method  string
+	path    string
+	query   string
+	headers http.Header
+	body    []byte
+	w       http.ResponseWriter
+	done    chan struct{} // closed by forward() when the response is fully written
+}
+
+type healthResponse struct {
+	Status         string `json:"status"`
+	QueueDepth     int    `json:"queue_depth"`
+	QueueCapacity  int    `json:"queue_capacity"`
+	ActiveRequests int    `json:"active_requests"`
+	MaxConcurrency int    `json:"max_concurrency"`
+	Upstream       string `json:"upstream"`
+}
+
+// NewGateway creates a Gateway and starts the background dispatcher goroutine.
+func NewGateway(cfg Config) (*Gateway, error) {
+	u, err := url.Parse(cfg.UpstreamURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid GATEWAY_UPSTREAM_URL %q: %w", cfg.UpstreamURL, err)
+	}
+	g := &Gateway{
+		upstream: u,
+		client:   &http.Client{Timeout: cfg.RequestTimeout + 5*time.Second},
+		queue:    make(chan *pending, cfg.MaxQueueDepth),
+		sem:      make(chan struct{}, cfg.MaxConcurrency),
+		timeout:  cfg.RequestTimeout,
+	}
+	go g.dispatcher()
+	return g, nil
+}
+
+// ServeHTTP satisfies http.Handler. GET /health is answered inline;
+// all other requests are queued for the dispatcher.
+func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && r.URL.Path == "/health" {
+		g.health(w)
+		return
+	}
+
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, "gateway: read request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	p := &pending{
+		ctx:     r.Context(),
+		method:  r.Method,
+		path:    r.URL.Path,
+		query:   r.URL.RawQuery,
+		headers: r.Header.Clone(),
+		body:    body,
+		w:       w,
+		done:    make(chan struct{}),
+	}
+
+	select {
+	case g.queue <- p:
+		// Queued. Block this goroutine until forward() closes p.done,
+		// keeping the HTTP connection alive and the ResponseWriter valid.
+		<-p.done
+	default:
+		slog.Warn("gateway: queue full, returning 429",
+			"path", r.URL.Path,
+			"queue_depth", len(g.queue),
+			"queue_capacity", cap(g.queue),
+			"active_requests", len(g.sem),
+		)
+		w.Header().Set("Retry-After", "5")
+		http.Error(w, "gateway: upstream LLM queue is full — retry in a few seconds", http.StatusTooManyRequests)
+	}
+}
+
+// dispatcher drains the queue FIFO. It acquires the semaphore before
+// spawning each forward goroutine, which preserves ordering: request N+1
+// is dequeued only after a concurrency slot becomes available, so callers
+// always reach the LLM in the order their requests arrived.
+func (g *Gateway) dispatcher() {
+	for p := range g.queue {
+		g.sem <- struct{}{} // blocks here when max_concurrency slots are occupied
+		go func(p *pending) {
+			defer func() { <-g.sem }()
+			g.forward(p)
+		}(p)
+	}
+}
+
+// forward executes the upstream request and streams the response back
+// through p.w. It closes p.done when it returns, unblocking ServeHTTP.
+func (g *Gateway) forward(p *pending) {
+	defer close(p.done)
+
+	target := *g.upstream
+	target.Path = p.path
+	target.RawQuery = p.query
+
+	// Per-request timeout applied here rather than on the http.Client so
+	// streaming responses are bounded by the same wall-clock limit.
+	ctx, cancel := context.WithTimeout(p.ctx, g.timeout)
+	defer cancel()
+
+	upReq, err := http.NewRequestWithContext(ctx, p.method, target.String(), bytes.NewReader(p.body))
+	if err != nil {
+		slog.Error("gateway: build upstream request", "error", err)
+		http.Error(p.w, "gateway: internal error", http.StatusInternalServerError)
+		return
+	}
+	for key, vals := range p.headers {
+		if hopByHopHeaders[key] {
+			continue
+		}
+		for _, v := range vals {
+			upReq.Header.Add(key, v)
+		}
+	}
+
+	slog.Debug("gateway: forwarding",
+		"method", p.method,
+		"path", p.path,
+		"queue_depth", len(g.queue),
+		"active", len(g.sem),
+	)
+
+	resp, err := g.client.Do(upReq)
+	if err != nil {
+		switch {
+		case errors.Is(err, context.DeadlineExceeded):
+			slog.Warn("gateway: upstream request timed out", "path", p.path, "timeout", g.timeout)
+			http.Error(p.w, "gateway: upstream timed out", http.StatusGatewayTimeout)
+		case errors.Is(err, context.Canceled):
+			slog.Debug("gateway: upstream request cancelled (client disconnected)", "path", p.path)
+			// Client is gone — nothing useful to write.
+		default:
+			slog.Error("gateway: upstream request failed", "path", p.path, "error", err)
+			http.Error(p.w, "gateway: upstream error: "+err.Error(), http.StatusBadGateway)
+		}
+		return
+	}
+	defer resp.Body.Close()
+
+	for key, vals := range resp.Header {
+		if hopByHopHeaders[key] {
+			continue
+		}
+		for _, v := range vals {
+			p.w.Header().Add(key, v)
+		}
+	}
+	p.w.WriteHeader(resp.StatusCode)
+
+	// Stream the body, flushing each chunk immediately so SSE and streaming
+	// JSON responses reach the caller without buffering delay.
+	flusher, canFlush := p.w.(http.Flusher)
+	buf := make([]byte, 4096)
+	for {
+		n, readErr := resp.Body.Read(buf)
+		if n > 0 {
+			if _, writeErr := p.w.Write(buf[:n]); writeErr != nil {
+				slog.Debug("gateway: client disconnected mid-response", "path", p.path)
+				return
+			}
+			if canFlush {
+				flusher.Flush()
+			}
+		}
+		if readErr != nil {
+			if !errors.Is(readErr, io.EOF) {
+				slog.Warn("gateway: upstream body read error", "path", p.path, "error", readErr)
+			}
+			return
+		}
+	}
+}
+
+func (g *Gateway) health(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(healthResponse{
+		Status:         "ok",
+		QueueDepth:     len(g.queue),
+		QueueCapacity:  cap(g.queue),
+		ActiveRequests: len(g.sem),
+		MaxConcurrency: cap(g.sem),
+		Upstream:       g.upstream.String(),
+	})
+}

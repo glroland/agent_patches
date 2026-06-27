@@ -33,3 +33,20 @@ central-ui:
   containerPort: 8080
   service:
     port: 8080
+
+# LLM request queuing gateway.
+# Set gateway.upstreamURL to your self-hosted LLM base URL.
+# Endpoint-servers should then point agent.base_url at the gateway Route:
+#   https://central-gateway.<clusterDomain>
+llm-gateway:
+  image:
+    name: llm-gateway
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  service:
+    port: 8080
+  gateway:
+    upstreamURL: "http://evolvewired.home.glroland.com:8080"
+    maxConcurrency: "2"
+    maxQueueDepth: "50"
+    requestTimeout: "5m"

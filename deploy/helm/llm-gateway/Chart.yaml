@@ -1,0 +1,6 @@
+apiVersion: v2
+description: LLM request queuing gateway for agent_patches — serialises concurrent agent calls to a single self-hosted LLM
+name: llm-gateway
+version: 0.1.0
+appVersion: "0.1.0"
+type: application

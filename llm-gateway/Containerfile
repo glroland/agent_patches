@@ -1,0 +1,25 @@
+# Build stage — uses repo root as context so go.mod / go.sum are available.
+# Invoked from the repo root:
+#   docker build -f llm-gateway/Containerfile --tag llm-gateway:<tag> .
+FROM golang:1.25 AS builder
+
+WORKDIR /src
+
+# Download modules before copying source so this layer is cached between builds.
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Only the gateway source is needed — no other internal packages are imported.
+COPY llm-gateway/ llm-gateway/
+
+RUN CGO_ENABLED=0 GOOS=linux \
+    go build -ldflags="-s -w" -o /llm-gateway ./llm-gateway/
+
+# Runtime stage — minimal UBI9 image, no shell or package manager needed.
+FROM registry.access.redhat.com/ubi9-minimal
+
+COPY --from=builder /llm-gateway /llm-gateway
+
+EXPOSE 8080
+
+ENTRYPOINT ["/llm-gateway"]
