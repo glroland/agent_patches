@@ -18,6 +18,7 @@ import (
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/sanitize"
 )
 
 // Agent drives the tool-use loop against the OpenAI chat completions API.
@@ -220,6 +221,16 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 				slog.Warn("agent: tool error", "tool", tc.Function.Name, "error", execErr)
 				messages = append(messages, openai.ToolMessage(fmt.Sprintf("error: %v", execErr), tc.ID))
 				continue
+			}
+			// Sanitize tool output before it enters the LLM context to guard
+			// against prompt injection carried in system data (logs, package
+			// descriptions, command output, etc.).
+			result, sanitizeEvents := sanitize.ToolOutput(result)
+			if sanitizeEvents > 0 {
+				toolSpan.SetAttributes(
+					attribute.Bool("security.sanitized", true),
+					attribute.Int("security.sanitize_events", sanitizeEvents),
+				)
 			}
 			toolSpan.SetAttributes(attribute.String("tool.result", result))
 			toolSpan.SetStatus(codes.Ok, "")
