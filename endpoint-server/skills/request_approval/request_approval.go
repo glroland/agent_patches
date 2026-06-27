@@ -6,10 +6,10 @@
 // writes the operator's decision to the same attrs key; this function polls
 // that key until the status changes from "pending".
 //
-// If no decision arrives within approvalTimeout, the request is requeued
-// automatically up to maxRetries times. After all retries are exhausted a
-// critical escalation entry is written to the timeline and the notifier is
-// called so the operator is alerted via every configured sink.
+// High-risk approvals trigger an immediate out-of-band notification so the
+// operator does not need to monitor the dashboard. If no decision arrives
+// within approvalTimeout the request is permanently cancelled — not retried —
+// and the operator is notified that the action was NOT taken.
 package request_approval
 
 import (
@@ -17,6 +17,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
@@ -28,7 +29,6 @@ import (
 const (
 	pollInterval    = 5 * time.Second
 	approvalTimeout = 24 * time.Hour
-	maxRetries      = 3
 	maxEntries      = 50
 )
 
@@ -60,53 +60,42 @@ type requestApprovalInput struct {
 }
 
 // RequestApproval writes a pending approval to durable agent memory and blocks
-// until the operator decides via the central dashboard. If no decision arrives
-// within approvalTimeout, it retries automatically up to maxRetries times.
-// After all retries are exhausted it escalates via the notifier and returns
-// "timed_out". Returns an error only on context cancellation.
+// until the operator decides via the central dashboard.
+//
+// For high-risk actions, the notifier fires immediately when the request is
+// created so the operator receives an out-of-band alert without needing to
+// monitor the dashboard.
+//
+// If no decision arrives within approvalTimeout, the request is permanently
+// cancelled — not retried — and the notifier fires again so the operator knows
+// the action was not taken. Returns "approved", "rejected", or "timed_out".
+// Returns an error only on context cancellation.
 func RequestApproval(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, detail, proposedAction, risk string) (string, error) {
-	var parentID string
-
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		id := newUUID()
-		if attempt == 0 {
-			parentID = id
-		}
-
-		result, err := requestApprovalOnce(ctx, mem, id, parentID, title, detail, proposedAction, risk, attempt)
-		if err != nil {
-			return "", err
-		}
-
-		switch result {
-		case "approved", "rejected":
-			return result, nil
-		case "timed_out":
-			if attempt < maxRetries {
-				slog.Warn("request_approval: timed out, retrying",
-					"id", id, "attempt", attempt+1, "max_retries", maxRetries)
-				continue
-			}
-			// All retries exhausted.
-			escalate(ctx, mem, notify, title, proposedAction, risk, parentID)
-			return "timed_out", nil
-		}
+	id := newUUID()
+	result, err := requestApprovalOnce(ctx, mem, notify, id, title, detail, proposedAction, risk)
+	if err != nil {
+		return "", err
 	}
 
-	return "timed_out", nil
+	if result == "timed_out" {
+		notify.Notify(ctx,
+			fmt.Sprintf("[Approval Expired] %s", title),
+			fmt.Sprintf(
+				"The approval request %q expired without a decision.\n\nProposed action: %s\nRisk: %s\n\nThe action was NOT taken. If it is still needed, reissue from the agent dashboard.",
+				title, proposedAction, risk,
+			),
+		)
+	}
+
+	return result, nil
 }
 
 // requestApprovalOnce runs a single approval wait cycle bounded by approvalTimeout.
 // Returns "approved", "rejected", or "timed_out"; returns a non-nil error only
 // on context cancellation.
-func requestApprovalOnce(ctx context.Context, mem *memory.Store, id, parentID, title, detail, proposedAction, risk string, retryCount int) (string, error) {
+func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, risk string) (string, error) {
 	now := time.Now()
 	attrKey := AttrsKey(id)
-
-	parentIDField := ""
-	if id != parentID {
-		parentIDField = parentID
-	}
 
 	entry := ApprovalEntry{
 		ID:             id,
@@ -116,23 +105,28 @@ func requestApprovalOnce(ctx context.Context, mem *memory.Store, id, parentID, t
 		Risk:           risk,
 		Status:         "pending",
 		RequestedAt:    now,
-		RetryCount:     retryCount,
-		ParentID:       parentIDField,
 	}
 	if err := mem.Attrs().Set(attrKey, entry); err != nil {
 		return "", fmt.Errorf("request_approval: write attrs: %w", err)
 	}
 
-	if err := writeTimeline(mem, id, parentIDField, title, detail, proposedAction, risk, now, retryCount); err != nil {
+	if err := writeTimeline(mem, id, title, detail, proposedAction, risk, now); err != nil {
 		slog.Warn("request_approval: failed to write timeline entry", "id", id, "error", err)
 	}
 
-	if retryCount == 0 {
-		slog.Info("request_approval: waiting for operator decision", "id", id, "title", title)
-	} else {
-		slog.Info("request_approval: retrying approval request",
-			"id", id, "title", title, "attempt", retryCount+1, "of", maxRetries+1)
+	// High-risk approvals notify immediately so operators get an out-of-band
+	// alert the moment the request is created rather than at timeout.
+	if strings.EqualFold(risk, "high") {
+		notify.Notify(ctx,
+			fmt.Sprintf("[Approval Required] %s", title),
+			fmt.Sprintf(
+				"A high-risk action requires your approval.\n\nAction: %s\n\nDetail: %s\n\nRisk: %s\n\nApprove or reject via the central dashboard. If no decision is made within 24 hours the action will be automatically cancelled.",
+				proposedAction, detail, risk,
+			),
+		)
 	}
+
+	slog.Info("request_approval: waiting for operator decision", "id", id, "title", title, "risk", risk)
 
 	ticker := time.NewTicker(pollInterval)
 	timer := time.NewTimer(approvalTimeout)
@@ -173,47 +167,6 @@ func requestApprovalOnce(ctx context.Context, mem *memory.Store, id, parentID, t
 	}
 }
 
-// escalate writes a critical escalation timeline entry and notifies the operator
-// after all retry attempts have been exhausted without an operator decision.
-func escalate(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, proposedAction, risk, parentID string) {
-	slog.Error("request_approval: all retries exhausted, escalating",
-		"title", title, "parent_id", parentID, "attempts", maxRetries+1)
-
-	now := time.Now()
-	severity := "critical"
-	escalationTitle := fmt.Sprintf("ESCALATION: \"%s\" has not been acknowledged after %d attempts", title, maxRetries+1)
-	detail := fmt.Sprintf(
-		"Proposed action: %s\nRisk: %s\nOriginal approval ID: %s\n\nThis approval has timed out %d times with no operator response. Immediate attention required.",
-		proposedAction, risk, parentID, maxRetries+1,
-	)
-
-	d := mem.Domain("timeline")
-	var entries []status.TimelineEntry
-	_ = d.ReadCurrent(&entries)
-	entries = append([]status.TimelineEntry{{
-		ID:       newUUID(),
-		Time:     now.Format(time.RFC3339),
-		Type:     "escalation",
-		Title:    escalationTitle,
-		Detail:   detail,
-		Severity: severity,
-		Risk:     risk,
-		ParentID: parentID,
-	}}, entries...)
-	if len(entries) > maxEntries {
-		entries = entries[:maxEntries]
-	}
-	_ = d.Write(entries)
-
-	notify.Notify(ctx,
-		fmt.Sprintf("[ESCALATION] Approval not acknowledged: %s", title),
-		fmt.Sprintf(
-			"The approval request %q (action: %s, risk: %s) has timed out %d times with no operator response.\n\nOriginal approval ID: %s\n\nImmediate operator action required.",
-			title, proposedAction, risk, maxRetries+1, parentID,
-		),
-	)
-}
-
 // NewRequestApprovalTool wraps RequestApproval as an agent tool the LLM can
 // invoke directly from the tool-use loop.
 func NewRequestApprovalTool(mem *memory.Store, notify *notifier.Notifier) (tool.Tool, error) {
@@ -221,11 +174,12 @@ func NewRequestApprovalTool(mem *memory.Store, notify *notifier.Notifier) (tool.
 		"request_approval",
 		"Pause and request operator approval before taking a potentially impactful action. "+
 			"Writes the request to durable agent memory and blocks until the operator approves "+
-			"or rejects via the central dashboard. If no decision arrives within 24 hours the "+
-			"request is automatically requeued up to 3 times; after that the operator is "+
-			"escalated via the notification system. Returns \"approved\", \"rejected\", or "+
-			"\"timed_out\". Always use this before actions that modify system state, remove "+
-			"data, restart services, or carry medium-to-high risk.",
+			"or rejects via the central dashboard. High-risk requests trigger an immediate "+
+			"out-of-band notification. If no decision arrives within 24 hours the request is "+
+			"permanently cancelled and the operator is notified — it is NOT retried and the "+
+			"action is NOT taken. Returns \"approved\", \"rejected\", or \"timed_out\". "+
+			"Always use this before actions that modify system state, remove data, restart "+
+			"services, or carry medium-to-high risk.",
 		func(ctx context.Context, in requestApprovalInput) (string, error) {
 			return RequestApproval(ctx, mem, notify, in.Title, in.Detail, in.ProposedAction, in.Risk)
 		},
@@ -233,28 +187,21 @@ func NewRequestApprovalTool(mem *memory.Store, notify *notifier.Notifier) (tool.
 }
 
 // writeTimeline prepends an approval entry to the timeline domain.
-func writeTimeline(mem *memory.Store, id, parentID, title, detail, proposedAction, risk string, now time.Time, retryCount int) error {
+func writeTimeline(mem *memory.Store, id, title, detail, proposedAction, risk string, now time.Time) error {
 	d := mem.Domain("timeline")
 	var entries []status.TimelineEntry
 	_ = d.ReadCurrent(&entries)
-
-	displayTitle := title
-	if retryCount > 0 {
-		displayTitle = fmt.Sprintf("%s (retry %d of %d)", title, retryCount, maxRetries)
-	}
 
 	pending := "pending"
 	entries = append([]status.TimelineEntry{{
 		ID:             id,
 		Time:           now.Format(time.RFC3339),
 		Type:           "approval",
-		Title:          displayTitle,
+		Title:          title,
 		Detail:         detail,
 		Risk:           risk,
 		ProposedAction: &proposedAction,
 		Status:         &pending,
-		RetryCount:     retryCount,
-		ParentID:       parentID,
 	}}, entries...)
 
 	if len(entries) > maxEntries {
