@@ -52,7 +52,7 @@ otel:
 # OAuth server before any request reaches nginx.
 oauthProxy:
   # Red Hat official image. Pin to the minor version that matches your cluster.
-  image: "registry.redhat.io/openshift4/ose-oauth-proxy:v4.16"
+  image: "registry.redhat.io/openshift4/ose-oauth-proxy:v4.20"
   # OpenShift Subject Access Review sent as the authenticated user.
   # The default allows only users who can list nodes — in practice this means
   # cluster-admin (or any ClusterRole that grants nodes/list).
