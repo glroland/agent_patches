@@ -53,7 +53,7 @@ type pending struct {
 	body    []byte
 	w       http.ResponseWriter
 	done    chan struct{} // closed by forward() when the response is fully written
-	host    string       // originating endpoint-server IP for stats tracking
+	host    string        // originating endpoint-server IP for stats tracking
 }
 
 type healthResponse struct {

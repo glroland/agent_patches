@@ -122,12 +122,12 @@ type LoopSettings struct {
 
 // AgentSettings controls OpenAI API behaviour.
 type AgentSettings struct {
-	Model          string `yaml:"model"`
-	MaxTokens      int    `yaml:"max_tokens"`
-	SystemPrompt   string `yaml:"system_prompt"`
-	MaxIter        int    `yaml:"max_iterations"`
-	APIKey         string `yaml:"api_key"`
-	BaseURL        string `yaml:"base_url"`
+	Model        string `yaml:"model"`
+	MaxTokens    int    `yaml:"max_tokens"`
+	SystemPrompt string `yaml:"system_prompt"`
+	MaxIter      int    `yaml:"max_iterations"`
+	APIKey       string `yaml:"api_key"`
+	BaseURL      string `yaml:"base_url"`
 	// RequestTimeout is a Go duration string (e.g. "6m") for the per-request
 	// HTTP timeout applied to each LLM API call. Defaults to "6m" — set it
 	// just above the upstream gateway's GATEWAY_REQUEST_TIMEOUT so the gateway
