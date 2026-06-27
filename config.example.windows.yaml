@@ -22,6 +22,7 @@ agent:
     Use the available tools to carry out the user's request. Be concise and direct.
   # api_key: change-me        # defaults to OPENAI_API_KEY env var when omitted
   # base_url: https://api.openai.com/v1  # override for Azure, local models, etc.
+  # request_timeout: 6m       # per-LLM-call HTTP timeout; set above GATEWAY_REQUEST_TIMEOUT (default 5m)
 
 logging:
   level: info

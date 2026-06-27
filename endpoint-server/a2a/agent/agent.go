@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/openai/openai-go"
 	"github.com/openai/openai-go/option"
@@ -43,8 +44,19 @@ func NewWithSystemPrompt(tools []tool.Tool, cfg *config.Settings, systemPrompt s
 		"max_iterations", cfg.Agent.MaxIter,
 		"tools", len(tools),
 	)
+	reqTimeout := 6 * time.Minute
+	if cfg.Agent.RequestTimeout != "" {
+		if d, err := time.ParseDuration(cfg.Agent.RequestTimeout); err == nil {
+			reqTimeout = d
+		} else {
+			slog.Warn("agent: invalid request_timeout, using default", "value", cfg.Agent.RequestTimeout, "default", reqTimeout)
+		}
+	}
 	opts := []option.RequestOption{
-		option.WithHTTPClient(&http.Client{Transport: otelhttp.NewTransport(http.DefaultTransport)}),
+		option.WithHTTPClient(&http.Client{
+			Timeout:   reqTimeout,
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		}),
 	}
 	if cfg.Agent.APIKey != "" {
 		opts = append(opts, option.WithAPIKey(cfg.Agent.APIKey))
