@@ -229,11 +229,11 @@ done
 # ── Directory structure ───────────────────────────────────────────────────────
 step "Creating directory structure under $INSTALL_ROOT..."
 mkdir -p "$INSTALL_ROOT"/{bin,config,data,logs}
-chmod 755 "$INSTALL_ROOT" "$INSTALL_ROOT/bin"
+chmod 750 "$INSTALL_ROOT" "$INSTALL_ROOT/bin"
 chmod 750 "$INSTALL_ROOT"/{config,data,logs}
-# root owns the install root and binary directory so the service account
-# cannot replace its own executable; service account owns writable dirs only.
-chown root:root "$INSTALL_ROOT" "$INSTALL_ROOT/bin"
+# root owns install root and bin (service account cannot replace its own binary);
+# group agent_patches on all dirs so only that user and root can traverse.
+chown root:"$SERVICE_USER" "$INSTALL_ROOT" "$INSTALL_ROOT/bin"
 chown "$SERVICE_USER:$SERVICE_USER" "$INSTALL_ROOT"/{config,data,logs}
 ok "directories ready"
 
@@ -249,7 +249,7 @@ fi
 
 # ── Binary ───────────────────────────────────────────────────────────────────
 step "Installing binary..."
-install -o root -g root -m 755 \
+install -o root -g "$SERVICE_USER" -m 750 \
     /tmp/patches-endpoint-server "$INSTALL_ROOT/bin/patches-endpoint-server"
 ok "installed to $INSTALL_ROOT/bin/patches-endpoint-server"
 
