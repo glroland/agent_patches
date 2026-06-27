@@ -336,10 +336,10 @@ function Step { param([string]$m) Write-Output "  -> $m" }
 function OK   { param([string]$m) Write-Output "     OK $m" }
 function Warn { param([string]$m) Write-Output "  WARNING: $m" }
 
-# ── Service account ───────────────────────────────────────────────────────────
+# -- Service account ----------------------------------------------------------
 # A dedicated local account runs the service instead of LocalSystem.
 # The password is regenerated on every deploy (service is stopped first) and
-# never written to disk — it lives only in this script's memory.
+# never written to disk -- it lives only in this script's memory.
 # Administrators group membership is required for the Windows Update COM API
 # (installer.Install() demands an elevated token; services bypass UAC for
 # Administrators accounts so no interactive elevation prompt occurs).
@@ -355,7 +355,7 @@ if (Get-LocalUser -Name $SvcAcct -ErrorAction SilentlyContinue) {
     New-LocalUser -Name $SvcAcct -Password $secPwd `
         -PasswordNeverExpires $true -UserMayNotChangePassword $true `
         -AccountNeverExpires `
-        -Description "agent_patches service account — no interactive login" | Out-Null
+        -Description "agent_patches service account -- no interactive login" | Out-Null
     OK "created .\$SvcAcct"
 }
 # Ensure Administrators membership (idempotent).
@@ -373,13 +373,13 @@ foreach ($d in $BinDir, $ConfigDir, "$InstallDir\data", "$InstallDir\logs") {
 }
 OK "directories ready"
 
-# ── Directory ACL ─────────────────────────────────────────────────────────────
+# -- Directory ACL ------------------------------------------------------------
 # Remove inherited permissions and grant access only to SYSTEM and
 # Administrators (which includes .\agent_patches). No other local users or
 # domain users can read config, data, or logs.
 Step "Setting directory ACL on $InstallDir..."
 icacls $InstallDir /inheritance:r /grant "SYSTEM:(OI)(CI)F" /grant "Administrators:(OI)(CI)F" | Out-Null
-OK "ACL set — only SYSTEM and Administrators can access $InstallDir"
+OK "ACL set -- only SYSTEM and Administrators can access $InstallDir"
 
 Step "Stopping existing service/process..."
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
