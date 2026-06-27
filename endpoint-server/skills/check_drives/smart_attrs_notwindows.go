@@ -6,7 +6,9 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"os"
 	"os/exec"
+	"runtime"
 )
 
 // CollectRawSmartAttrs runs smartctl -A -j once per distinct device and
@@ -27,9 +29,14 @@ func CollectRawSmartAttrs(ctx context.Context, disks []DiskStat) []RawSmartAttrs
 		}
 		seen[d.Device] = true
 
+		cmdName := "smartctl"
 		args := []string{"-A", "-j", d.Device}
+		if runtime.GOOS == "linux" && os.Getuid() != 0 {
+			args = append([]string{"-n", "smartctl"}, args...)
+			cmdName = "sudo"
+		}
 		slog.Debug("check_drives: collecting SMART attrs", "device", d.Device)
-		data, err := exec.CommandContext(ctx, "smartctl", args...).Output() //nolint:gosec
+		data, err := exec.CommandContext(ctx, cmdName, args...).Output() //nolint:gosec
 		if err != nil && len(data) == 0 {
 			slog.Debug("check_drives: smartctl -A failed", "device", d.Device, "error", err)
 			continue
