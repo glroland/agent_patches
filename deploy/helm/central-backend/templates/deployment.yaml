@@ -34,9 +34,9 @@ spec:
             - name: OAUTH_CLIENT_ID
               value: {{ .Values.openshift.oauthClientId | quote }}
             - name: OAUTH_AUTHORIZE_URL
-              value: {{ .Values.openshift.oauthAuthorizeUrl | quote }}
+              value: {{ printf "https://oauth-openshift.%s/oauth/authorize" .Values.global.clusterDomain | quote }}
             - name: OAUTH_TOKEN_URL
-              value: {{ .Values.openshift.oauthTokenUrl | quote }}
+              value: {{ printf "https://oauth-openshift.%s/oauth/token" .Values.global.clusterDomain | quote }}
             - name: OAUTH_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:

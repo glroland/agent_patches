@@ -89,10 +89,8 @@ env:
 # Add OAUTH_CLIENT_SECRET to the central-backend-secrets Secret before deploying.
 openshift:
   # Name of the OAuthClient registered in OpenShift (must match the resource name).
+  # OAuth server URLs are derived from global.clusterDomain — no need to set them here.
   oauthClientId: "agent-patches"
-  # OAuth server URLs — replace apps.example.com with your cluster's apps domain.
-  oauthAuthorizeUrl: "https://oauth-openshift.apps.example.com/oauth/authorize"
-  oauthTokenUrl: "https://oauth-openshift.apps.example.com/oauth/token"
 
 nodeSelector: {}
 
