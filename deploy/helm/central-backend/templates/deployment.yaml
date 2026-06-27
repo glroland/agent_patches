@@ -14,6 +14,7 @@ spec:
       labels:
         app: {{ .Chart.Name }}
     spec:
+      serviceAccountName: {{ .Chart.Name }}
       containers:
         - name: {{ .Chart.Name }}
           image: "{{ .Values.global.registry | default .Values.image.registry }}/{{ .Values.image.name }}:{{ .Values.global.tag | default .Values.image.tag }}"
@@ -27,6 +28,20 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
+            # Trust the cluster CA so Node.js native fetch can reach kubernetes.default.svc.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+            - name: OAUTH_CLIENT_ID
+              value: {{ .Values.openshift.oauthClientId | quote }}
+            - name: OAUTH_AUTHORIZE_URL
+              value: {{ .Values.openshift.oauthAuthorizeUrl | quote }}
+            - name: OAUTH_TOKEN_URL
+              value: {{ .Values.openshift.oauthTokenUrl | quote }}
+            - name: OAUTH_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secret.name }}
+                  key: OAUTH_CLIENT_SECRET
             - name: CORS_ORIGIN
               value: {{ printf "https://%s-ui.%s" .Release.Name .Values.global.clusterDomain | quote }}
             - name: AGENT_INVENTORY_FILE

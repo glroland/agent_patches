@@ -11,7 +11,7 @@ containerPort: 8080
 
 service:
   type: ClusterIP
-  port: 4180
+  port: 8080
 
 resources:
   limits:
@@ -47,22 +47,6 @@ env: {}
 # bundle can't read container env vars directly.
 otel:
   serviceName: "central-ui"
-
-# OpenShift OAuth proxy sidecar — enforces login via the cluster's built-in
-# OAuth server before any request reaches nginx.
-oauthProxy:
-  # Red Hat official image. Pin to the minor version that matches your cluster.
-  image: "registry.redhat.io/openshift4/ose-oauth-proxy:v4.20"
-  # OpenShift Subject Access Review sent as the authenticated user.
-  # The default allows only users who can list nodes — in practice this means
-  # cluster-admin (or any ClusterRole that grants nodes/list).
-  # To tighten further, restrict to a specific group or namespace role.
-  sar: '{"resource":"nodes","verb":"list"}'
-  # Name of the pre-existing Secret that holds the session cookie key.
-  # Create it once before first deploy:
-  #   kubectl -n agent-patches create secret generic central-ui-proxy-secret \
-  #     --from-literal=session_secret=$(openssl rand -base64 32 | tr -d '\n')
-  cookieSecretName: "central-ui-proxy-secret"
 
 nodeSelector: {}
 

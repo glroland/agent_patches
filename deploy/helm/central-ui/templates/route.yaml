@@ -13,7 +13,7 @@ spec:
     name: {{ .Chart.Name }}
     weight: 100
   port:
-    targetPort: proxy
+    targetPort: http
   tls:
     termination: edge
     insecureEdgeTerminationPolicy: Redirect

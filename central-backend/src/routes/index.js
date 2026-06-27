@@ -11,7 +11,7 @@ import gatewayRouter from './gateway.js';
 
 const router = Router();
 
-router.get('/health', (req, res) => res.json({ status: 'ok' }));
+// /health is mounted directly in app.js so it's exempt from auth middleware.
 
 router.use('/agents', agentsRouter);
 router.use('/admin', adminRouter);

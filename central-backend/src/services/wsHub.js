@@ -1,5 +1,6 @@
 import { WebSocketServer } from 'ws';
 import { logger } from '../utils/logger.js';
+import { validateWsToken } from '../middleware/auth.js';
 import { getFleet, subscribe as subscribeFleet } from './fleetCache.js';
 import { getReport, subscribe as subscribeIntelligence } from './intelligenceCache.js';
 import { getBriefing, subscribe as subscribeBriefing } from './briefingCache.js';
@@ -94,7 +95,15 @@ function broadcast(payload) {
 export function attach(server) {
   wss = new WebSocketServer({ server, path: '/ws' });
 
-  wss.on('connection', (ws) => {
+  wss.on('connection', async (ws, req) => {
+    const url   = new URL(req.url, 'http://localhost');
+    const token = url.searchParams.get('token');
+
+    if (!(await validateWsToken(token))) {
+      ws.close(1008, 'Unauthorized');
+      return;
+    }
+
     logger.info('ws: client connected');
 
     const fleet = getFleet();

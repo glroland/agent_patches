@@ -84,6 +84,16 @@ env:
   # case (chat routes to an agent after the intelligence call).
   # INTELLIGENCE_TIMEOUT_MS: "90000"
 
+# OpenShift OAuth integration.
+# The OAuthClient resource must be created separately (it is cluster-scoped).
+# Add OAUTH_CLIENT_SECRET to the central-backend-secrets Secret before deploying.
+openshift:
+  # Name of the OAuthClient registered in OpenShift (must match the resource name).
+  oauthClientId: "agent-patches"
+  # OAuth server URLs — replace apps.example.com with your cluster's apps domain.
+  oauthAuthorizeUrl: "https://oauth-openshift.apps.example.com/oauth/authorize"
+  oauthTokenUrl: "https://oauth-openshift.apps.example.com/oauth/token"
+
 nodeSelector: {}
 
 tolerations: []

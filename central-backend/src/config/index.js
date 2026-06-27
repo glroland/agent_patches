@@ -64,4 +64,18 @@ export const config = {
     // Leave empty only if the gateway was also started without a token (dev only).
     authToken: process.env.GATEWAY_AUTH_TOKEN || '',
   },
+  openshift: {
+    // In-cluster Kubernetes API URL. Override only for debugging outside the cluster.
+    apiUrl: process.env.OPENSHIFT_API_URL || 'https://kubernetes.default.svc',
+    // OAuthClient name registered in OpenShift.
+    oauthClientId: process.env.OAUTH_CLIENT_ID || '',
+    // OAuthClient secret — stored in central-backend-secrets.
+    oauthClientSecret: process.env.OAUTH_CLIENT_SECRET || '',
+    // OpenShift OAuth server endpoints (derived from cluster apps domain).
+    oauthAuthorizeUrl: process.env.OAUTH_AUTHORIZE_URL || '',
+    oauthTokenUrl: process.env.OAUTH_TOKEN_URL || '',
+    // SubjectAccessReview check performed at login to enforce cluster-admin.
+    sarResource: process.env.OAUTH_SAR_RESOURCE || 'nodes',
+    sarVerb: process.env.OAUTH_SAR_VERB || 'list',
+  },
 };

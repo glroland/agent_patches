@@ -8,8 +8,8 @@ spec:
   type: {{ .Values.service.type }}
   ports:
     - port: {{ .Values.service.port }}
-      targetPort: proxy
+      targetPort: http
       protocol: TCP
-      name: proxy
+      name: http
   selector:
     app: {{ .Chart.Name }}

@@ -1,7 +1,22 @@
+import { getToken, clearToken } from '../auth/oauth.js';
+
 const API_BASE_URL = '/api';
 
+function authHeaders() {
+  const token = getToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function handleUnauth() {
+  clearToken();
+  window.location.href = '/';
+}
+
 async function getJSON(path) {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: authHeaders(),
+  });
+  if (response.status === 401) { handleUnauth(); return; }
   if (!response.ok) {
     throw new Error(`${path} returned ${response.status} ${response.statusText}`);
   }
@@ -11,9 +26,10 @@ async function getJSON(path) {
 async function postJSON(path, body) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
     body: JSON.stringify(body),
   });
+  if (response.status === 401) { handleUnauth(); return; }
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     throw new Error(payload?.message || `${path} returned ${response.status} ${response.statusText}`);
@@ -22,7 +38,11 @@ async function postJSON(path, body) {
 }
 
 async function deleteJSON(path) {
-  const response = await fetch(`${API_BASE_URL}${path}`, { method: 'DELETE' });
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (response.status === 401) { handleUnauth(); return; }
   if (!response.ok) {
     const payload = await response.json().catch(() => null);
     throw new Error(payload?.message || `${path} returned ${response.status} ${response.statusText}`);
