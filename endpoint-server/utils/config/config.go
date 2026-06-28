@@ -156,6 +156,10 @@ type ServerSettings struct {
 	Host string `yaml:"host"`
 	Port int    `yaml:"port"`
 
+	// Name is the display label shown in gateway statistics. Defaults to the
+	// system hostname when unset.
+	Name string `yaml:"name"`
+
 	// PublicURL is the URL embedded in the agent card. Optional: if unset,
 	// it's derived from the host's FQDN (via reverse DNS) or hostname.
 	PublicURL string `yaml:"public_url"`
@@ -193,6 +197,11 @@ func Load() (*Settings, error) {
 
 	if s.Server.Host == "" {
 		s.Server.Host = "0.0.0.0"
+	}
+	if s.Server.Name == "" {
+		if h, err := os.Hostname(); err == nil {
+			s.Server.Name = h
+		}
 	}
 	if s.Server.Port == 0 {
 		s.Server.Port = 8080

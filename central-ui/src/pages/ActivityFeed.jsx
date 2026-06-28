@@ -275,7 +275,7 @@ function StatisticsTab() {
                 {sorted.map((ep) => (
                   <div key={ep.host}>
                     <div className="mb-1.5 flex items-center justify-between text-xs">
-                      <span className="font-mono text-navy-700 truncate">{ep.host}</span>
+                      <span className="font-mono text-navy-700 truncate">{ep.name || ep.host}</span>
                       <div className="ml-4 flex shrink-0 items-center gap-3">
                         <span className="text-navy-400">avg {fmtAvg(ep.tokens_total, ep.requests_total)} tok/req</span>
                         <span className="font-semibold text-indigo-700">{fmtNum(ep.tokens_last_hour)} tok</span>
@@ -325,7 +325,7 @@ function StatisticsTab() {
                         const pending = Number(ep.pending_requests);
                         return (
                           <tr key={ep.host} className="transition-colors hover:bg-navy-50/60">
-                            <td className="px-4 py-3 font-mono text-xs text-navy-800">{ep.host}</td>
+                            <td className="px-4 py-3 font-mono text-xs text-navy-800">{ep.name || ep.host}</td>
                             <td className="px-4 py-3 text-right">
                               {pending > 0 ? (
                                 <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">

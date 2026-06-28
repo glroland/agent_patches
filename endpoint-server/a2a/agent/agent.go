@@ -22,6 +22,18 @@ import (
 	"agent_patches/endpoint-server/utils/sanitize"
 )
 
+// headerTransport injects a fixed header on every outgoing HTTP request.
+type headerTransport struct {
+	inner http.RoundTripper
+	name  string
+}
+
+func (t *headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("X-Agent-Name", t.name)
+	return t.inner.RoundTrip(r)
+}
+
 // Agent drives the tool-use loop against the OpenAI chat completions API.
 type Agent struct {
 	client       openai.Client
@@ -54,8 +66,11 @@ func NewWithSystemPrompt(tools []tool.Tool, cfg *config.Settings, systemPrompt s
 	}
 	opts := []option.RequestOption{
 		option.WithHTTPClient(&http.Client{
-			Timeout:   reqTimeout,
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
+			Timeout: reqTimeout,
+			Transport: &headerTransport{
+				inner: otelhttp.NewTransport(http.DefaultTransport),
+				name:  cfg.Server.Name,
+			},
 		}),
 	}
 	if cfg.Agent.APIKey != "" {

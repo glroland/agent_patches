@@ -24,6 +24,10 @@ PLATFORM_DIR := $(TARGET_DIR)/$(UNAME_OS)-$(UNAME_ARCH)
 # Override with: make run CONFIG=/path/to/config.yaml
 CONFIG ?= $(CURDIR)/config.yaml
 
+# Set to 0 to skip per-host confirmation prompts during deploy.
+# Override with: make deploy DEPLOY_CONFIRM=0  (or use make deploy-all)
+DEPLOY_CONFIRM ?= 1
+
 # Directory for the central-ui React app.
 CENTRAL_UI_DIR := $(CURDIR)/central-ui
 
@@ -38,7 +42,7 @@ DEPLOY_SCRIPT  := $(CURDIR)/deploy/linux/deploy.sh
 CONFIG_DIR := $(CURDIR)/config
 
 .PHONY: install build build-server build-cli release release-server release-cli \
-        test run run-cli run-central-ui run-central-backend deploy clean fmt vet help
+        test run run-cli run-central-ui run-central-backend deploy deploy-all clean fmt vet help
 
 ## install: download and tidy all module dependencies
 install:
@@ -103,8 +107,9 @@ run-central-backend:
 	cd $(CENTRAL_BACKEND_DIR) && [ -d node_modules ] || npm install
 	cd $(CENTRAL_BACKEND_DIR) && DOTENV_CONFIG_PATH=$(CURDIR)/.env npm start
 
-## deploy: deploy release builds to all hosts in inventory.csv
+## deploy: deploy release builds to all hosts in inventory.csv (prompts before each host)
 deploy:
+	DEPLOY_CONFIRM=$(DEPLOY_CONFIRM) \
 	WINDOWS_BINARY=$(WINDOWS_AMD64_DIR)/$(BINARY).exe \
 	WINDOWS_CONFIG=$(INVENTORY_ROOT)/endpoint-server-config-windows.yaml \
 	WINDOWS_RESPONSIBILITIES=$(CONFIG_DIR)/windows-responsibilities.yaml \
@@ -114,6 +119,10 @@ deploy:
 		$(LINUX_AMD64_DIR)/$(BINARY) \
 		$(CURDIR)/deploy/linux/agent_patches.service \
 		$(INVENTORY_ROOT)/endpoint-server-config-linux.yaml
+
+## deploy-all: deploy to all hosts without per-host confirmation
+deploy-all: DEPLOY_CONFIRM=0
+deploy-all: deploy
 
 ## fmt: format all Go source files
 fmt:

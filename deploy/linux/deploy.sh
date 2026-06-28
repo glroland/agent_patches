@@ -714,6 +714,13 @@ echo ""
 
 FAILED=0
 for i in "${!HOSTS[@]}"; do
+    if [[ "${DEPLOY_CONFIRM:-1}" == "1" ]]; then
+        read -rp "Deploy to ${HOST_USERS[$i]}@${HOSTS[$i]} (${HOST_OSTYPES[$i]})? [y/N] " _confirm
+        if [[ ! "$_confirm" =~ ^[yY] ]]; then
+            echo "  skipping ${HOSTS[$i]}"
+            continue
+        fi
+    fi
     if [[ "${HOST_OSTYPES[$i]}" == "windows" ]]; then
         deploy_host_windows "${HOSTS[$i]}" "${HOST_USERS[$i]}" || FAILED=$((FAILED + 1))
     else

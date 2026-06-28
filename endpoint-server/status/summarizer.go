@@ -3,6 +3,7 @@ package status
 import (
 	"context"
 	"log/slog"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -13,6 +14,17 @@ import (
 
 	"agent_patches/endpoint-server/utils/config"
 )
+
+type headerTransport struct {
+	inner http.RoundTripper
+	name  string
+}
+
+func (t *headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("X-Agent-Name", t.name)
+	return t.inner.RoundTrip(r)
+}
 
 const (
 	summaryTTL     = 5 * time.Minute
@@ -39,7 +51,14 @@ type summarizer struct {
 }
 
 func newSummarizer(cfg *config.Settings) *summarizer {
-	opts := []option.RequestOption{}
+	opts := []option.RequestOption{
+		option.WithHTTPClient(&http.Client{
+			Transport: &headerTransport{
+				inner: http.DefaultTransport,
+				name:  cfg.Server.Name,
+			},
+		}),
+	}
 	if cfg.Agent.APIKey != "" {
 		opts = append(opts, option.WithAPIKey(cfg.Agent.APIKey))
 	}

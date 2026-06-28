@@ -25,6 +25,7 @@ type Tracker struct {
 type endpointStats struct {
 	mu       sync.Mutex
 	host     string
+	name     string         // agent display name from X-Agent-Name header
 	events   []requestEvent // sorted ascending by at; pruned to 25 h
 	total    totalCounters
 	pending  atomic.Int64
@@ -44,6 +45,7 @@ type totalCounters struct {
 // EndpointStatsSnapshot is the JSON-serialisable view of one endpoint.
 type EndpointStatsSnapshot struct {
 	Host             string    `json:"host"`
+	Name             string    `json:"name,omitempty"`
 	PendingRequests  int64     `json:"pending_requests"`
 	TokensLastHour   int64     `json:"tokens_last_hour"`
 	TokensLastDay    int64     `json:"tokens_last_day"`
@@ -70,7 +72,7 @@ func NewTracker() *Tracker {
 	return &Tracker{endpoints: make(map[string]*endpointStats)}
 }
 
-func (t *Tracker) get(host string) *endpointStats {
+func (t *Tracker) get(host, name string) *endpointStats {
 	t.mu.RLock()
 	es := t.endpoints[host]
 	t.mu.RUnlock()
@@ -80,26 +82,26 @@ func (t *Tracker) get(host string) *endpointStats {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if es = t.endpoints[host]; es == nil {
-		es = &endpointStats{host: host}
+		es = &endpointStats{host: host, name: name}
 		t.endpoints[host] = es
 	}
 	return es
 }
 
 // IncrPending marks one request as pending for the given host.
-func (t *Tracker) IncrPending(host string) {
-	t.get(host).pending.Add(1)
+func (t *Tracker) IncrPending(host, name string) {
+	t.get(host, name).pending.Add(1)
 }
 
 // DecrPending marks one request as no longer pending for the given host.
 func (t *Tracker) DecrPending(host string) {
-	t.get(host).pending.Add(-1)
+	t.get(host, "").pending.Add(-1)
 }
 
 // Record appends a completed request to the host's event log. tokens may
 // be 0 when the response did not include parseable usage data.
-func (t *Tracker) Record(host string, tokens int64) {
-	es := t.get(host)
+func (t *Tracker) Record(host, name string, tokens int64) {
+	es := t.get(host, name)
 	es.mu.Lock()
 	defer es.mu.Unlock()
 
@@ -155,6 +157,7 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 		dayTok, dayReq := es.windowSums(now, 24*time.Hour)
 		snap := EndpointStatsSnapshot{
 			Host:             h,
+			Name:             es.name,
 			PendingRequests:  es.pending.Load(),
 			TokensLastHour:   hourTok,
 			TokensLastDay:    dayTok,

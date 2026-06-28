@@ -53,7 +53,8 @@ type pending struct {
 	body    []byte
 	w       http.ResponseWriter
 	done    chan struct{} // closed by forward() when the response is fully written
-	host    string        // originating endpoint-server IP for stats tracking
+	host    string       // originating endpoint-server IP for stats tracking
+	name    string       // agent display name from X-Agent-Name header
 }
 
 type healthResponse struct {
@@ -114,11 +115,12 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w:       w,
 		done:    make(chan struct{}),
 		host:    host,
+		name:    r.Header.Get("X-Agent-Name"),
 	}
 
 	select {
 	case g.queue <- p:
-		g.tracker.IncrPending(host)
+		g.tracker.IncrPending(p.host, p.name)
 		// Block this goroutine until forward() closes p.done, keeping the
 		// HTTP connection alive and the ResponseWriter valid for the dispatcher.
 		<-p.done
@@ -156,7 +158,7 @@ func (g *Gateway) dispatcher() {
 func (g *Gateway) forward(p *pending) {
 	var capturedTokens int64
 	defer func() {
-		g.tracker.Record(p.host, capturedTokens)
+		g.tracker.Record(p.host, p.name, capturedTokens)
 		g.tracker.DecrPending(p.host)
 		close(p.done)
 	}()
