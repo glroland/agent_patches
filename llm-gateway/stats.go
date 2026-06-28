@@ -83,17 +83,17 @@ type ResponsibilityStatsSnapshot struct {
 
 // GatewayStatsResponse is the top-level payload returned by GET /stats.
 type GatewayStatsResponse struct {
-	GeneratedAt               time.Time                     `json:"generated_at"`
-	TotalPending              int                           `json:"total_pending"`
-	ActiveRequests            int                           `json:"active_requests"`
-	QueuedRequests            int                           `json:"queued_requests"`
-	PriorityQueuedRequests    int                           `json:"priority_queued_requests"`
-	MaxConcurrency            int                           `json:"max_concurrency"`
-	QueueCapacity             int                           `json:"queue_capacity"`
-	PriorityQueueCapacity     int                           `json:"priority_queue_capacity"`
-	Upstream                  string                        `json:"upstream"`
-	Endpoints                 []EndpointStatsSnapshot       `json:"endpoints"`
-	Responsibilities          []ResponsibilityStatsSnapshot `json:"responsibilities"`
+	GeneratedAt            time.Time                     `json:"generated_at"`
+	TotalPending           int                           `json:"total_pending"`
+	ActiveRequests         int                           `json:"active_requests"`
+	QueuedRequests         int                           `json:"queued_requests"`
+	PriorityQueuedRequests int                           `json:"priority_queued_requests"`
+	MaxConcurrency         int                           `json:"max_concurrency"`
+	QueueCapacity          int                           `json:"queue_capacity"`
+	PriorityQueueCapacity  int                           `json:"priority_queue_capacity"`
+	Upstream               string                        `json:"upstream"`
+	Endpoints              []EndpointStatsSnapshot       `json:"endpoints"`
+	Responsibilities       []ResponsibilityStatsSnapshot `json:"responsibilities"`
 }
 
 func NewTracker() *Tracker {
@@ -379,9 +379,9 @@ func (lc *limitedCapture) Write(p []byte) (int, error) {
 const persistenceVersion = 1
 
 type persistedState struct {
-	Version          int                      `json:"version"`
-	SavedAt          time.Time                `json:"saved_at"`
-	Endpoints        []persistedEndpoint      `json:"endpoints"`
+	Version          int                       `json:"version"`
+	SavedAt          time.Time                 `json:"saved_at"`
+	Endpoints        []persistedEndpoint       `json:"endpoints"`
 	Responsibilities []persistedResponsibility `json:"responsibilities"`
 }
 

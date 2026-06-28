@@ -9,7 +9,7 @@ import (
 )
 
 func TestSetup_InfoLevel(t *testing.T) {
-	logger.Setup("info")
+	logger.Setup("info", "", 0)
 	l := slog.Default()
 
 	if l.Enabled(context.Background(), slog.LevelDebug) {
@@ -24,7 +24,7 @@ func TestSetup_InfoLevel(t *testing.T) {
 }
 
 func TestSetup_DebugLevel(t *testing.T) {
-	logger.Setup("debug")
+	logger.Setup("debug", "", 0)
 	l := slog.Default()
 
 	if !l.Enabled(context.Background(), slog.LevelDebug) {
@@ -33,7 +33,7 @@ func TestSetup_DebugLevel(t *testing.T) {
 }
 
 func TestSetup_WarnLevel(t *testing.T) {
-	logger.Setup("warn")
+	logger.Setup("warn", "", 0)
 	l := slog.Default()
 
 	if l.Enabled(context.Background(), slog.LevelInfo) {
@@ -45,7 +45,7 @@ func TestSetup_WarnLevel(t *testing.T) {
 }
 
 func TestSetup_ErrorLevel(t *testing.T) {
-	logger.Setup("error")
+	logger.Setup("error", "", 0)
 	l := slog.Default()
 
 	if l.Enabled(context.Background(), slog.LevelWarn) {
@@ -57,7 +57,7 @@ func TestSetup_ErrorLevel(t *testing.T) {
 }
 
 func TestSetup_UnknownLevel_DefaultsToInfo(t *testing.T) {
-	logger.Setup("nonsense")
+	logger.Setup("nonsense", "", 0)
 	l := slog.Default()
 
 	if l.Enabled(context.Background(), slog.LevelDebug) {

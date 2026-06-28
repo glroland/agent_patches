@@ -57,9 +57,9 @@ type pending struct {
 	body           []byte
 	w              http.ResponseWriter
 	done           chan struct{} // closed by forward() when the response is fully written
-	host           string       // originating endpoint-server IP for stats tracking
-	name           string       // agent display name from X-Agent-Name header
-	responsibility string       // scheduled responsibility name from X-Responsibility header; empty for ad-hoc runs
+	host           string        // originating endpoint-server IP for stats tracking
+	name           string        // agent display name from X-Agent-Name header
+	responsibility string        // scheduled responsibility name from X-Responsibility header; empty for ad-hoc runs
 }
 
 type healthResponse struct {

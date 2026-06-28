@@ -25,18 +25,18 @@ type StatusBlock struct {
 // TimelineEntry is one entry in the agent's activity timeline, recorded via
 // the report_findings tool.
 type TimelineEntry struct {
-	ID             string  `json:"id"`
-	Time           string  `json:"time"`
-	Type           string  `json:"type"`
-	Title          string  `json:"title"`
-	Detail         string  `json:"detail"`
-	Severity       string  `json:"severity,omitempty"`
-	Risk           string  `json:"risk,omitempty"`
-	ProposedAction *string `json:"proposedAction,omitempty"`
-	Status         *string `json:"status,omitempty"`
-	RetryCount          int     `json:"retryCount,omitempty"`
-	ParentID            string  `json:"parentId,omitempty"`
-	SudoersInstruction  *string `json:"sudoersInstruction,omitempty"`
+	ID                 string  `json:"id"`
+	Time               string  `json:"time"`
+	Type               string  `json:"type"`
+	Title              string  `json:"title"`
+	Detail             string  `json:"detail"`
+	Severity           string  `json:"severity,omitempty"`
+	Risk               string  `json:"risk,omitempty"`
+	ProposedAction     *string `json:"proposedAction,omitempty"`
+	Status             *string `json:"status,omitempty"`
+	RetryCount         int     `json:"retryCount,omitempty"`
+	ParentID           string  `json:"parentId,omitempty"`
+	SudoersInstruction *string `json:"sudoersInstruction,omitempty"`
 }
 
 // Response is the full GET /status response body.
