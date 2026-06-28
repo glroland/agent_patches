@@ -17,8 +17,8 @@ function getClusterCa() {
   try { return readFileSync(SA_CA_PATH); } catch { return null; }
 }
 
-// Minimal fetch-like wrapper backed by node:https.
-// Avoids undici (Node native fetch) issues with custom CAs on Node < 20.12.
+// Minimal node:https fetch-like wrapper.
+// Avoids undici (Node native fetch) issues with custom CAs.
 function httpsRequest(url, { method = 'GET', headers = {}, body = null, ...tlsOpts } = {}) {
   return new Promise((resolve, reject) => {
     const u   = new URL(url);
@@ -53,7 +53,6 @@ function httpsRequest(url, { method = 'GET', headers = {}, body = null, ...tlsOp
 }
 
 // Returns the public OAuth config the UI needs to build the login redirect.
-// No authentication required.
 router.get('/config', (_req, res) => {
   res.json({
     clientId:     config.openshift.oauthClientId,
@@ -62,11 +61,15 @@ router.get('/config', (_req, res) => {
 });
 
 // Exchanges an authorization code for a signed session JWT.
-// Step 1 — code exchange (to OAuth Route, uses oauthTls).
-// Step 2 — token validation + username lookup via /oauth/userinfo (user:info scope is enough).
-// Step 3 — cluster-admin check via SubjectAccessReview using the SA token as requester
-//           (scope-independent; SA has system:auth-delegator so it can check other users).
-// Step 4 — issue session JWT.
+//
+// Step 1 — code exchange with the OpenShift OAuth Route (uses oauthTls).
+// Step 2 — TokenReview: SA asks the k8s API to validate the user's token and
+//           return the username.  SA needs system:auth-delegator for this.
+// Step 3 — SubjectAccessReview: SA checks whether that username can perform
+//           the configured verb on the configured resource (cluster-admin gate).
+// Step 4 — issue signed 8-hour session JWT.
+//
+// In dev (no SA token / no cluster CA), steps 2-3 are skipped.
 router.post('/callback', async (req, res) => {
   const { code, redirect_uri, code_verifier } = req.body;
   if (!code || !redirect_uri) {
@@ -111,36 +114,54 @@ router.post('/callback', async (req, res) => {
     return res.status(500).json({ message: 'Token exchange error' });
   }
 
-  // ── Step 2: validate token + get username via /oauth/userinfo ────────────────
-  // The user:info OAuth scope is explicitly designed for this endpoint, so this
-  // works regardless of what other Kubernetes API calls the scope might restrict.
-  const userinfoUrl = config.openshift.oauthTokenUrl.replace(/\/token$/, '/userinfo');
-  let username = 'user';
-  try {
-    const uiResp = await httpsRequest(userinfoUrl, {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      ...oauthTls,
-    });
-    if (!uiResp.ok) {
-      const text = await uiResp.text();
-      logger.warn(`auth/callback: userinfo returned ${uiResp.status}: ${text}`);
-      return res.status(401).json({ message: 'Token validation failed' });
-    }
-    const info = await uiResp.json();
-    username = info.sub || info.preferred_username || info.name || 'user';
-    logger.info(`auth/callback: authenticated as ${username}`);
-  } catch (err) {
-    logger.error(`auth/callback: userinfo error: ${err.message}`);
-    return res.status(500).json({ message: 'Token validation error' });
-  }
-
-  // ── Step 3: cluster-admin check via SubjectAccessReview (SA as requester) ───
-  // Using the SA token means this is unaffected by the user's OAuth token scope.
-  // system:auth-delegator on the SA grants permission to create SubjectAccessReviews.
+  // ── Steps 2-3: cluster validation (skipped outside a cluster) ───────────────
   const saToken   = getSaToken();
   const clusterCa = getClusterCa();
+  let   username  = 'user';
 
-  if (saToken && clusterCa) {
+  if (!saToken || !clusterCa) {
+    logger.warn(`auth/callback: ${!saToken ? 'no SA token' : 'no cluster CA'} — skipping validation (dev mode)`);
+  } else {
+    // Step 2: TokenReview — validate the user's OAuth token and get the username.
+    // The SA is the requester; system:auth-delegator grants create on tokenreviews.
+    // This works with OpenShift OAuth tokens because the API server's authenticator
+    // chain includes the OpenShift OAuth token validator.
+    try {
+      const trResp = await httpsRequest(
+        `${config.openshift.apiUrl}/apis/authentication.k8s.io/v1/tokenreviews`,
+        {
+          method:  'POST',
+          headers: { Authorization: `Bearer ${saToken}`, 'Content-Type': 'application/json' },
+          body:    JSON.stringify({
+            apiVersion: 'authentication.k8s.io/v1',
+            kind:       'TokenReview',
+            spec:       { token: accessToken },
+          }),
+          ca: clusterCa,
+        },
+      );
+
+      if (!trResp.ok) {
+        const errText = await trResp.text().catch(() => '');
+        logger.warn(`auth/callback: TokenReview returned ${trResp.status}: ${errText}`);
+        return res.status(401).json({ message: 'Token validation failed' });
+      }
+
+      const tr = await trResp.json();
+      if (!tr.status?.authenticated) {
+        logger.warn(`auth/callback: token not authenticated (TokenReview denied)`);
+        return res.status(401).json({ message: 'Token not authenticated' });
+      }
+
+      username = tr.status.user?.username || 'user';
+      logger.info(`auth/callback: authenticated as ${username}`);
+    } catch (err) {
+      logger.error(`auth/callback: TokenReview error: ${err.message}`);
+      return res.status(500).json({ message: 'Token validation error' });
+    }
+
+    // Step 3: SubjectAccessReview — check cluster-admin gate.
+    // SA is again the requester; system:auth-delegator grants create on subjectaccessreviews.
     try {
       const sarResp = await httpsRequest(
         `${config.openshift.apiUrl}/apis/authorization.k8s.io/v1/subjectaccessreviews`,
@@ -179,9 +200,6 @@ router.post('/callback', async (req, res) => {
       logger.error(`auth/callback: SAR error: ${err.message}`);
       return res.status(500).json({ message: 'Access check error' });
     }
-  } else {
-    // Outside cluster (dev) — no SA token or CA, skip permission check.
-    logger.warn(`auth/callback: skipping permission check — ${!saToken ? 'no SA token' : 'no cluster CA'} (dev mode)`);
   }
 
   // ── Step 4: issue signed session JWT ────────────────────────────────────────
