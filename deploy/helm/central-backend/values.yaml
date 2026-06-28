@@ -51,6 +51,15 @@ intelligence:
   # How often to re-analyse the fleet (minutes). 0 = once on startup only.
   intervalMinutes: 30
 
+# Persistent storage for fleet intelligence history.
+# When enabled, a PVC is provisioned and mounted at /data; reports survive restarts
+# and prior analyses are fed back into each LLM prompt for trend detection.
+persistence:
+  enabled: true
+  # Leave empty to use the cluster default StorageClass.
+  storageClassName: ""
+  size: 1Gi
+
 # HAProxy route timeout — must be >= AGENT_MESSAGE_TIMEOUT_MS.
 # Covers the full agent tool-use loop including waiting for operator approval.
 route:

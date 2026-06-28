@@ -10,6 +10,7 @@ import { pendingApprovals, concerns } from './activity.js';
 import { setReport } from './intelligenceCache.js';
 import { getStats } from './gatewayService.js';
 import * as fleet from './fleet.js';
+import { loadLatest, loadHistory, persist } from './intelligenceStore.js';
 
 let _client = null;
 let _timer = null;
@@ -219,6 +220,49 @@ function serializeTokenStats(gatewayStats, agentDetails) {
 }
 
 // ---------------------------------------------------------------------------
+// History serialisation — compact summary of prior reports for trend context.
+// ---------------------------------------------------------------------------
+
+function serializeHistory(history) {
+  if (!history || history.length === 0) return null;
+
+  const lines = ['## Prior Fleet Intelligence Analyses (oldest → newest)'];
+  for (const r of history) {
+    lines.push('', `### ${r.generatedAt} (${r.agentCount} agent(s))`);
+    lines.push(`Headline: ${r.headline}`);
+
+    if (r.recommendations?.length > 0) {
+      const titles = r.recommendations
+        .map((rec) => `[${rec.priority}] ${rec.title}`)
+        .join(' | ');
+      lines.push(`Recommendations: ${titles}`);
+    }
+
+    if (r.resourceOptimization?.length > 0) {
+      const opts = r.resourceOptimization
+        .map((o) => {
+          const change = o.proposedChange.length > 80 ? o.proposedChange.slice(0, 77) + '…' : o.proposedChange;
+          return `[${o.priority}] ${o.hostname}/${o.responsibility}: ${change}`;
+        })
+        .join(' | ');
+      lines.push(`Resource optimizations: ${opts}`);
+    }
+
+    if (r.approvalInsights?.length > 0) {
+      const insights = r.approvalInsights
+        .map((a) => {
+          const pattern = a.pattern.length > 100 ? a.pattern.slice(0, 97) + '…' : a.pattern;
+          return `[${a.priority}] ${pattern}`;
+        })
+        .join(' | ');
+      lines.push(`Approval insights: ${insights}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
 
@@ -280,7 +324,8 @@ Rules:
 - "feature" category = a new agent skill or central-backend capability to build.
 - Headline must not repeat any recommendation title verbatim.
 - For resourceOptimization: a responsibility that consistently reports "nothing found" on a short cycle is a strong candidate for a longer interval. A responsibility with high token use but thin summaries may need instruction tightening.
-- For approvalInsights: cite specific counts, risk levels, and operator reason text where available. Do not fabricate patterns.`;
+- For approvalInsights: cite specific counts, risk levels, and operator reason text where available. Do not fabricate patterns.
+- When a "Prior Fleet Intelligence Analyses" section is present, use it to detect trends across cycles: recurring unactioned recommendations should be escalated in priority; improving or worsening metrics should be noted in the headline; patterns only visible across multiple observations (e.g. steady disk growth, persistent offline agent) should be surfaced explicitly.`;
 
 async function analyse() {
   const agents = getFleet();
@@ -292,6 +337,7 @@ async function analyse() {
   logger.info(`intelligence: analysing fleet (${agents.length} agents)`);
 
   const fleetText = serializeFleet(agents);
+  const history = loadHistory(config.intelligence.historySize);
 
   // Gather gateway stats and per-agent responsibility + memory in parallel.
   const [gatewayStats, agentDetails] = await Promise.all([
@@ -312,8 +358,10 @@ async function analyse() {
 
   const tokenText    = serializeTokenStats(gatewayStats, agentDetails);
   const approvalText = serializeApprovalHistory(agentDetails);
+  const historyText  = serializeHistory(history);
 
-  const sections = [fleetText, tokenText, approvalText].filter(Boolean);
+  // History comes first so the model sees past context before current state.
+  const sections = [historyText, fleetText, tokenText, approvalText].filter(Boolean);
   const userContent = sections.join('\n\n');
 
   let raw;
@@ -361,6 +409,7 @@ async function analyse() {
   };
 
   setReport(report);
+  persist(report);
   logger.info(
     `intelligence: report ready — ${report.recommendations.length} recommendation(s), ` +
     `${report.resourceOptimization.length} resource optimization(s), ` +
@@ -384,6 +433,13 @@ export function start() {
     timeout: config.intelligence.timeoutMs,
     maxRetries: 0,
   });
+
+  // Restore the last persisted report so the UI has data immediately on restart.
+  const saved = loadLatest();
+  if (saved) {
+    setReport(saved);
+    logger.info(`intelligence: restored latest report from disk (generated ${saved.generatedAt})`);
+  }
 
   // First run deferred 5 min so the initial poll cycle and gateway can settle.
   setTimeout(analyse, 5 * 60 * 1000);

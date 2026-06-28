@@ -55,6 +55,10 @@ export const config = {
     // proxy kills it (e.g. the dashboard chat returning a bare 504) instead
     // of central-backend failing fast with a clear message.
     timeoutMs: Number(process.env.INTELLIGENCE_TIMEOUT_MS) || 90000,
+    // Directory for persistent intelligence storage (PVC mount). Empty = disabled.
+    dataDir: process.env.INTELLIGENCE_DATA_DIR || '',
+    // How many prior reports to inject as historical context into each analysis.
+    historySize: Number(process.env.INTELLIGENCE_HISTORY_SIZE) || 5,
   },
   gateway: {
     // Internal ClusterIP URL of the llm-gateway service.
