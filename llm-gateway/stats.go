@@ -11,15 +11,16 @@ import (
 	"time"
 )
 
-// Tracker collects per-endpoint-server token and request statistics using
-// a 25-hour sliding window of events. Counters for the last hour and last
-// day are derived at query time by scanning the event slice. The total
-// pending count (queued + in-flight) is tracked separately via atomics.
+// Tracker collects per-endpoint-server and per-responsibility token and request
+// statistics using a 25-hour sliding window of events. Counters for the last
+// hour and last day are derived at query time by scanning the event slice. The
+// total pending count (queued + in-flight) is tracked separately via atomics.
 //
 // All public methods are safe for concurrent use.
 type Tracker struct {
-	mu        sync.RWMutex
-	endpoints map[string]*endpointStats
+	mu               sync.RWMutex
+	endpoints        map[string]*endpointStats
+	responsibilities map[string]*responsibilityStats
 }
 
 type endpointStats struct {
@@ -29,6 +30,14 @@ type endpointStats struct {
 	events   []requestEvent // sorted ascending by at; pruned to 25 h
 	total    totalCounters
 	pending  atomic.Int64
+	lastSeen time.Time
+}
+
+type responsibilityStats struct {
+	mu       sync.Mutex
+	name     string
+	events   []requestEvent // sorted ascending by at; pruned to 25 h
+	total    totalCounters
 	lastSeen time.Time
 }
 
@@ -56,20 +65,36 @@ type EndpointStatsSnapshot struct {
 	LastSeen         time.Time `json:"last_seen"`
 }
 
+// ResponsibilityStatsSnapshot is the JSON-serialisable view of one responsibility.
+type ResponsibilityStatsSnapshot struct {
+	Name             string    `json:"name"`
+	TokensLastHour   int64     `json:"tokens_last_hour"`
+	TokensLastDay    int64     `json:"tokens_last_day"`
+	TokensTotal      int64     `json:"tokens_total"`
+	RequestsLastHour int64     `json:"requests_last_hour"`
+	RequestsLastDay  int64     `json:"requests_last_day"`
+	RequestsTotal    int64     `json:"requests_total"`
+	LastSeen         time.Time `json:"last_seen"`
+}
+
 // GatewayStatsResponse is the top-level payload returned by GET /stats.
 type GatewayStatsResponse struct {
-	GeneratedAt    time.Time               `json:"generated_at"`
-	TotalPending   int                     `json:"total_pending"`
-	ActiveRequests int                     `json:"active_requests"`
-	QueuedRequests int                     `json:"queued_requests"`
-	MaxConcurrency int                     `json:"max_concurrency"`
-	QueueCapacity  int                     `json:"queue_capacity"`
-	Upstream       string                  `json:"upstream"`
-	Endpoints      []EndpointStatsSnapshot `json:"endpoints"`
+	GeneratedAt      time.Time                      `json:"generated_at"`
+	TotalPending     int                            `json:"total_pending"`
+	ActiveRequests   int                            `json:"active_requests"`
+	QueuedRequests   int                            `json:"queued_requests"`
+	MaxConcurrency   int                            `json:"max_concurrency"`
+	QueueCapacity    int                            `json:"queue_capacity"`
+	Upstream         string                         `json:"upstream"`
+	Endpoints        []EndpointStatsSnapshot        `json:"endpoints"`
+	Responsibilities []ResponsibilityStatsSnapshot  `json:"responsibilities"`
 }
 
 func NewTracker() *Tracker {
-	return &Tracker{endpoints: make(map[string]*endpointStats)}
+	return &Tracker{
+		endpoints:        make(map[string]*endpointStats),
+		responsibilities: make(map[string]*responsibilityStats),
+	}
 }
 
 func (t *Tracker) get(host, name string) *endpointStats {
@@ -88,8 +113,24 @@ func (t *Tracker) get(host, name string) *endpointStats {
 	return es
 }
 
+func (t *Tracker) getResponsibility(name string) *responsibilityStats {
+	t.mu.RLock()
+	rs := t.responsibilities[name]
+	t.mu.RUnlock()
+	if rs != nil {
+		return rs
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if rs = t.responsibilities[name]; rs == nil {
+		rs = &responsibilityStats{name: name}
+		t.responsibilities[name] = rs
+	}
+	return rs
+}
+
 // IncrPending marks one request as pending for the given host.
-func (t *Tracker) IncrPending(host, name string) {
+func (t *Tracker) IncrPending(host, name, responsibility string) {
 	t.get(host, name).pending.Add(1)
 }
 
@@ -98,19 +139,58 @@ func (t *Tracker) DecrPending(host string) {
 	t.get(host, "").pending.Add(-1)
 }
 
-// Record appends a completed request to the host's event log. tokens may
-// be 0 when the response did not include parseable usage data.
-func (t *Tracker) Record(host, name string, tokens int64) {
+// Record appends a completed request to the host's event log and, when a
+// responsibility name is provided, to the responsibility's event log as well.
+// tokens may be 0 when the response did not include parseable usage data.
+func (t *Tracker) Record(host, name, responsibility string, tokens int64) {
+	now := time.Now()
+
 	es := t.get(host, name)
 	es.mu.Lock()
-	defer es.mu.Unlock()
-
-	now := time.Now()
 	es.events = append(es.events, requestEvent{at: now, tokens: tokens})
 	es.total.requests++
 	es.total.tokens += tokens
 	es.lastSeen = now
 	es.prune(now)
+	es.mu.Unlock()
+
+	if responsibility == "" {
+		return
+	}
+	rs := t.getResponsibility(responsibility)
+	rs.mu.Lock()
+	rs.events = append(rs.events, requestEvent{at: now, tokens: tokens})
+	rs.total.requests++
+	rs.total.tokens += tokens
+	rs.lastSeen = now
+	rs.prune(now)
+	rs.mu.Unlock()
+}
+
+// prune removes events older than 25 hours from a responsibilityStats.
+// Must be called with rs.mu held.
+func (rs *responsibilityStats) prune(now time.Time) {
+	cutoff := now.Add(-25 * time.Hour)
+	i := 0
+	for i < len(rs.events) && rs.events[i].at.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		rs.events = rs.events[i:]
+	}
+}
+
+// windowSums scans rs.events in reverse and returns token and request counts
+// within the given window. Must be called with rs.mu held.
+func (rs *responsibilityStats) windowSums(now time.Time, window time.Duration) (tokens, requests int64) {
+	for i := len(rs.events) - 1; i >= 0; i-- {
+		if now.Sub(rs.events[i].at) > window {
+			break
+		}
+		tokens += rs.events[i].tokens
+		requests++
+	}
+	return
 }
 
 // prune removes events older than 25 hours. Must be called with es.mu held.
@@ -138,7 +218,7 @@ func (es *endpointStats) windowSums(now time.Time, window time.Duration) (tokens
 	return
 }
 
-// Snapshot returns the current statistics for all known endpoints.
+// Snapshot returns the current statistics for all known endpoints and responsibilities.
 func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 	now := time.Now()
 
@@ -146,6 +226,10 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 	hosts := make([]string, 0, len(t.endpoints))
 	for h := range t.endpoints {
 		hosts = append(hosts, h)
+	}
+	respNames := make([]string, 0, len(t.responsibilities))
+	for n := range t.responsibilities {
+		respNames = append(respNames, n)
 	}
 	t.mu.RUnlock()
 
@@ -171,17 +255,38 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 		snaps = append(snaps, snap)
 	}
 
+	respSnaps := make([]ResponsibilityStatsSnapshot, 0, len(respNames))
+	for _, n := range respNames {
+		rs := t.responsibilities[n] // safe: entries are never deleted
+		rs.mu.Lock()
+		hourTok, hourReq := rs.windowSums(now, time.Hour)
+		dayTok, dayReq := rs.windowSums(now, 24*time.Hour)
+		snap := ResponsibilityStatsSnapshot{
+			Name:             n,
+			TokensLastHour:   hourTok,
+			TokensLastDay:    dayTok,
+			TokensTotal:      rs.total.tokens,
+			RequestsLastHour: hourReq,
+			RequestsLastDay:  dayReq,
+			RequestsTotal:    rs.total.requests,
+			LastSeen:         rs.lastSeen,
+		}
+		rs.mu.Unlock()
+		respSnaps = append(respSnaps, snap)
+	}
+
 	queued := len(g.queue)
 	active := len(g.sem)
 	return GatewayStatsResponse{
-		GeneratedAt:    now,
-		TotalPending:   queued + active,
-		ActiveRequests: active,
-		QueuedRequests: queued,
-		MaxConcurrency: cap(g.sem),
-		QueueCapacity:  cap(g.queue),
-		Upstream:       g.upstream.String(),
-		Endpoints:      snaps,
+		GeneratedAt:      now,
+		TotalPending:     queued + active,
+		ActiveRequests:   active,
+		QueuedRequests:   queued,
+		MaxConcurrency:   cap(g.sem),
+		QueueCapacity:    cap(g.queue),
+		Upstream:         g.upstream.String(),
+		Endpoints:        snaps,
+		Responsibilities: respSnaps,
 	}
 }
 

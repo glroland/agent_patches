@@ -148,7 +148,7 @@ func (l *Loop) execute(ctx context.Context, r *Responsibility) {
 	log := slog.With("responsibility", r.cfg.Name)
 	log.Info("loop: responsibility started")
 
-	a := agent.NewWithSystemPrompt(l.filterTools(r.cfg.Tools), l.cfg, l.cfg.ResponsibilitySystemPrompt)
+	a := agent.NewWithResponsibility(l.filterTools(r.cfg.Tools), l.cfg, l.cfg.ResponsibilitySystemPrompt, r.cfg.Name)
 	result, err := a.Run(ctx, r.cfg.Instruction)
 	if err != nil {
 		log.Error("loop: responsibility failed", "error", err)

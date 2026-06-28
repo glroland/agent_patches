@@ -350,6 +350,116 @@ function TokenUsageTab({ stats, history }) {
         </div>
       )}
 
+      {/* ── Token usage by responsibility ── */}
+      {(stats.responsibilities ?? []).length > 0 && (
+        <section>
+          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-navy-400">
+            Token Usage by Responsibility
+          </h2>
+
+          {/* Bar chart */}
+          <div className="mb-4 rounded-xl border border-navy-200 bg-white p-5 shadow-sm shadow-black/20 space-y-4">
+            {[...(stats.responsibilities ?? [])]
+              .sort((a, b) => b.tokens_last_hour - a.tokens_last_hour)
+              .map((r) => {
+                const maxRespTokHr = Math.max(
+                  ...(stats.responsibilities ?? []).map((x) => x.tokens_last_hour),
+                  1,
+                );
+                return (
+                  <div key={r.name}>
+                    <div className="mb-1.5 flex items-center justify-between text-xs">
+                      <span className="font-mono text-navy-700 truncate">{r.name}</span>
+                      <div className="ml-4 flex shrink-0 items-center gap-3">
+                        <span className="text-navy-400">avg {fmtAvg(r.tokens_total, r.requests_total)} tok/req</span>
+                        <span className="font-semibold text-violet-700">{fmtNum(r.tokens_last_hour)} tok/hr</span>
+                      </div>
+                    </div>
+                    <HBar value={r.tokens_last_hour} max={maxRespTokHr} color="#7c3aed" />
+                  </div>
+                );
+              })}
+          </div>
+
+          {/* Table */}
+          <div className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm shadow-black/20">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-navy-200 bg-navy-50">
+                    {[
+                      ['Responsibility', 'left'],
+                      ['Tok / hr', 'right'],
+                      ['Tok / day', 'right'],
+                      ['Req / hr', 'right'],
+                      ['Req / day', 'right'],
+                      ['Avg tok / req', 'right'],
+                      ['Total Tokens', 'right'],
+                      ['Total Req', 'right'],
+                      ['Last Seen', 'right'],
+                    ].map(([h, align]) => (
+                      <th
+                        key={h}
+                        className={`px-4 py-3 text-${align} text-[10px] font-semibold uppercase tracking-widest text-navy-400`}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-navy-100">
+                  {[...(stats.responsibilities ?? [])]
+                    .sort((a, b) => b.tokens_last_hour - a.tokens_last_hour)
+                    .map((r) => (
+                      <tr key={r.name} className="transition-colors hover:bg-navy-50/60">
+                        <td className="px-4 py-3 font-mono text-xs text-navy-800">{r.name}</td>
+                        <td className="px-4 py-3 text-right font-medium text-violet-700">{fmtNum(r.tokens_last_hour)}</td>
+                        <td className="px-4 py-3 text-right text-navy-600">{fmtNum(r.tokens_last_day)}</td>
+                        <td className="px-4 py-3 text-right text-sky-600">{fmtNum(r.requests_last_hour)}</td>
+                        <td className="px-4 py-3 text-right text-navy-500">{fmtNum(r.requests_last_day)}</td>
+                        <td className="px-4 py-3 text-right text-navy-500">{fmtAvg(r.tokens_total, r.requests_total)}</td>
+                        <td className="px-4 py-3 text-right font-semibold text-violet-800">{fmtNum(r.tokens_total)}</td>
+                        <td className="px-4 py-3 text-right text-navy-500">{fmtNum(r.requests_total)}</td>
+                        <td className="px-4 py-3 text-right text-xs text-navy-400">{fmtAge(r.last_seen)}</td>
+                      </tr>
+                    ))}
+                </tbody>
+                <tfoot className="border-t-2 border-navy-200 bg-navy-50">
+                  <tr>
+                    <td className="px-4 py-2.5 text-xs font-bold text-navy-700">Totals</td>
+                    <td className="px-4 py-2.5 text-right text-xs font-bold text-violet-700">
+                      {fmtNum((stats.responsibilities ?? []).reduce((s, r) => s + r.tokens_last_hour, 0))}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs font-bold text-navy-600">
+                      {fmtNum((stats.responsibilities ?? []).reduce((s, r) => s + r.tokens_last_day, 0))}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs font-bold text-sky-600">
+                      {fmtNum((stats.responsibilities ?? []).reduce((s, r) => s + r.requests_last_hour, 0))}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs font-bold text-navy-600">
+                      {fmtNum((stats.responsibilities ?? []).reduce((s, r) => s + r.requests_last_day, 0))}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs font-bold text-navy-600">
+                      {fmtAvg(
+                        (stats.responsibilities ?? []).reduce((s, r) => s + r.tokens_total, 0),
+                        (stats.responsibilities ?? []).reduce((s, r) => s + r.requests_total, 0),
+                      )}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs font-bold text-violet-800">
+                      {fmtNum((stats.responsibilities ?? []).reduce((s, r) => s + r.tokens_total, 0))}
+                    </td>
+                    <td className="px-4 py-2.5 text-right text-xs font-bold text-navy-600">
+                      {fmtNum((stats.responsibilities ?? []).reduce((s, r) => s + r.requests_total, 0))}
+                    </td>
+                    <td />
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ── Live pending breakdown ── */}
       {endpoints.some((ep) => Number(ep.pending_requests) > 0) && (
         <section>

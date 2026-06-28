@@ -45,16 +45,17 @@ type Gateway struct {
 // pending carries everything needed to proxy one request. It is enqueued
 // by the HTTP handler goroutine and consumed by the dispatcher.
 type pending struct {
-	ctx     context.Context
-	method  string
-	path    string
-	query   string
-	headers http.Header
-	body    []byte
-	w       http.ResponseWriter
-	done    chan struct{} // closed by forward() when the response is fully written
-	host    string       // originating endpoint-server IP for stats tracking
-	name    string       // agent display name from X-Agent-Name header
+	ctx            context.Context
+	method         string
+	path           string
+	query          string
+	headers        http.Header
+	body           []byte
+	w              http.ResponseWriter
+	done           chan struct{} // closed by forward() when the response is fully written
+	host           string       // originating endpoint-server IP for stats tracking
+	name           string       // agent display name from X-Agent-Name header
+	responsibility string       // scheduled responsibility name from X-Responsibility header; empty for ad-hoc runs
 }
 
 type healthResponse struct {
@@ -106,21 +107,22 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	host := clientHost(r)
 	p := &pending{
-		ctx:     r.Context(),
-		method:  r.Method,
-		path:    r.URL.Path,
-		query:   r.URL.RawQuery,
-		headers: r.Header.Clone(),
-		body:    body,
-		w:       w,
-		done:    make(chan struct{}),
-		host:    host,
-		name:    r.Header.Get("X-Agent-Name"),
+		ctx:            r.Context(),
+		method:         r.Method,
+		path:           r.URL.Path,
+		query:          r.URL.RawQuery,
+		headers:        r.Header.Clone(),
+		body:           body,
+		w:              w,
+		done:           make(chan struct{}),
+		host:           host,
+		name:           r.Header.Get("X-Agent-Name"),
+		responsibility: r.Header.Get("X-Responsibility"),
 	}
 
 	select {
 	case g.queue <- p:
-		g.tracker.IncrPending(p.host, p.name)
+		g.tracker.IncrPending(p.host, p.name, p.responsibility)
 		// Block this goroutine until forward() closes p.done, keeping the
 		// HTTP connection alive and the ResponseWriter valid for the dispatcher.
 		<-p.done
@@ -158,7 +160,7 @@ func (g *Gateway) dispatcher() {
 func (g *Gateway) forward(p *pending) {
 	var capturedTokens int64
 	defer func() {
-		g.tracker.Record(p.host, p.name, capturedTokens)
+		g.tracker.Record(p.host, p.name, p.responsibility, capturedTokens)
 		g.tracker.DecrPending(p.host)
 		close(p.done)
 	}()

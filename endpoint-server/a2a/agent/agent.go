@@ -22,15 +22,19 @@ import (
 	"agent_patches/endpoint-server/utils/sanitize"
 )
 
-// headerTransport injects a fixed header on every outgoing HTTP request.
+// headerTransport injects fixed headers on every outgoing HTTP request.
 type headerTransport struct {
-	inner http.RoundTripper
-	name  string
+	inner          http.RoundTripper
+	name           string
+	responsibility string // X-Responsibility header value; empty for ad-hoc runs
 }
 
 func (t *headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r = r.Clone(r.Context())
 	r.Header.Set("X-Agent-Name", t.name)
+	if t.responsibility != "" {
+		r.Header.Set("X-Responsibility", t.responsibility)
+	}
 	return t.inner.RoundTrip(r)
 }
 
@@ -50,6 +54,16 @@ func New(tools []tool.Tool, cfg *config.Settings) *Agent {
 // NewWithSystemPrompt creates an Agent that uses systemPrompt as the system
 // message instead of cfg.Agent.SystemPrompt.
 func NewWithSystemPrompt(tools []tool.Tool, cfg *config.Settings, systemPrompt string) *Agent {
+	return newAgent(tools, cfg, systemPrompt, "")
+}
+
+// NewWithResponsibility creates an Agent that tags every LLM request with the
+// given responsibility name so the gateway can track per-responsibility token usage.
+func NewWithResponsibility(tools []tool.Tool, cfg *config.Settings, systemPrompt, responsibility string) *Agent {
+	return newAgent(tools, cfg, systemPrompt, responsibility)
+}
+
+func newAgent(tools []tool.Tool, cfg *config.Settings, systemPrompt, responsibility string) *Agent {
 	slog.Debug("agent: initialised",
 		"model", cfg.Agent.Model,
 		"max_tokens", cfg.Agent.MaxTokens,
@@ -68,8 +82,9 @@ func NewWithSystemPrompt(tools []tool.Tool, cfg *config.Settings, systemPrompt s
 		option.WithHTTPClient(&http.Client{
 			Timeout: reqTimeout,
 			Transport: &headerTransport{
-				inner: otelhttp.NewTransport(http.DefaultTransport),
-				name:  cfg.Server.Name,
+				inner:          otelhttp.NewTransport(http.DefaultTransport),
+				name:           cfg.Server.Name,
+				responsibility: responsibility,
 			},
 		}),
 	}
