@@ -47,6 +47,6 @@ llm-gateway:
     port: 8080
   gateway:
     upstreamURL: "http://evolvewired.home.glroland.com:8080"
-    maxConcurrency: "2"
-    maxQueueDepth: "50"
-    requestTimeout: "5m"
+    maxConcurrency: "1"
+    maxQueueDepth: "100"
+    requestTimeout: "20m"
