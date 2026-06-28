@@ -86,6 +86,22 @@ export async function clearAgentMemory(req, res, next) {
   }
 }
 
+// GET /api/agents/:id/log — tailed log content from the agent's log file.
+export async function getAgentLog(req, res, next) {
+  try {
+    const log = await fleet.getAgentLog(req.params.id);
+    if (log === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+    if (log === null) {
+      return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to GET /log' });
+    }
+    res.json(log);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /api/agents/:id/responsibilities — scheduled responsibilities with live
 // scheduling state and last-run outcome from the agent.
 export async function getAgentResponsibilities(req, res, next) {

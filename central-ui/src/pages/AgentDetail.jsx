@@ -5,13 +5,13 @@ import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
+import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { useChatHistory } from '../hooks/useChatHistory';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Admin'];
+const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Log', 'Admin'];
 
 export default function AgentDetail() {
   const { id } = useParams();
@@ -115,6 +115,8 @@ export default function AgentDetail() {
       {tab === 'Interact' && <InteractTab agent={agent} />}
 
       {tab === 'Responsibilities' && <ResponsibilitiesTab agentId={agent.id} />}
+
+      {tab === 'Log' && <AgentLogTab agentId={agent.id} />}
 
       {tab === 'Admin' && <AgentAdminTab agent={agent} />}
     </div>
@@ -637,6 +639,71 @@ function SmartTrendsPanel({ trends }) {
           );
         })}
       </div>
+    </Card>
+  );
+}
+
+function AgentLogTab({ agentId }) {
+  const [logData, setLogData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const bottomRef = useRef(null);
+  const didInitialScroll = useRef(false);
+
+  const load = () => {
+    fetchAgentLog(agentId)
+      .then((data) => { setLogData(data); setLoading(false); })
+      .catch((err) => { setError(err); setLoading(false); });
+  };
+
+  useEffect(() => {
+    load();
+  }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Scroll to bottom once on initial load.
+  useEffect(() => {
+    if (logData && !didInitialScroll.current) {
+      didInitialScroll.current = true;
+      bottomRef.current?.scrollIntoView({ behavior: 'instant' });
+    }
+  }, [logData]);
+
+  const refresh = () => {
+    setLoading(true);
+    load();
+  };
+
+  return (
+    <Card
+      title="Agent log"
+      subtitle={
+        logData?.truncated
+          ? 'Showing last 1 MB of log file — oldest entries omitted'
+          : 'Complete log file contents'
+      }
+    >
+      <div className="mb-3 flex items-center justify-between">
+        {logData?.note && (
+          <p className="text-xs text-navy-500 italic">{logData.note}</p>
+        )}
+        {!logData?.note && <span />}
+        <button
+          onClick={refresh}
+          disabled={loading}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-medium text-navy-600 hover:border-navy-400 hover:text-navy-800 disabled:opacity-50 transition-colors"
+        >
+          {loading ? 'Loading...' : 'Refresh'}
+        </button>
+      </div>
+      {error && <AsyncState error={error} />}
+      {!error && (
+        <div className="relative h-[36rem] overflow-y-auto rounded-lg border border-navy-200 bg-navy-950 p-3">
+          <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-emerald-300">
+            {logData?.content || (loading ? '' : '(no log content)')}
+          </pre>
+          <div ref={bottomRef} />
+        </div>
+      )}
     </Card>
   );
 }

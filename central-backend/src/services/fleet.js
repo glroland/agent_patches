@@ -171,6 +171,20 @@ export async function resolveApproval(agentId, approvalId, decision, reason = ''
   return client.resolveApproval(approvalId, decision, reason);
 }
 
+// Fetches GET /log from a single agent. Returns undefined if not in inventory,
+// null if unreachable, or the log payload on success.
+export async function getAgentLog(id) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
+  if (!inventoryAgent) return undefined;
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
+  });
+  return client.getLog();
+}
+
 // Fetches GET /responsibilities from a single agent. Returns undefined if not
 // in inventory, null if unreachable, or the array of responsibility items.
 export async function getAgentResponsibilities(id) {

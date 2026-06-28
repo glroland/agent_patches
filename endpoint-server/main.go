@@ -21,6 +21,7 @@ import (
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/approvalapi"
+	"agent_patches/endpoint-server/logapi"
 	"agent_patches/endpoint-server/loginmonitor"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
@@ -295,6 +296,7 @@ func runServer(ctx context.Context) {
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem)
 	responsibilitiesSvc := responsibilitiesapi.New(lp, mem)
+	logSvc := logapi.New(cfg.Logging.File)
 
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
@@ -302,16 +304,19 @@ func runServer(ctx context.Context) {
 	var memoryHandler http.Handler = memorySvc.Handler()
 	var approvalHandler http.Handler = approvalSvc.Handler()
 	var responsibilitiesHandler http.Handler = responsibilitiesSvc.Handler()
+	var logHandler http.Handler = logSvc.Handler()
 	if cfg.Security.Scheme == "bearer" {
 		statusHandler = requireBearer(cfg.Security.Token, statusHandler)
 		memoryHandler = requireBearer(cfg.Security.Token, memoryHandler)
 		approvalHandler = requireBearer(cfg.Security.Token, approvalHandler)
 		responsibilitiesHandler = requireBearer(cfg.Security.Token, responsibilitiesHandler)
+		logHandler = requireBearer(cfg.Security.Token, logHandler)
 	}
 	mux.Handle("/status", statusHandler)
 	mux.Handle("/memory", memoryHandler)
 	mux.Handle("/approvals/", approvalHandler)
 	mux.Handle("/responsibilities", responsibilitiesHandler)
+	mux.Handle("/log", logHandler)
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(reqHandler))
 
 	srv := &http.Server{

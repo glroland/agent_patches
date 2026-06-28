@@ -78,6 +78,26 @@ export class AgentClient {
     }
   }
 
+  // Fetches GET /log. Returns null if the agent is unreachable, responds with
+  // a non-2xx status, or returns invalid JSON.
+  async getLog() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers = {};
+      if (this.authToken) {
+        headers.Authorization = `Bearer ${this.authToken}`;
+      }
+      const res = await fetch(`${this.baseUrl}/log`, { headers, signal: controller.signal });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Fetches GET /responsibilities. Returns null if the agent is unreachable,
   // responds with a non-2xx status, or returns invalid JSON.
   async getResponsibilities() {

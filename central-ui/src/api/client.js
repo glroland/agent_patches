@@ -83,6 +83,11 @@ export function fetchAgentResponsibilities(id) {
   return getJSON(`/agents/${id}/responsibilities`);
 }
 
+// Tailed log content from the agent's log file.
+export function fetchAgentLog(id) {
+  return getJSON(`/agents/${id}/log`);
+}
+
 // Pending approval requests across the fleet.
 export function fetchApprovals() {
   return getJSON('/approvals');
