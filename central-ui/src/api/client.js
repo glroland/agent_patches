@@ -88,6 +88,11 @@ export function fetchAgentLog(id) {
   return getJSON(`/agents/${id}/log`);
 }
 
+// A2A agent card served by the agent at /.well-known/agent-card.json.
+export function fetchAgentCard(id) {
+  return getJSON(`/agents/${id}/card`);
+}
+
 // Pending approval requests across the fleet.
 export function fetchApprovals() {
   return getJSON('/approvals');

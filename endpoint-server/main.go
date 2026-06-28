@@ -21,6 +21,7 @@ import (
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/approvalapi"
+	"agent_patches/endpoint-server/buildinfo"
 	"agent_patches/endpoint-server/manualrunapi"
 	"agent_patches/endpoint-server/logapi"
 	"agent_patches/endpoint-server/loginmonitor"
@@ -376,7 +377,7 @@ func buildAgentCard(url string, cfg *config.Settings, registry *tasks.Registry) 
 	card := &a2a.AgentCard{
 		Name:        "agent_patches",
 		Description: "Server administration AI agent",
-		Version:     "1.0.0",
+		Version:     buildinfo.BuildTime,
 		SupportedInterfaces: []*a2a.AgentInterface{
 			a2a.NewAgentInterface(url, a2a.TransportProtocolJSONRPC),
 		},

@@ -6,6 +6,7 @@ const router = Router();
 router.get('/', agentsController.listAgents);
 router.get('/:id', agentsController.getAgent);
 router.get('/:id/activity', agentsController.getAgentActivity);
+router.get('/:id/card', agentsController.getAgentCard);
 router.get('/:id/log', agentsController.getAgentLog);
 router.get('/:id/responsibilities', agentsController.getAgentResponsibilities);
 router.get('/:id/memory', agentsController.getAgentMemory);

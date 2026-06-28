@@ -170,6 +170,26 @@ export class AgentClient {
     }
   }
 
+  // Fetches GET /.well-known/agent-card.json. Returns null if the agent is
+  // unreachable, responds with a non-2xx status, or returns invalid JSON.
+  async getAgentCard() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers = {};
+      if (this.authToken) {
+        headers.Authorization = `Bearer ${this.authToken}`;
+      }
+      const res = await fetch(`${this.baseUrl}/.well-known/agent-card.json`, { headers, signal: controller.signal });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Sends a chat message to the agent via the A2A JSON-RPC "message/send"
   // method and returns its text reply. Throws on a network error, timeout,
   // non-2xx response, or a JSON-RPC error response.

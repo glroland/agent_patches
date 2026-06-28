@@ -119,6 +119,23 @@ export async function getAgentResponsibilities(req, res, next) {
   }
 }
 
+// GET /api/agents/:id/card — the A2A agent card served by the agent at
+// /.well-known/agent-card.json, passed through to the UI.
+export async function getAgentCard(req, res, next) {
+  try {
+    const card = await fleet.getAgentCard(req.params.id);
+    if (card === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+    if (card === null) {
+      return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to GET /.well-known/agent-card.json' });
+    }
+    res.json(card);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // POST /api/agents/:id/messages — relay an operator chat message to the
 // agent and return its reply.
 export async function sendAgentMessage(req, res, next) {

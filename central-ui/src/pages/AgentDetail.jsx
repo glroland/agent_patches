@@ -5,13 +5,13 @@ import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon, TerminalIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
+import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, fetchAgentCard, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { useChatHistory } from '../hooks/useChatHistory';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Log', 'Admin'];
+const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Log', 'Agent Card', 'Admin'];
 
 export default function AgentDetail() {
   const { id } = useParams();
@@ -117,6 +117,8 @@ export default function AgentDetail() {
       {tab === 'Responsibilities' && <ResponsibilitiesTab agentId={agent.id} />}
 
       {tab === 'Log' && <AgentLogTab agentId={agent.id} />}
+
+      {tab === 'Agent Card' && <AgentCardTab agent={agent} />}
 
       {tab === 'Admin' && <AgentAdminTab agent={agent} />}
     </div>
@@ -745,6 +747,124 @@ function AgentLogTab({ agentId }) {
         </div>
       )}
     </Card>
+  );
+}
+
+function AgentCardTab({ agent }) {
+  const { data: card, loading, error } = useApi(() => fetchAgentCard(agent.id), [agent.id]);
+
+  if (loading) return <AsyncState loading loadingLabel="Loading agent card..." />;
+  if (error) return <AsyncState error={error} />;
+  if (!card) return null;
+
+  const interfaces = card.supportedInterfaces ?? [];
+
+  return (
+    <div className="space-y-4">
+      {/* Identity */}
+      <Card title="Identity" subtitle={`A2A agent card — ${agent.hostname}/.well-known/agent-card.json`}>
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-navy-500">Name</dt>
+            <dd className="mt-1 text-sm font-medium text-navy-900">{card.name}</dd>
+          </div>
+          <div>
+            <dt className="text-xs font-semibold uppercase tracking-wide text-navy-500">Build version</dt>
+            <dd className="mt-1 font-mono text-sm text-navy-900">{card.version ?? 'unknown'}</dd>
+          </div>
+          {agent.buildTime && (
+            <div>
+              <dt className="text-xs font-semibold uppercase tracking-wide text-navy-500">Build time</dt>
+              <dd className="mt-1 font-mono text-sm text-navy-900">{agent.buildTime}</dd>
+            </div>
+          )}
+          {card.description && (
+            <div className="sm:col-span-2">
+              <dt className="text-xs font-semibold uppercase tracking-wide text-navy-500">Description</dt>
+              <dd className="mt-1 text-sm text-navy-700">{card.description}</dd>
+            </div>
+          )}
+        </dl>
+      </Card>
+
+      {/* Endpoint interfaces */}
+      {interfaces.length > 0 && (
+        <Card title="Endpoint" subtitle="Transport protocol and connection URL">
+          <div className="space-y-2">
+            {interfaces.map((iface, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-3 rounded-lg bg-navy-50 px-3 py-2.5">
+                <span className="rounded-md bg-navy-200 px-2 py-0.5 font-mono text-xs font-medium text-navy-700">
+                  {iface.protocolBinding ?? 'JSONRPC'}
+                </span>
+                {iface.protocolVersion && (
+                  <span className="rounded-md bg-navy-100 px-2 py-0.5 text-xs text-navy-600">
+                    A2A {iface.protocolVersion}
+                  </span>
+                )}
+                <span className="font-mono text-sm text-navy-800 break-all">{iface.url}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Skills */}
+      {card.skills?.length > 0 && (
+        <Card
+          title={`Skills (${card.skills.length})`}
+          subtitle="Capabilities registered with this agent"
+        >
+          <div className="space-y-2">
+            {card.skills.map((skill) => (
+              <CollapsibleSection key={skill.id} title={skill.name} subtitle={skill.description}>
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-navy-500">ID</p>
+                    <p className="mt-0.5 font-mono text-xs text-navy-700">{skill.id}</p>
+                  </div>
+                  {skill.description && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-navy-500">Description</p>
+                      <p className="mt-0.5 text-xs text-navy-700 leading-relaxed">{skill.description}</p>
+                    </div>
+                  )}
+                  {skill.tags?.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {skill.tags.map((tag) => (
+                        <span key={tag} className="rounded-full bg-navy-100 px-2.5 py-0.5 text-xs text-navy-600">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </CollapsibleSection>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* Security */}
+      {card.securitySchemes && Object.keys(card.securitySchemes).length > 0 && (
+        <Card title="Security" subtitle="Authentication schemes declared by this agent">
+          <div className="space-y-2">
+            {Object.entries(card.securitySchemes).map(([name, scheme]) => {
+              const schemeType = scheme?.scheme ?? scheme?.type ?? (typeof scheme === 'string' ? scheme : null);
+              return (
+                <div key={name} className="flex items-center gap-3 rounded-lg border border-navy-200 px-3 py-2.5">
+                  <span className="shrink-0 rounded-md bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
+                    {name}
+                  </span>
+                  {schemeType && (
+                    <span className="font-mono text-xs text-navy-600">{schemeType}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+    </div>
   );
 }
 
