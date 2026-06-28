@@ -49,10 +49,13 @@ export default function FleetIntelligence() {
     );
   }
 
-  const { headline, recommendations, generatedAt, agentCount } = intelligence;
+  const { headline, recommendations, resourceOptimization = [], generatedAt, agentCount } = intelligence;
   const high   = recommendations.filter((r) => r.priority === 'high');
   const medium = recommendations.filter((r) => r.priority === 'medium');
   const low    = recommendations.filter((r) => r.priority === 'low');
+  const optHigh   = resourceOptimization.filter((r) => r.priority === 'high');
+  const optMedium = resourceOptimization.filter((r) => r.priority === 'medium');
+  const optLow    = resourceOptimization.filter((r) => r.priority === 'low');
 
   return (
     <div className="space-y-6">
@@ -100,6 +103,46 @@ export default function FleetIntelligence() {
                         </div>
                         <p className="text-sm font-medium text-navy-900 mb-1">{rec.title}</p>
                         <p className="text-xs text-navy-500 leading-relaxed">{rec.body}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {resourceOptimization.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-black">Resource Optimization</h2>
+            <p className="mt-0.5 text-sm text-navy-500">Responsibility schedule and configuration recommendations based on token usage and outcome history.</p>
+          </div>
+          {[{ label: 'High priority', items: optHigh }, { label: 'Medium priority', items: optMedium }, { label: 'Low priority', items: optLow }]
+            .filter(({ items }) => items.length > 0)
+            .map(({ label, items }) => (
+              <div key={label}>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-navy-500">{label}</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {items.map((opt, i) => {
+                    const styles = PRIORITY_STYLES[opt.priority] ?? PRIORITY_STYLES.low;
+                    return (
+                      <div key={i} className={`rounded-lg border bg-white p-3.5 ${styles.border}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${styles.badge}`}>
+                            {opt.priority}
+                          </span>
+                          <span className="text-xs text-navy-500 font-mono">{opt.responsibility}</span>
+                        </div>
+                        {opt.hostname && opt.hostname !== 'all' && (
+                          <p className="text-xs text-navy-400 mb-1">{opt.hostname}</p>
+                        )}
+                        <div className="flex items-center gap-1.5 mb-2 text-xs text-navy-500">
+                          <span className="line-through">{opt.currentSchedule}</span>
+                          <span>→</span>
+                          <span className="font-medium text-navy-700">{opt.proposedChange}</span>
+                        </div>
+                        <p className="text-xs text-navy-500 leading-relaxed">{opt.rationale}</p>
                       </div>
                     );
                   })}

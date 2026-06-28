@@ -49,7 +49,7 @@ export const config = {
     // Model name as recognised by the target API.
     model: process.env.INTELLIGENCE_MODEL || 'gpt-4o',
     // How often (in minutes) to re-analyse the fleet. 0 = once on startup only.
-    intervalMinutes: Number(process.env.INTELLIGENCE_INTERVAL_MINUTES) || 30,
+    intervalMinutes: Number(process.env.INTELLIGENCE_INTERVAL_MINUTES) || 60,
     // Timeout (ms) for calls to the intelligence endpoint. Without this, a
     // slow/unresponsive local model can hang a request until an upstream
     // proxy kills it (e.g. the dashboard chat returning a bare 504) instead

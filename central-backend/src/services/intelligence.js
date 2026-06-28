@@ -8,6 +8,8 @@ import { logger } from '../utils/logger.js';
 import { getFleet } from './fleetCache.js';
 import { pendingApprovals, concerns } from './activity.js';
 import { setReport } from './intelligenceCache.js';
+import { getStats } from './gatewayService.js';
+import * as fleet from './fleet.js';
 
 let _client = null;
 let _timer = null;
@@ -94,17 +96,79 @@ function serializeFleet(agents) {
 }
 
 // ---------------------------------------------------------------------------
+// Token / resource stats serialisation
+// ---------------------------------------------------------------------------
+
+function serializeTokenStats(gatewayStats, agentResponsibilities) {
+  if (!gatewayStats && (!agentResponsibilities || agentResponsibilities.length === 0)) {
+    return null;
+  }
+
+  const lines = ['## Token & Resource Statistics'];
+
+  if (gatewayStats) {
+    lines.push('', `### Gateway Overview (as of ${gatewayStats.generatedAt ?? 'unknown'})`,
+      `- Upstream: ${gatewayStats.upstream ?? 'unknown'}`,
+      `- Max concurrency: ${gatewayStats.maxConcurrency ?? '?'} / Queue capacity: ${gatewayStats.queueCapacity ?? '?'}`,
+      `- Active requests: ${gatewayStats.activeRequests ?? 0} / Queued: ${gatewayStats.queuedRequests ?? 0}`,
+    );
+
+    if (gatewayStats.endpoints?.length > 0) {
+      lines.push('', '### Per-Endpoint Token Usage');
+      for (const ep of gatewayStats.endpoints) {
+        const label = ep.name ? `${ep.name} (${ep.host})` : ep.host;
+        lines.push(`- **${label}**`);
+        lines.push(`  - Tokens: ${ep.tokensLastHour} last-hour / ${ep.tokensLastDay} last-day / ${ep.tokensTotal} total`);
+        lines.push(`  - Requests: ${ep.requestsLastHour} last-hour / ${ep.requestsLastDay} last-day / ${ep.requestsTotal} total`);
+        if (ep.pendingRequests > 0) lines.push(`  - Pending: ${ep.pendingRequests}`);
+      }
+    }
+
+    if (gatewayStats.responsibilities?.length > 0) {
+      lines.push('', '### Per-Responsibility Token Usage (across all endpoints)');
+      for (const rs of gatewayStats.responsibilities) {
+        lines.push(`- **${rs.name}**`);
+        lines.push(`  - Tokens: ${rs.tokensLastHour} last-hour / ${rs.tokensLastDay} last-day / ${rs.tokensTotal} total`);
+        lines.push(`  - Requests: ${rs.requestsLastHour} last-hour / ${rs.requestsLastDay} last-day / ${rs.requestsTotal} total`);
+      }
+    }
+  }
+
+  if (agentResponsibilities?.length > 0) {
+    lines.push('', '### Per-Agent Responsibility Configuration & History');
+    for (const { hostname, responsibilities } of agentResponsibilities) {
+      if (!responsibilities || responsibilities.length === 0) continue;
+      lines.push(``, `#### ${hostname}`);
+      for (const r of responsibilities) {
+        lines.push(`- **${r.name}** — ${r.schedule}`);
+        lines.push(`  - Tools: ${r.tools?.join(', ') || 'none'}`);
+        lines.push(`  - Instruction: ${r.instruction?.slice(0, 200) ?? '(none)'}${r.instruction?.length > 200 ? '…' : ''}`);
+        lines.push(`  - Status: ${r.status}${r.lastRunAt ? ` (last run: ${r.lastRunAt})` : ''}`);
+        if (r.nextRunAt) lines.push(`  - Next run: ${r.nextRunAt}`);
+        if (r.summary) {
+          const s = r.summary.length > 300 ? r.summary.slice(0, 297) + '…' : r.summary;
+          lines.push(`  - Last summary: ${s}`);
+        }
+      }
+    }
+  }
+
+  return lines.join('\n');
+}
+
+// ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
 
 const SYSTEM_PROMPT = `You are the central intelligence layer for a fleet of AI server management agents called "agent_patches". Each endpoint agent autonomously monitors its host — checking for system patches, disk health, memory, network utilisation, interactive logins, and more — then requests operator approval before taking action.
 
-Your job is to analyse the current fleet state and produce actionable recommendations. Think like a senior sysadmin and an AI engineer simultaneously:
+Your job is to analyse the current fleet state, token consumption, and responsibility scheduling data, then produce actionable recommendations. Think like a senior sysadmin and an AI engineer simultaneously:
 
 1. Flag genuine health issues (offline agents, repeated failures, pending patches, resource concerns).
 2. Spot patterns across the fleet (e.g. multiple hosts need patching, several high-risk approvals sitting idle).
 3. Recommend new agent capabilities that would improve visibility or automation — be specific and concrete. For example: "Add a skill that monitors TLS certificate expiry" or "Agents should alert on failed systemd units."
 4. Suggest configuration or architectural improvements when you see evidence for them.
+5. Analyse token consumption by endpoint and by responsibility. Identify responsibilities that consume disproportionate tokens relative to the value they provide based on their output summaries and action history. Recommend frequency adjustments (increase if catching real issues, decrease if consistently finding nothing), tool list pruning (if a responsibility calls tools whose output it never uses), or instruction tightening. Be specific: name the responsibility, the host, the current schedule, and the proposed change.
 
 Respond ONLY with a JSON object in this exact shape — no preamble, no markdown fences:
 {
@@ -116,14 +180,26 @@ Respond ONLY with a JSON object in this exact shape — no preamble, no markdown
       "title": "Short imperative title (60 chars max)",
       "body": "2–4 sentences. Name the host, the pattern, or the exact feature to build."
     }
+  ],
+  "resourceOptimization": [
+    {
+      "priority": "high|medium|low",
+      "hostname": "hostname or 'all'",
+      "responsibility": "responsibility name",
+      "currentSchedule": "e.g. every 1h or daily at 03:00",
+      "proposedChange": "Concrete change: new frequency, removed tools, revised instruction, or 'no change needed'.",
+      "rationale": "1–3 sentences explaining the evidence behind this recommendation."
+    }
   ]
 }
 
 Rules:
-- Maximum 9 recommendations, ordered high → low priority.
+- Maximum 9 entries in recommendations, ordered high → low priority.
+- Maximum 9 entries in resourceOptimization. Omit the array (or set to []) if no token/responsibility data was provided.
 - Only include a recommendation if there is real evidence in the data.
 - "feature" = a new agent skill or central-backend capability to build.
-- Headline must not repeat any recommendation title verbatim.`;
+- Headline must not repeat any recommendation title verbatim.
+- For resourceOptimization: a responsibility that consistently reports "nothing found" on a short cycle is a strong candidate for a longer interval. A responsibility with high token use but thin summaries may need instruction tightening.`;
 
 async function analyse() {
   const agents = getFleet();
@@ -136,6 +212,23 @@ async function analyse() {
 
   const fleetText = serializeFleet(agents);
 
+  // Gather token stats and per-agent responsibility state in parallel.
+  const [gatewayStats, agentResponsibilities] = await Promise.all([
+    getStats().catch((err) => {
+      logger.warn(`intelligence: failed to fetch gateway stats: ${err.message}`);
+      return null;
+    }),
+    Promise.all(
+      agents.map(async (a) => {
+        const responsibilities = await fleet.getAgentResponsibilities(a.id).catch(() => null);
+        return { hostname: a.hostname, responsibilities };
+      })
+    ),
+  ]);
+
+  const tokenText = serializeTokenStats(gatewayStats, agentResponsibilities);
+  const userContent = tokenText ? `${fleetText}\n\n${tokenText}` : fleetText;
+
   let raw;
   try {
     const response = await _client.chat.completions.create({
@@ -143,7 +236,7 @@ async function analyse() {
       max_tokens: 2048,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: fleetText },
+        { role: 'user', content: userContent },
       ],
     });
 
@@ -174,12 +267,13 @@ async function analyse() {
   const report = {
     headline: parsed.headline ?? '',
     recommendations: Array.isArray(parsed.recommendations) ? parsed.recommendations : [],
+    resourceOptimization: Array.isArray(parsed.resourceOptimization) ? parsed.resourceOptimization : [],
     generatedAt: new Date().toISOString(),
     agentCount: agents.length,
   };
 
   setReport(report);
-  logger.info(`intelligence: report ready — ${report.recommendations.length} recommendation(s)`);
+  logger.info(`intelligence: report ready — ${report.recommendations.length} recommendation(s), ${report.resourceOptimization.length} resource optimization(s)`);
 }
 
 // ---------------------------------------------------------------------------
@@ -199,17 +293,17 @@ export function start() {
     maxRetries: 0,
   });
 
-  // First run deferred 15 s so the initial poll cycle can complete first.
-  setTimeout(analyse, 15000);
+  // First run deferred 5 min so the initial poll cycle and gateway can settle.
+  setTimeout(analyse, 5 * 60 * 1000);
 
   const intervalMs = config.intelligence.intervalMinutes * 60 * 1000;
   if (intervalMs > 0) {
     _timer = setInterval(analyse, intervalMs);
     logger.info(
-      `intelligence: started — first run in 15s, then every ${config.intelligence.intervalMinutes}m (model: ${config.intelligence.model})`
+      `intelligence: started — first run in 5m, then every ${config.intelligence.intervalMinutes}m (model: ${config.intelligence.model})`
     );
   } else {
-    logger.info(`intelligence: started — single run on startup (model: ${config.intelligence.model})`);
+    logger.info(`intelligence: started — single run in 5m (model: ${config.intelligence.model})`);
   }
 }
 
