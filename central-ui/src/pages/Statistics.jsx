@@ -112,6 +112,11 @@ function HBar({ value, max, color }) {
 
 // ─── Formatters ─────────────────────────────────────────────────────────────
 
+function epLabel(ep) {
+  if (ep.name && ep.name !== ep.host) return `${ep.name} (${ep.host})`;
+  return ep.host;
+}
+
 function fmtNum(n) {
   if (n == null) return '—';
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
@@ -246,7 +251,7 @@ function TokenUsageTab({ stats, history }) {
             {sorted.map((ep) => (
               <div key={ep.host}>
                 <div className="mb-1.5 flex items-center justify-between text-xs">
-                  <span className="font-mono text-navy-700 truncate">{ep.name || ep.host}</span>
+                  <span className="font-mono text-navy-700 truncate">{epLabel(ep)}</span>
                   <div className="ml-4 flex shrink-0 items-center gap-3">
                     <span className="text-navy-400">avg {fmtAvg(ep.tokens_total, ep.requests_total)} tok/req</span>
                     <span className="font-semibold text-indigo-700">{fmtNum(ep.tokens_last_hour)} tok</span>
@@ -296,7 +301,7 @@ function TokenUsageTab({ stats, history }) {
                     const pending = Number(ep.pending_requests);
                     return (
                       <tr key={ep.host} className="transition-colors hover:bg-navy-50/60">
-                        <td className="px-4 py-3 font-mono text-xs text-navy-800">{ep.name || ep.host}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-navy-800">{epLabel(ep)}</td>
                         <td className="px-4 py-3 text-right">
                           {pending > 0 ? (
                             <span className="inline-flex min-w-[22px] items-center justify-center rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-800">
@@ -472,7 +477,7 @@ function TokenUsageTab({ stats, history }) {
               .map((ep) => (
                 <div key={ep.host}>
                   <div className="mb-1.5 flex items-center justify-between text-xs">
-                    <span className="font-mono text-navy-700">{ep.host}</span>
+                    <span className="font-mono text-navy-700">{epLabel(ep)}</span>
                     <span className="font-bold text-amber-700">{ep.pending_requests}</span>
                   </div>
                   <HBar value={Number(ep.pending_requests)} max={maxPending} color="#f59e0b" />
