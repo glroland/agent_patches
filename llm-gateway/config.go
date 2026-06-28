@@ -10,11 +10,12 @@ import (
 // Config holds all runtime configuration for the gateway, loaded from
 // environment variables so the same image can be tuned via Helm values.
 type Config struct {
-	ListenAddr     string
-	UpstreamURL    string
-	MaxConcurrency int
-	MaxQueueDepth  int
-	RequestTimeout time.Duration
+	ListenAddr          string
+	UpstreamURL         string
+	MaxConcurrency      int
+	MaxQueueDepth       int
+	PriorityQueueDepth  int
+	RequestTimeout      time.Duration
 	// AuthToken is the bearer token callers must supply in
 	// Authorization: Bearer <token>. Empty string disables auth (insecure;
 	// a warning is logged at startup).
@@ -26,12 +27,13 @@ type Config struct {
 // field is absent or any value is out of range.
 func LoadConfig() (Config, error) {
 	cfg := Config{
-		ListenAddr:     envStr("GATEWAY_LISTEN_ADDR", ":8080"),
-		UpstreamURL:    envStr("GATEWAY_UPSTREAM_URL", ""),
-		MaxConcurrency: envInt("GATEWAY_MAX_CONCURRENCY", 2),
-		MaxQueueDepth:  envInt("GATEWAY_MAX_QUEUE_DEPTH", 50),
-		RequestTimeout: envDur("GATEWAY_REQUEST_TIMEOUT", 5*time.Minute),
-		AuthToken:      envStr("GATEWAY_AUTH_TOKEN", ""),
+		ListenAddr:         envStr("GATEWAY_LISTEN_ADDR", ":8080"),
+		UpstreamURL:        envStr("GATEWAY_UPSTREAM_URL", ""),
+		MaxConcurrency:     envInt("GATEWAY_MAX_CONCURRENCY", 2),
+		MaxQueueDepth:      envInt("GATEWAY_MAX_QUEUE_DEPTH", 50),
+		PriorityQueueDepth: envInt("GATEWAY_PRIORITY_QUEUE_DEPTH", 10),
+		RequestTimeout:     envDur("GATEWAY_REQUEST_TIMEOUT", 5*time.Minute),
+		AuthToken:          envStr("GATEWAY_AUTH_TOKEN", ""),
 	}
 	if cfg.UpstreamURL == "" {
 		return Config{}, fmt.Errorf("GATEWAY_UPSTREAM_URL is required")

@@ -323,7 +323,7 @@ func runServer(ctx context.Context) {
 	mux.Handle("/manual-runs/", manualRunHandler)
 	mux.Handle("/responsibilities", responsibilitiesHandler)
 	mux.Handle("/log", logHandler)
-	mux.Handle("/", a2asrv.NewJSONRPCHandler(reqHandler))
+	mux.Handle("/", interactivePriorityMiddleware(a2asrv.NewJSONRPCHandler(reqHandler)))
 
 	srv := &http.Server{
 		Addr:         addr,
@@ -436,6 +436,18 @@ func (b *bearerInterceptor) Before(ctx context.Context, callCtx *a2asrv.CallCont
 		return ctx, nil, a2a.ErrUnauthenticated
 	}
 	return ctx, nil, nil
+}
+
+// interactivePriorityMiddleware reads X-Priority: interactive from the
+// incoming HTTP request and tags the context so the agent's headerTransport
+// can forward the priority signal on every outgoing LLM call.
+func interactivePriorityMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("X-Priority") == "interactive" {
+			r = r.WithContext(agent.WithInteractive(r.Context()))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // lookupFQDN tries to determine this host's fully-qualified domain name via

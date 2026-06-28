@@ -22,6 +22,22 @@ import (
 	"agent_patches/endpoint-server/utils/sanitize"
 )
 
+// interactiveKey is the context key used to mark a request as interactive
+// (i.e. originating from a human via the UI rather than a scheduled job).
+type interactiveKey struct{}
+
+// WithInteractive returns a copy of ctx tagged as an interactive request.
+// Call this in the HTTP middleware that receives UI-originated A2A messages.
+func WithInteractive(ctx context.Context) context.Context {
+	return context.WithValue(ctx, interactiveKey{}, true)
+}
+
+// IsInteractive reports whether ctx was tagged by WithInteractive.
+func IsInteractive(ctx context.Context) bool {
+	v, _ := ctx.Value(interactiveKey{}).(bool)
+	return v
+}
+
 // headerTransport injects fixed headers on every outgoing HTTP request.
 type headerTransport struct {
 	inner          http.RoundTripper
@@ -34,6 +50,9 @@ func (t *headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	r.Header.Set("X-Agent-Name", t.name)
 	if t.responsibility != "" {
 		r.Header.Set("X-Responsibility", t.responsibility)
+	}
+	if IsInteractive(r.Context()) {
+		r.Header.Set("X-Priority", "interactive")
 	}
 	return t.inner.RoundTrip(r)
 }

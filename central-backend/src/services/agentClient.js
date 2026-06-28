@@ -198,7 +198,7 @@ export class AgentClient {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
     logger.debug(`agentClient.sendMessage: sending to ${this.baseUrl}`, { textLength: text.length, timeoutMs });
     try {
-      const headers = { 'Content-Type': 'application/json' };
+      const headers = { 'Content-Type': 'application/json', 'X-Priority': 'interactive' };
       if (this.authToken) {
         headers.Authorization = `Bearer ${this.authToken}`;
       }

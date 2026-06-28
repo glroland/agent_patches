@@ -79,15 +79,17 @@ type ResponsibilityStatsSnapshot struct {
 
 // GatewayStatsResponse is the top-level payload returned by GET /stats.
 type GatewayStatsResponse struct {
-	GeneratedAt      time.Time                      `json:"generated_at"`
-	TotalPending     int                            `json:"total_pending"`
-	ActiveRequests   int                            `json:"active_requests"`
-	QueuedRequests   int                            `json:"queued_requests"`
-	MaxConcurrency   int                            `json:"max_concurrency"`
-	QueueCapacity    int                            `json:"queue_capacity"`
-	Upstream         string                         `json:"upstream"`
-	Endpoints        []EndpointStatsSnapshot        `json:"endpoints"`
-	Responsibilities []ResponsibilityStatsSnapshot  `json:"responsibilities"`
+	GeneratedAt               time.Time                     `json:"generated_at"`
+	TotalPending              int                           `json:"total_pending"`
+	ActiveRequests            int                           `json:"active_requests"`
+	QueuedRequests            int                           `json:"queued_requests"`
+	PriorityQueuedRequests    int                           `json:"priority_queued_requests"`
+	MaxConcurrency            int                           `json:"max_concurrency"`
+	QueueCapacity             int                           `json:"queue_capacity"`
+	PriorityQueueCapacity     int                           `json:"priority_queue_capacity"`
+	Upstream                  string                        `json:"upstream"`
+	Endpoints                 []EndpointStatsSnapshot       `json:"endpoints"`
+	Responsibilities          []ResponsibilityStatsSnapshot `json:"responsibilities"`
 }
 
 func NewTracker() *Tracker {
@@ -276,17 +278,20 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 	}
 
 	queued := len(g.queue)
+	priorityQueued := len(g.priorityQueue)
 	active := len(g.sem)
 	return GatewayStatsResponse{
-		GeneratedAt:      now,
-		TotalPending:     queued + active,
-		ActiveRequests:   active,
-		QueuedRequests:   queued,
-		MaxConcurrency:   cap(g.sem),
-		QueueCapacity:    cap(g.queue),
-		Upstream:         g.upstream.String(),
-		Endpoints:        snaps,
-		Responsibilities: respSnaps,
+		GeneratedAt:            now,
+		TotalPending:           queued + priorityQueued + active,
+		ActiveRequests:         active,
+		QueuedRequests:         queued,
+		PriorityQueuedRequests: priorityQueued,
+		MaxConcurrency:         cap(g.sem),
+		QueueCapacity:          cap(g.queue),
+		PriorityQueueCapacity:  cap(g.priorityQueue),
+		Upstream:               g.upstream.String(),
+		Endpoints:              snaps,
+		Responsibilities:       respSnaps,
 	}
 }
 

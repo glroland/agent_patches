@@ -28,18 +28,20 @@ var hopByHopHeaders = map[string]bool{
 	"Upgrade":             true,
 }
 
-// Gateway is a queuing reverse proxy. Incoming requests are placed on a
-// bounded FIFO channel. A fixed-size worker pool drains the channel,
-// forwarding each request to the upstream LLM and streaming the response
-// back to the original caller. When the queue is full the gateway returns
-// 429 immediately rather than blocking the caller indefinitely.
+// Gateway is a queuing reverse proxy. Incoming requests are placed on one of
+// two bounded FIFO channels: a high-priority channel for interactive (UI-
+// initiated) requests, and a normal channel for scheduled background work.
+// The dispatcher always drains the priority channel first. A fixed-size
+// worker pool limits concurrency. When the applicable queue is full the
+// gateway returns 429 immediately rather than blocking the caller.
 type Gateway struct {
-	upstream *url.URL
-	client   *http.Client
-	queue    chan *pending
-	sem      chan struct{} // semaphore: len = active requests, cap = max concurrency
-	timeout  time.Duration
-	tracker  *Tracker
+	upstream      *url.URL
+	client        *http.Client
+	priorityQueue chan *pending // interactive UI requests — drained first
+	queue         chan *pending // scheduled background requests
+	sem           chan struct{} // semaphore: len = active requests, cap = max concurrency
+	timeout       time.Duration
+	tracker       *Tracker
 }
 
 // pending carries everything needed to proxy one request. It is enqueued
@@ -59,12 +61,14 @@ type pending struct {
 }
 
 type healthResponse struct {
-	Status         string `json:"status"`
-	QueueDepth     int    `json:"queue_depth"`
-	QueueCapacity  int    `json:"queue_capacity"`
-	ActiveRequests int    `json:"active_requests"`
-	MaxConcurrency int    `json:"max_concurrency"`
-	Upstream       string `json:"upstream"`
+	Status                string `json:"status"`
+	QueueDepth            int    `json:"queue_depth"`
+	QueueCapacity         int    `json:"queue_capacity"`
+	PriorityQueueDepth    int    `json:"priority_queue_depth"`
+	PriorityQueueCapacity int    `json:"priority_queue_capacity"`
+	ActiveRequests        int    `json:"active_requests"`
+	MaxConcurrency        int    `json:"max_concurrency"`
+	Upstream              string `json:"upstream"`
 }
 
 // NewGateway creates a Gateway and starts the background dispatcher goroutine.
@@ -74,12 +78,13 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		return nil, fmt.Errorf("invalid GATEWAY_UPSTREAM_URL %q: %w", cfg.UpstreamURL, err)
 	}
 	g := &Gateway{
-		upstream: u,
-		client:   &http.Client{Timeout: cfg.RequestTimeout + 5*time.Second},
-		queue:    make(chan *pending, cfg.MaxQueueDepth),
-		sem:      make(chan struct{}, cfg.MaxConcurrency),
-		timeout:  cfg.RequestTimeout,
-		tracker:  NewTracker(),
+		upstream:      u,
+		client:        &http.Client{Timeout: cfg.RequestTimeout + 5*time.Second},
+		priorityQueue: make(chan *pending, cfg.PriorityQueueDepth),
+		queue:         make(chan *pending, cfg.MaxQueueDepth),
+		sem:           make(chan struct{}, cfg.MaxConcurrency),
+		timeout:       cfg.RequestTimeout,
+		tracker:       NewTracker(),
 	}
 	go g.dispatcher()
 	return g, nil
@@ -106,6 +111,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	host := clientHost(r)
+	interactive := r.Header.Get("X-Priority") == "interactive"
 	p := &pending{
 		ctx:            r.Context(),
 		method:         r.Method,
@@ -120,8 +126,17 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		responsibility: r.Header.Get("X-Responsibility"),
 	}
 
+	// Interactive (UI-initiated) requests go to the priority queue; background
+	// scheduled work goes to the normal queue.
+	targetQueue := g.queue
+	queueLabel := "normal"
+	if interactive {
+		targetQueue = g.priorityQueue
+		queueLabel = "priority"
+	}
+
 	select {
-	case g.queue <- p:
+	case targetQueue <- p:
 		g.tracker.IncrPending(p.host, p.name, p.responsibility)
 		// Block this goroutine until forward() closes p.done, keeping the
 		// HTTP connection alive and the ResponseWriter valid for the dispatcher.
@@ -130,8 +145,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slog.Warn("gateway: queue full, returning 429",
 			"path", r.URL.Path,
 			"host", host,
-			"queue_depth", len(g.queue),
-			"queue_capacity", cap(g.queue),
+			"queue", queueLabel,
+			"queue_depth", len(targetQueue),
+			"queue_capacity", cap(targetQueue),
 			"active_requests", len(g.sem),
 		)
 		w.Header().Set("Retry-After", "5")
@@ -139,17 +155,36 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// dispatcher drains the queue FIFO. It acquires the semaphore before
-// spawning each forward goroutine, which preserves ordering: request N+1
-// is dequeued only after a concurrency slot becomes available, so callers
-// always reach the LLM in the order their requests arrived.
+// dispatcher drains both queues, always preferring the priority queue over
+// the normal queue. Stage 1 does a non-blocking check of the priority queue
+// so that an interactive request already waiting is picked up immediately
+// when a concurrency slot opens. Stage 2 blocks on whichever queue has work,
+// with the priority queue listed first (select picks randomly when both are
+// ready, so interactive requests race ahead of background work on average).
 func (g *Gateway) dispatcher() {
-	for p := range g.queue {
-		g.sem <- struct{}{} // blocks here when max_concurrency slots are occupied
+	dispatch := func(p *pending) {
+		g.sem <- struct{}{} // blocks when max_concurrency slots are occupied
 		go func(p *pending) {
 			defer func() { <-g.sem }()
 			g.forward(p)
 		}(p)
+	}
+
+	for {
+		// Stage 1: non-blocking drain of priority queue.
+		select {
+		case p := <-g.priorityQueue:
+			dispatch(p)
+			continue
+		default:
+		}
+		// Stage 2: block until work arrives on either queue.
+		select {
+		case p := <-g.priorityQueue:
+			dispatch(p)
+		case p := <-g.queue:
+			dispatch(p)
+		}
 	}
 }
 
@@ -257,12 +292,14 @@ func (g *Gateway) forward(p *pending) {
 func (g *Gateway) health(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(healthResponse{
-		Status:         "ok",
-		QueueDepth:     len(g.queue),
-		QueueCapacity:  cap(g.queue),
-		ActiveRequests: len(g.sem),
-		MaxConcurrency: cap(g.sem),
-		Upstream:       g.upstream.String(),
+		Status:                "ok",
+		QueueDepth:            len(g.queue),
+		QueueCapacity:         cap(g.queue),
+		PriorityQueueDepth:    len(g.priorityQueue),
+		PriorityQueueCapacity: cap(g.priorityQueue),
+		ActiveRequests:        len(g.sem),
+		MaxConcurrency:        cap(g.sem),
+		Upstream:              g.upstream.String(),
 	})
 }
 

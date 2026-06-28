@@ -32,6 +32,7 @@ func main() {
 		"upstream", cfg.UpstreamURL,
 		"max_concurrency", cfg.MaxConcurrency,
 		"max_queue_depth", cfg.MaxQueueDepth,
+		"priority_queue_depth", cfg.PriorityQueueDepth,
 		"request_timeout", cfg.RequestTimeout,
 		"auth", cfg.AuthToken != "",
 	)

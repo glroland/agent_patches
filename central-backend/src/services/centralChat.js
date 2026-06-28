@@ -119,6 +119,7 @@ export async function chat(message, history = []) {
     baseURL: config.intelligence.baseUrl,
     timeout: config.intelligence.timeoutMs,
     maxRetries: 0, // fail fast — don't compound the timeout with the SDK's default retries
+    defaultHeaders: { 'X-Priority': 'interactive' },
   });
 
   const agents = getFleet();
