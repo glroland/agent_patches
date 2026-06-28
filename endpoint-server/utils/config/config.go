@@ -137,8 +137,9 @@ type AgentSettings struct {
 
 // LoggingSettings controls log verbosity and output destination.
 type LoggingSettings struct {
-	Level string `yaml:"level"`
-	File  string `yaml:"file"`
+	Level      string `yaml:"level"`
+	File       string `yaml:"file"`
+	MaxBackups int    `yaml:"max_backups"`
 }
 
 // TasksSettings lists which tasks the agent exposes.
@@ -214,6 +215,9 @@ func Load() (*Settings, error) {
 	}
 	if s.Loop.Heartbeat == "" {
 		s.Loop.Heartbeat = "1s"
+	}
+	if s.Logging.MaxBackups == 0 {
+		s.Logging.MaxBackups = 10
 	}
 	if s.Agent.RequestTimeout == "" {
 		s.Agent.RequestTimeout = "6m"

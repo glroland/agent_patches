@@ -77,7 +77,7 @@ func runServer(ctx context.Context) {
 		return
 	}
 
-	if err := logger.Setup(cfg.Logging.Level, cfg.Logging.File); err != nil {
+	if err := logger.Setup(cfg.Logging.Level, cfg.Logging.File, cfg.Logging.MaxBackups); err != nil {
 		slog.Error("failed to open log file", "error", err)
 		return
 	}
