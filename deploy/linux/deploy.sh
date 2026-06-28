@@ -715,8 +715,8 @@ echo ""
 FAILED=0
 for i in "${!HOSTS[@]}"; do
     if [[ "${DEPLOY_CONFIRM:-1}" == "1" ]]; then
-        read -rp "Deploy to ${HOST_USERS[$i]}@${HOSTS[$i]} (${HOST_OSTYPES[$i]})? [y/N] " _confirm
-        if [[ ! "$_confirm" =~ ^[yY] ]]; then
+        read -rp "Deploy to ${HOST_USERS[$i]}@${HOSTS[$i]} (${HOST_OSTYPES[$i]})? [Y/n] " _confirm
+        if [[ "$_confirm" =~ ^[nN] ]]; then
             echo "  skipping ${HOSTS[$i]}"
             continue
         fi
