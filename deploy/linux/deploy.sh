@@ -344,7 +344,10 @@ function Warn { param([string]$m) Write-Output "  WARNING: $m" }
 # (installer.Install() demands an elevated token; services bypass UAC for
 # Administrators accounts so no interactive elevation prompt occurs).
 Step "Configuring service account '$SvcAcct'..."
-$rndBytes   = [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32)
+$rng         = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+$rndBytes    = New-Object byte[] 32
+$rng.GetBytes($rndBytes)
+$rng.Dispose()
 $SvcPassword = [System.Convert]::ToBase64String($rndBytes)
 $secPwd      = ConvertTo-SecureString $SvcPassword -AsPlainText -Force
 
