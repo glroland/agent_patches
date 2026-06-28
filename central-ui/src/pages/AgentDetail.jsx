@@ -643,6 +643,12 @@ function SmartTrendsPanel({ trends }) {
   );
 }
 
+function logLineColor(line) {
+  if (/\b(ERROR|FATAL|PANIC)\b/i.test(line)) return 'text-red-400';
+  if (/\b(WARN(?:ING)?)\b/i.test(line)) return 'text-yellow-300';
+  return 'text-emerald-300';
+}
+
 function AgentLogTab({ agentId }) {
   const [logData, setLogData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -698,8 +704,15 @@ function AgentLogTab({ agentId }) {
       {error && <AsyncState error={error} />}
       {!error && (
         <div className="relative h-[36rem] overflow-y-auto rounded-lg border border-navy-200 bg-navy-950 p-3">
-          <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-emerald-300">
-            {logData?.content || (loading ? '' : '(no log content)')}
+          <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed">
+            {logData?.content
+              ? logData.content.split('\n').map((line, i) => (
+                  <span key={i} className={logLineColor(line)}>
+                    {line}{'\n'}
+                  </span>
+                ))
+              : (loading ? '' : <span className="text-emerald-300">(no log content)</span>)
+            }
           </pre>
           <div ref={bottomRef} />
         </div>
