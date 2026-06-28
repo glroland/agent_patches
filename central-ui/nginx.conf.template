@@ -30,7 +30,7 @@ http {
     #include /opt/app-root/etc/nginx.d/*.conf;
 
     server {
-        listen       127.0.0.1:8080 default_server;
+        listen       8080 default_server;
         server_name  _;
         #root         /opt/app-root/src;
 
