@@ -166,8 +166,8 @@ SCP_OPTS=(
 # ---------------------------------------------------------------------------
 # Remote setup script (written to a local tempfile, scp'd and executed)
 # ---------------------------------------------------------------------------
-SETUP_SCRIPT=$(mktemp /tmp/agent_patches_setup.XXXXXX.sh)
-WIN_SETUP_SCRIPT=$(mktemp /tmp/agent_patches_setup.XXXXXX.ps1)
+SETUP_SCRIPT="/tmp/agent_patches_setup_$$.sh"
+WIN_SETUP_SCRIPT="/tmp/agent_patches_setup_$$.ps1"
 trap 'rm -f "$SETUP_SCRIPT" "$WIN_SETUP_SCRIPT"; rm -rf "$CTRL_DIR"' EXIT
 
 cat > "$SETUP_SCRIPT" << 'REMOTE_SCRIPT'
@@ -385,17 +385,20 @@ public class Lsa {
         var s = new UnicodeStr();
         var a = new ObjAttr { Length = Marshal.SizeOf(typeof(ObjAttr)) };
         IntPtr policy;
-        LsaOpenPolicy(ref s, ref a, 0x28u, out policy);
+        // 0x10 = POLICY_CREATE_ACCOUNT, 0x800 = POLICY_LOOKUP_NAMES
+        uint st = LsaOpenPolicy(ref s, ref a, 0x810u, out policy);
+        if (st != 0) throw new Exception("LsaOpenPolicy failed: 0x" + st.ToString("X8"));
         var name = "SeServiceLogonRight";
         var buf = Marshal.StringToHGlobalUni(name);
         var r = new UnicodeStr { Len = (ushort)(name.Length * 2), MaxLen = (ushort)(name.Length * 2 + 2), Buf = buf };
         var sidPtr = Marshal.AllocHGlobal(sidBytes.Length);
         Marshal.Copy(sidBytes, 0, sidPtr, sidBytes.Length);
-        LsaAddAccountRights(policy, sidPtr, new[] { r }, 1);
+        st = LsaAddAccountRights(policy, sidPtr, new[] { r }, 1);
         Marshal.FreeHGlobal(sidPtr); Marshal.FreeHGlobal(buf); LsaClose(policy);
+        if (st != 0) throw new Exception("LsaAddAccountRights failed: 0x" + st.ToString("X8"));
     }
 }
-'@ -ErrorAction SilentlyContinue
+'@
 $sid = (New-Object System.Security.Principal.NTAccount("$env:COMPUTERNAME\$SvcAcct")).Translate([System.Security.Principal.SecurityIdentifier])
 $sidBytes = New-Object byte[] $sid.BinaryLength; $sid.GetBinaryForm($sidBytes, 0)
 [Lsa]::GrantServiceLogon($sidBytes)
@@ -550,6 +553,14 @@ deploy_host_windows() {
     win_setup_base=$(basename "$WIN_SETUP_SCRIPT")
 
     echo "│  Copying files..."
+    for f in "${files[@]}"; do
+        if [[ -z "$f" ]]; then
+            echo "│  ✗ FAILED: empty path in file list (bug: a variable is unset)" >&2; return 1
+        elif [[ ! -f "$f" ]]; then
+            echo "│  ✗ FAILED: source file not found: $f" >&2; return 1
+        fi
+        echo "│    $f"
+    done
     if ! "${SCP_CMD[@]}" "${SCP_OPTS[@]}" "${files[@]}" \
             "${host_user}@${host}:${win_tmp}/" 2>&1 | sed 's/^/│  /'; then
         echo "│  ✗ FAILED: could not copy files to $host"
@@ -611,6 +622,14 @@ deploy_host() {
     fi
 
     echo "│  Copying files..."
+    for f in "${files[@]}"; do
+        if [[ -z "$f" ]]; then
+            echo "│  ✗ FAILED: empty path in file list (bug: a variable is unset)" >&2; return 1
+        elif [[ ! -f "$f" ]]; then
+            echo "│  ✗ FAILED: source file not found: $f" >&2; return 1
+        fi
+        echo "│    $f"
+    done
     if ! "${SCP_CMD[@]}" "${SCP_OPTS[@]}" "${files[@]}" "${host_user}@${host}:/tmp/" 2>&1 | sed 's/^/│  /'; then
         echo "│  ✗ FAILED: could not copy files to $host"
         return 1
