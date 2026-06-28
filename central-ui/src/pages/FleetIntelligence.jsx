@@ -49,13 +49,16 @@ export default function FleetIntelligence() {
     );
   }
 
-  const { headline, recommendations, resourceOptimization = [], generatedAt, agentCount } = intelligence;
+  const { headline, recommendations, resourceOptimization = [], approvalInsights = [], generatedAt, agentCount } = intelligence;
   const high   = recommendations.filter((r) => r.priority === 'high');
   const medium = recommendations.filter((r) => r.priority === 'medium');
   const low    = recommendations.filter((r) => r.priority === 'low');
   const optHigh   = resourceOptimization.filter((r) => r.priority === 'high');
   const optMedium = resourceOptimization.filter((r) => r.priority === 'medium');
   const optLow    = resourceOptimization.filter((r) => r.priority === 'low');
+  const aiHigh   = approvalInsights.filter((r) => r.priority === 'high');
+  const aiMedium = approvalInsights.filter((r) => r.priority === 'medium');
+  const aiLow    = approvalInsights.filter((r) => r.priority === 'low');
 
   return (
     <div className="space-y-6">
@@ -103,6 +106,44 @@ export default function FleetIntelligence() {
                         </div>
                         <p className="text-sm font-medium text-navy-900 mb-1">{rec.title}</p>
                         <p className="text-xs text-navy-500 leading-relaxed">{rec.body}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {approvalInsights.length > 0 && (
+        <div className="space-y-4">
+          <div>
+            <h2 className="text-lg font-semibold text-black">Approval Pattern Analysis</h2>
+            <p className="mt-0.5 text-sm text-navy-500">Patterns in approval and rejection history with recommendations to improve automation, risk classification, and agent behaviour.</p>
+          </div>
+          {[{ label: 'High priority', items: aiHigh }, { label: 'Medium priority', items: aiMedium }, { label: 'Low priority', items: aiLow }]
+            .filter(({ items }) => items.length > 0)
+            .map(({ label, items }) => (
+              <div key={label}>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-navy-500">{label}</p>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {items.map((ins, i) => {
+                    const styles = PRIORITY_STYLES[ins.priority] ?? PRIORITY_STYLES.low;
+                    return (
+                      <div key={i} className={`rounded-lg border bg-white p-3.5 ${styles.border}`}>
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${styles.badge}`}>
+                            {ins.priority}
+                          </span>
+                          {ins.hostname && ins.hostname !== 'all' && (
+                            <span className="text-xs text-navy-400 font-mono">{ins.hostname}</span>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium text-navy-900 mb-1">{ins.pattern}</p>
+                        <p className="text-xs font-medium text-navy-700 mb-1">{ins.recommendation}</p>
+                        {ins.evidence && (
+                          <p className="text-xs text-navy-400 leading-relaxed italic">{ins.evidence}</p>
+                        )}
                       </div>
                     );
                   })}
