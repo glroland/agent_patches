@@ -31,7 +31,7 @@ resources:
 # HAProxy route timeout. Must exceed GATEWAY_REQUEST_TIMEOUT so HAProxy
 # does not cut the connection before the gateway returns a 504 of its own.
 route:
-  timeout: "305s"
+  timeout: "20m"
 
 # Gateway tuning. These map 1-to-1 to GATEWAY_* environment variables.
 # Override in deploy/helm/values.yaml under the llm-gateway: key.
@@ -43,10 +43,10 @@ gateway:
   maxConcurrency: "2"
   # Maximum number of requests waiting in the FIFO queue. Requests that
   # arrive when the queue is full receive a 429 immediately.
-  maxQueueDepth: "50"
+  maxQueueDepth: "100"
   # Per-request timeout (Go duration string). Applies to both regular and
   # streaming calls; the semaphore slot is held for the full duration.
-  requestTimeout: "5m"
+  requestTimeout: "20m"
 
 # OTel resource service.name — shared collector endpoint lives at root values.
 otel:
