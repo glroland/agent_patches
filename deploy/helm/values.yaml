@@ -1,6 +1,6 @@
 global:
   registry: registry.home.glroland.com/agent_patches
-  tag: "31"
+  tag: "32"
   clusterDomain: apps.ocp.home.glroland.com
 
   # Optional OpenTelemetry trace export — same OTEL_* env var names used by
@@ -16,7 +16,7 @@ global:
 central-backend:
   image:
     name: central-backend
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   containerPort: 8080
   service:
     port: 8080
@@ -29,7 +29,7 @@ central-backend:
 central-ui:
   image:
     name: central-ui
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   containerPort: 8080
   service:
     port: 8080
