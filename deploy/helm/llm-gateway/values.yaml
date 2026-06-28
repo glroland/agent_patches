@@ -52,6 +52,21 @@ gateway:
 otel:
   serviceName: "llm-gateway"
 
+# Persistent storage for token/request statistics.
+# The gateway writes stats.json to the mounted volume on a configurable
+# interval and on clean shutdown, so history survives pod restarts.
+#
+# Note: accessMode is ReadWriteOnce, so replicaCount must remain 1 when
+# persistence is enabled. Scale to >1 only when persistence.enabled is false.
+persistence:
+  enabled: true
+  # storageClassName: ""   # leave empty to use the cluster default storage class
+  size: 1Gi
+  mountPath: /data
+  dataFile: /data/stats.json
+  # How often the gateway flushes stats to disk (Go duration string).
+  saveInterval: "60s"
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
