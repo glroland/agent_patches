@@ -218,6 +218,13 @@ else
     ok "created (shell: $NOLOGIN)"
 fi
 
+# Home directory — needed by Podman and other tools that write to ~/.
+step "Ensuring home directory for $SERVICE_USER..."
+mkdir -p "/home/$SERVICE_USER"
+chown "$SERVICE_USER:$SERVICE_USER" "/home/$SERVICE_USER"
+chmod 700 "/home/$SERVICE_USER"
+ok "/home/$SERVICE_USER ready"
+
 # Additive group memberships so the agent can read logs and docker state.
 # Best effort — groups vary by distro; silence errors for absent groups.
 for grp in adm docker systemd-journal; do
