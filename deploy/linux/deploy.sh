@@ -356,9 +356,9 @@ if (Get-LocalUser -Name $SvcAcct -ErrorAction SilentlyContinue) {
     OK "reset password for existing account .\$SvcAcct"
 } else {
     New-LocalUser -Name $SvcAcct -Password $secPwd `
-        -PasswordNeverExpires $true -UserMayNotChangePassword $true `
+        -PasswordNeverExpires -UserMayNotChangePassword `
         -AccountNeverExpires `
-        -Description "agent_patches service account -- no interactive login" | Out-Null
+        -Description "agent_patches svc -- no interactive login" | Out-Null
     OK "created .\$SvcAcct"
 }
 # Ensure Administrators membership (idempotent).
@@ -369,6 +369,37 @@ if (-not ($admins | Where-Object { $_.Name -like "*\$SvcAcct" })) {
 } else {
     OK ".\$SvcAcct already in Administrators"
 }
+
+Step "Granting 'Log on as a service' right to $SvcAcct..."
+Add-Type -TypeDefinition @'
+using System; using System.Runtime.InteropServices;
+public class Lsa {
+    [StructLayout(LayoutKind.Sequential)] struct UnicodeStr { public ushort Len, MaxLen; public IntPtr Buf; }
+    [StructLayout(LayoutKind.Sequential)] struct ObjAttr {
+        public int Length; public IntPtr Root, Name; public uint Attrs; public IntPtr SecDesc, SecQos;
+    }
+    [DllImport("advapi32")] static extern uint LsaOpenPolicy(ref UnicodeStr s, ref ObjAttr a, uint acc, out IntPtr h);
+    [DllImport("advapi32")] static extern uint LsaAddAccountRights(IntPtr h, IntPtr sid, UnicodeStr[] r, int n);
+    [DllImport("advapi32")] static extern void LsaClose(IntPtr h);
+    public static void GrantServiceLogon(byte[] sidBytes) {
+        var s = new UnicodeStr();
+        var a = new ObjAttr { Length = Marshal.SizeOf(typeof(ObjAttr)) };
+        IntPtr policy;
+        LsaOpenPolicy(ref s, ref a, 0x28u, out policy);
+        var name = "SeServiceLogonRight";
+        var buf = Marshal.StringToHGlobalUni(name);
+        var r = new UnicodeStr { Len = (ushort)(name.Length * 2), MaxLen = (ushort)(name.Length * 2 + 2), Buf = buf };
+        var sidPtr = Marshal.AllocHGlobal(sidBytes.Length);
+        Marshal.Copy(sidBytes, 0, sidPtr, sidBytes.Length);
+        LsaAddAccountRights(policy, sidPtr, new[] { r }, 1);
+        Marshal.FreeHGlobal(sidPtr); Marshal.FreeHGlobal(buf); LsaClose(policy);
+    }
+}
+'@ -ErrorAction SilentlyContinue
+$sid = (New-Object System.Security.Principal.NTAccount("$env:COMPUTERNAME\$SvcAcct")).Translate([System.Security.Principal.SecurityIdentifier])
+$sidBytes = New-Object byte[] $sid.BinaryLength; $sid.GetBinaryForm($sidBytes, 0)
+[Lsa]::GrantServiceLogon($sidBytes)
+OK "SeServiceLogonRight granted to .\$SvcAcct"
 
 Step "Creating directories under $InstallDir..."
 foreach ($d in $BinDir, $ConfigDir, "$InstallDir\data", "$InstallDir\logs") {
@@ -436,9 +467,35 @@ Set-ItemProperty -Path $regKey -Name "Environment" `
 OK "env var set"
 
 Step "Starting service..."
-Start-Service -Name $ServiceName
-$status = (Get-Service -Name $ServiceName).Status
-OK "service is $status"
+try {
+    Start-Service -Name $ServiceName -ErrorAction Stop
+    $status = (Get-Service -Name $ServiceName).Status
+    OK "service is $status"
+} catch {
+    Write-Output "     ERROR: $_"
+    # Dump recent SCM events for this service so the real cause is visible
+    $scmEvts = Get-WinEvent -FilterHashtable @{
+        LogName      = 'System'
+        ProviderName = 'Service Control Manager'
+        Id           = 7000,7009,7022,7023,7024,7031,7034,7038
+    } -MaxEvents 20 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Message -like "*$ServiceName*" } |
+        Select-Object -First 5
+    if ($scmEvts) {
+        Write-Output "     SCM event log:"
+        $scmEvts | ForEach-Object { Write-Output "       [$($_.TimeCreated)] $($_.Message)" }
+    }
+    # Also check the Application log for crash details from the binary itself
+    $appEvts = Get-WinEvent -FilterHashtable @{LogName='Application'; Id=1000,1026} `
+        -MaxEvents 10 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Message -like "*patches*" -or $_.Message -like "*agent*" } |
+        Select-Object -First 3
+    if ($appEvts) {
+        Write-Output "     Application event log:"
+        $appEvts | ForEach-Object { Write-Output "       [$($_.TimeCreated)] $($_.Message)" }
+    }
+    throw
+}
 
 Step "Cleaning up..."
 Get-ChildItem -Path $Tmp -Filter "agent_patches_setup*.ps1" |
