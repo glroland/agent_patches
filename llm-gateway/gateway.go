@@ -41,6 +41,8 @@ type Gateway struct {
 	queue         chan *pending // scheduled background requests
 	sem           chan struct{} // semaphore: len = active requests, cap = max concurrency
 	timeout       time.Duration
+	dataFile      string
+	saveInterval  time.Duration
 	tracker       *Tracker
 }
 
@@ -72,6 +74,8 @@ type healthResponse struct {
 }
 
 // NewGateway creates a Gateway and starts the background dispatcher goroutine.
+// If cfg.DataFile is set, previously persisted stats are loaded before the
+// dispatcher starts so token history survives pod restarts.
 func NewGateway(cfg Config) (*Gateway, error) {
 	u, err := url.Parse(cfg.UpstreamURL)
 	if err != nil {
@@ -84,10 +88,50 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		queue:         make(chan *pending, cfg.MaxQueueDepth),
 		sem:           make(chan struct{}, cfg.MaxConcurrency),
 		timeout:       cfg.RequestTimeout,
+		dataFile:      cfg.DataFile,
+		saveInterval:  cfg.SaveInterval,
 		tracker:       NewTracker(),
+	}
+	if cfg.DataFile != "" {
+		if err := g.tracker.Load(cfg.DataFile); err != nil {
+			slog.Warn("gateway: failed to load persisted stats — starting fresh",
+				"error", err, "path", cfg.DataFile)
+		}
 	}
 	go g.dispatcher()
 	return g, nil
+}
+
+// StartPersistence begins the background goroutine that flushes stats to
+// cfg.DataFile on a fixed interval and performs a final save when ctx is
+// cancelled (clean shutdown). It is a no-op when DataFile is not configured.
+func (g *Gateway) StartPersistence(ctx context.Context) {
+	if g.dataFile == "" {
+		return
+	}
+	slog.Info("gateway: stats persistence enabled",
+		"path", g.dataFile, "interval", g.saveInterval)
+	go func() {
+		ticker := time.NewTicker(g.saveInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				if err := g.tracker.Save(g.dataFile); err != nil {
+					slog.Warn("gateway: stats save failed", "error", err)
+				} else {
+					slog.Debug("gateway: stats saved", "path", g.dataFile)
+				}
+			case <-ctx.Done():
+				if err := g.tracker.Save(g.dataFile); err != nil {
+					slog.Warn("gateway: stats final save on shutdown failed", "error", err)
+				} else {
+					slog.Info("gateway: stats saved on shutdown", "path", g.dataFile)
+				}
+				return
+			}
+		}
+	}()
 }
 
 // ServeHTTP satisfies http.Handler. GET /health and GET /stats are answered

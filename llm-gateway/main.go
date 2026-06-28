@@ -35,6 +35,8 @@ func main() {
 		"priority_queue_depth", cfg.PriorityQueueDepth,
 		"request_timeout", cfg.RequestTimeout,
 		"auth", cfg.AuthToken != "",
+		"data_file", cfg.DataFile,
+		"save_interval", cfg.SaveInterval,
 	)
 
 	gw, err := NewGateway(cfg)
@@ -43,15 +45,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// ctx is cancelled on SIGINT/SIGTERM; the persistence goroutine uses it
+	// to perform a final save before the process exits.
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	gw.StartPersistence(ctx)
+
 	srv := &http.Server{
 		Addr:    cfg.ListenAddr,
 		Handler: requireBearer(cfg.AuthToken, gw),
 		// ReadHeaderTimeout guards against slowloris-style attacks.
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -61,12 +67,12 @@ func main() {
 	}()
 
 	slog.Info("gateway: ready")
-	<-quit
+	<-ctx.Done()
 
 	slog.Info("gateway: shutting down — draining in-flight requests")
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	if err := srv.Shutdown(ctx); err != nil {
+	if err := srv.Shutdown(shutCtx); err != nil {
 		slog.Error("gateway: shutdown error", "error", err)
 	}
 }

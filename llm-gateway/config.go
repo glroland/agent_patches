@@ -10,16 +10,20 @@ import (
 // Config holds all runtime configuration for the gateway, loaded from
 // environment variables so the same image can be tuned via Helm values.
 type Config struct {
-	ListenAddr          string
-	UpstreamURL         string
-	MaxConcurrency      int
-	MaxQueueDepth       int
-	PriorityQueueDepth  int
-	RequestTimeout      time.Duration
+	ListenAddr         string
+	UpstreamURL        string
+	MaxConcurrency     int
+	MaxQueueDepth      int
+	PriorityQueueDepth int
+	RequestTimeout     time.Duration
 	// AuthToken is the bearer token callers must supply in
 	// Authorization: Bearer <token>. Empty string disables auth (insecure;
 	// a warning is logged at startup).
 	AuthToken string
+	// DataFile is the path to the JSON file used to persist token/request
+	// statistics across restarts. Empty string disables persistence.
+	DataFile     string
+	SaveInterval time.Duration
 }
 
 // LoadConfig reads configuration from environment variables, applying
@@ -34,6 +38,8 @@ func LoadConfig() (Config, error) {
 		PriorityQueueDepth: envInt("GATEWAY_PRIORITY_QUEUE_DEPTH", 10),
 		RequestTimeout:     envDur("GATEWAY_REQUEST_TIMEOUT", 5*time.Minute),
 		AuthToken:          envStr("GATEWAY_AUTH_TOKEN", ""),
+		DataFile:           envStr("GATEWAY_DATA_FILE", ""),
+		SaveInterval:       envDur("GATEWAY_SAVE_INTERVAL", 60*time.Second),
 	}
 	if cfg.UpstreamURL == "" {
 		return Config{}, fmt.Errorf("GATEWAY_UPSTREAM_URL is required")

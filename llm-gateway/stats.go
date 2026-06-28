@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -366,4 +370,180 @@ func (lc *limitedCapture) Write(p []byte) (int, error) {
 		lc.w.Write(p) //nolint:errcheck — bytes.Buffer.Write never fails
 	}
 	return len(p), nil // always report full write to tee reader
+}
+
+// ---------------------------------------------------------------------------
+// Persistence — JSON file on a PVC mount
+// ---------------------------------------------------------------------------
+
+const persistenceVersion = 1
+
+type persistedState struct {
+	Version          int                      `json:"version"`
+	SavedAt          time.Time                `json:"saved_at"`
+	Endpoints        []persistedEndpoint      `json:"endpoints"`
+	Responsibilities []persistedResponsibility `json:"responsibilities"`
+}
+
+type persistedEndpoint struct {
+	Host          string           `json:"host"`
+	Name          string           `json:"name,omitempty"`
+	LastSeen      time.Time        `json:"last_seen"`
+	TotalTokens   int64            `json:"total_tokens"`
+	TotalRequests int64            `json:"total_requests"`
+	Events        []persistedEvent `json:"events"`
+}
+
+type persistedResponsibility struct {
+	Name          string           `json:"name"`
+	LastSeen      time.Time        `json:"last_seen"`
+	TotalTokens   int64            `json:"total_tokens"`
+	TotalRequests int64            `json:"total_requests"`
+	Events        []persistedEvent `json:"events"`
+}
+
+type persistedEvent struct {
+	At     time.Time `json:"at"`
+	Tokens int64     `json:"tokens"`
+}
+
+// Load reads the persisted stats file at path and populates the Tracker.
+// A missing file is treated as a fresh start. A corrupt or version-mismatched
+// file logs a warning and leaves the Tracker empty rather than aborting startup.
+// Load must be called before the gateway begins accepting requests (no locking
+// is needed during load itself).
+func (t *Tracker) Load(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("read stats file: %w", err)
+	}
+
+	var state persistedState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return fmt.Errorf("parse stats file: %w", err)
+	}
+	if state.Version != persistenceVersion {
+		return fmt.Errorf("unsupported stats file version %d (want %d)", state.Version, persistenceVersion)
+	}
+
+	cutoff := time.Now().Add(-25 * time.Hour)
+
+	for _, pe := range state.Endpoints {
+		es := &endpointStats{
+			host:     pe.Host,
+			name:     pe.Name,
+			lastSeen: pe.LastSeen,
+			total:    totalCounters{tokens: pe.TotalTokens, requests: pe.TotalRequests},
+		}
+		for _, e := range pe.Events {
+			if !e.At.Before(cutoff) {
+				es.events = append(es.events, requestEvent{at: e.At, tokens: e.Tokens})
+			}
+		}
+		t.endpoints[pe.Host] = es
+	}
+
+	for _, pr := range state.Responsibilities {
+		rs := &responsibilityStats{
+			name:     pr.Name,
+			lastSeen: pr.LastSeen,
+			total:    totalCounters{tokens: pr.TotalTokens, requests: pr.TotalRequests},
+		}
+		for _, e := range pr.Events {
+			if !e.At.Before(cutoff) {
+				rs.events = append(rs.events, requestEvent{at: e.At, tokens: e.Tokens})
+			}
+		}
+		t.responsibilities[pr.Name] = rs
+	}
+
+	slog.Info("gateway: loaded persisted stats",
+		"path", path,
+		"endpoints", len(state.Endpoints),
+		"responsibilities", len(state.Responsibilities),
+		"saved_at", state.SavedAt,
+	)
+	return nil
+}
+
+// Save atomically writes the current Tracker state to path. It writes to a
+// temporary file alongside path then renames it into place, which is atomic
+// on Linux filesystems (ext4, xfs) used by PVC mounts.
+func (t *Tracker) Save(path string) error {
+	// Snapshot map keys under the read lock; entries are never deleted so
+	// dereferencing the pointers afterwards is safe without re-locking.
+	t.mu.RLock()
+	hosts := make([]string, 0, len(t.endpoints))
+	for h := range t.endpoints {
+		hosts = append(hosts, h)
+	}
+	respNames := make([]string, 0, len(t.responsibilities))
+	for n := range t.responsibilities {
+		respNames = append(respNames, n)
+	}
+	t.mu.RUnlock()
+
+	// Sort for deterministic output so diff-based monitoring stays quiet.
+	sort.Strings(hosts)
+	sort.Strings(respNames)
+
+	state := persistedState{
+		Version:          persistenceVersion,
+		SavedAt:          time.Now(),
+		Endpoints:        make([]persistedEndpoint, 0, len(hosts)),
+		Responsibilities: make([]persistedResponsibility, 0, len(respNames)),
+	}
+
+	for _, h := range hosts {
+		es := t.endpoints[h]
+		es.mu.Lock()
+		pe := persistedEndpoint{
+			Host:          es.host,
+			Name:          es.name,
+			LastSeen:      es.lastSeen,
+			TotalTokens:   es.total.tokens,
+			TotalRequests: es.total.requests,
+			Events:        make([]persistedEvent, len(es.events)),
+		}
+		for i, e := range es.events {
+			pe.Events[i] = persistedEvent{At: e.at, Tokens: e.tokens}
+		}
+		es.mu.Unlock()
+		state.Endpoints = append(state.Endpoints, pe)
+	}
+
+	for _, n := range respNames {
+		rs := t.responsibilities[n]
+		rs.mu.Lock()
+		pr := persistedResponsibility{
+			Name:          rs.name,
+			LastSeen:      rs.lastSeen,
+			TotalTokens:   rs.total.tokens,
+			TotalRequests: rs.total.requests,
+			Events:        make([]persistedEvent, len(rs.events)),
+		}
+		for i, e := range rs.events {
+			pr.Events[i] = persistedEvent{At: e.at, Tokens: e.tokens}
+		}
+		rs.mu.Unlock()
+		state.Responsibilities = append(state.Responsibilities, pr)
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal stats: %w", err)
+	}
+
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		return fmt.Errorf("write stats temp file: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return fmt.Errorf("rename stats file: %w", err)
+	}
+	return nil
 }
