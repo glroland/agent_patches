@@ -18,6 +18,7 @@ import (
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
 	reqapproval "agent_patches/endpoint-server/skills/request_approval"
+	reqmanualrun "agent_patches/endpoint-server/skills/request_manual_run"
 	"agent_patches/endpoint-server/skills/run_diagnostic_command"
 	"agent_patches/endpoint-server/utils/notifier"
 )
@@ -63,6 +64,14 @@ func isNoOpShellBuiltin(s string) bool {
 
 // IsNoOpShellBuiltinForTest exposes isNoOpShellBuiltin for package-external tests.
 func IsNoOpShellBuiltinForTest(s string) bool { return isNoOpShellBuiltin(s) }
+
+// isSudoersError reports whether output from a failed sudo -n invocation
+// indicates that the command is blocked by the sudoers policy. Any "sudo:"
+// prefixed error line is a reliable signal; sudo exits non-zero in all such
+// cases (password required, command not allowed, user not in sudoers file).
+func isSudoersError(output string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(output)), "sudo:")
+}
 
 // isEchoStatusCommand reports whether s is a bare echo (or PowerShell
 // Write-Output / Write-Host) with no output redirection or pipe — i.e. a
@@ -163,8 +172,9 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			// commands can perform privileged operations (e.g. systemctl restart,
 			// snap remove). The HITL gate ensures the operator has already seen
 			// and approved the exact command text before we reach this point.
+			usingSudo := runtime.GOOS == "linux" && os.Getuid() != 0
 			var execCmd *exec.Cmd
-			if runtime.GOOS == "linux" && os.Getuid() != 0 {
+			if usingSudo {
 				execCmd = exec.CommandContext(cmdCtx, "sudo", "-n", "sh", "-c", cmd) //nolint:gosec
 			} else {
 				execCmd = exec.CommandContext(cmdCtx, "sh", "-c", cmd) //nolint:gosec
@@ -173,6 +183,28 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			output := strings.TrimRight(string(out), "\n")
 
 			if execErr != nil {
+				// If sudo -n failed because the command is not in the sudoers
+				// policy, escalate to a manual-run task rather than absorbing
+				// the error. The operator runs the command themselves and pastes
+				// the output back via the dashboard.
+				if usingSudo && isSudoersError(output) {
+					slog.Warn("run_approved_command: sudoers restriction — escalating to manual run", "command", cmd)
+					host, _ := os.Hostname()
+					manualTitle := fmt.Sprintf("Run Command Manually on %s", host)
+					manualOutput, manualStatus, manualErr := reqmanualrun.RequestManualRun(ctx, mem, notify, manualTitle, cmd, host, in.Reason)
+					if manualErr != nil {
+						return "", fmt.Errorf("manual run interrupted: %w", manualErr)
+					}
+					switch manualStatus {
+					case "completed":
+						return manualOutput, nil
+					case "skipped":
+						return "Operator chose to skip manual execution. No output available.", nil
+					default:
+						return "Manual run request timed out without a response.", nil
+					}
+				}
+
 				slog.Warn("run_approved_command: command failed", "command", cmd, "error", execErr)
 				if output != "" {
 					return fmt.Sprintf("Command failed (%v):\n%s", execErr, output), nil

@@ -153,3 +153,10 @@ export const ChartIcon = (props) => (
     <path d="M4 20V14M8 20V8M12 20V12M16 20V4M20 20V10" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
+
+export const TerminalIcon = (props) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className={base} {...props}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M7 9l3 3-3 3M13 15h4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);

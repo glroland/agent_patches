@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import Badge from './Badge';
-import { EyeIcon, BoltIcon, LightbulbIcon, HandIcon } from './icons';
+import { EyeIcon, BoltIcon, LightbulbIcon, HandIcon, TerminalIcon } from './icons';
 import { relativeTime } from '../utils/time';
 
 const TYPE_META = {
@@ -8,6 +8,7 @@ const TYPE_META = {
   action: { label: 'Did', icon: BoltIcon, color: 'text-violet-700 bg-violet-50' },
   recommendation: { label: 'Recommends', icon: LightbulbIcon, color: 'text-amber-700 bg-amber-50' },
   approval: { label: 'Needs approval', icon: HandIcon, color: 'text-rose-700 bg-rose-50' },
+  manual_run: { label: 'Manual run needed', icon: TerminalIcon, color: 'text-orange-700 bg-orange-50' },
 };
 
 // Inline [CRITICAL] and [HIGH] markers with red text; leave everything else as-is.
@@ -81,7 +82,7 @@ export default function TimelineEntry({ entry, showAgent = false }) {
           <span className="text-xs font-medium uppercase tracking-wide text-navy-500">{meta.label}</span>
           {entry.severity && <Badge variant={entry.severity}>{entry.severity}</Badge>}
           {entry.type === 'approval' && <Badge variant={entry.risk}>{entry.risk} risk</Badge>}
-          {entry.type === 'approval' && entry.status !== 'pending' && <Badge variant={entry.status}>{entry.status}</Badge>}
+          {(entry.type === 'approval' || entry.type === 'manual_run') && entry.status !== 'pending' && <Badge variant={entry.status}>{entry.status}</Badge>}
           <span className="text-xs text-navy-400">{relativeTime(entry.time)}</span>
           {showAgent && (
             <Link to={`/agents/${entry.agentId}`} className="text-xs font-medium text-navy-600 hover:text-navy-800">

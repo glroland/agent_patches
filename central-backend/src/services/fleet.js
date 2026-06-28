@@ -157,6 +157,20 @@ export async function sendAgentMessage(id, text) {
   return client.sendMessage(text, { timeoutMs: config.agents.messageTimeoutMs });
 }
 
+export async function submitManualRunResult(agentId, manualRunId, output, status) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === agentId);
+  if (!inventoryAgent) {
+    throw new Error(`agent ${agentId} not found in inventory`);
+  }
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
+  });
+  return client.submitManualRunResult(manualRunId, output, status);
+}
+
 export async function resolveApproval(agentId, approvalId, decision, reason = '') {
   const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === agentId);
   if (!inventoryAgent) {

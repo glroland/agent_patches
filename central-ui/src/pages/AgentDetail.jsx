@@ -4,7 +4,7 @@ import Badge from '../components/Badge';
 import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
-import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon } from '../components/icons';
+import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon, TerminalIcon } from '../components/icons';
 import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
@@ -125,6 +125,7 @@ export default function AgentDetail() {
 
 function RecommendationsTab({ agent, resolveStatus, decide }) {
   const approvals = agent.timeline.filter((t) => t.type === 'approval');
+  const manualRuns = agent.timeline.filter((t) => t.type === 'manual_run' && t.status === 'pending');
   const recommendations = agent.timeline.filter((t) => t.type === 'recommendation');
 
   return (
@@ -176,6 +177,32 @@ function RecommendationsTab({ agent, resolveStatus, decide }) {
           </div>
         )}
       </Card>
+
+      {manualRuns.length > 0 && (
+        <Card title="Manual runs needed" subtitle="Commands blocked by sudoers — run them manually and paste the output on the Approvals page">
+          <div className="space-y-3">
+            {manualRuns.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-orange-200 bg-orange-50/40 p-4">
+                <div className="flex items-center gap-2">
+                  <TerminalIcon className="h-4 w-4 text-orange-600" />
+                  <p className="text-sm font-medium text-navy-900">{entry.title}</p>
+                  <span className="text-xs text-navy-400">{relativeTime(entry.time)}</span>
+                </div>
+                <p className="mt-1 text-sm text-navy-500">{entry.detail}</p>
+                <p className="mt-2 rounded-md bg-navy-800 px-3 py-2 font-mono text-xs text-green-300">
+                  {entry.proposedAction}
+                </p>
+                <Link
+                  to="/approvals"
+                  className="mt-3 inline-block text-xs font-medium text-orange-700 underline hover:text-orange-900"
+                >
+                  Submit output on the Approvals page →
+                </Link>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card title="Other recommendations" subtitle="Suggestions that don't require a specific action right now">
         {recommendations.length === 0 ? (

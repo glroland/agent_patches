@@ -21,6 +21,7 @@ import (
 	"agent_patches/endpoint-server/a2a/executor"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/approvalapi"
+	"agent_patches/endpoint-server/manualrunapi"
 	"agent_patches/endpoint-server/logapi"
 	"agent_patches/endpoint-server/loginmonitor"
 	"agent_patches/endpoint-server/loop"
@@ -295,6 +296,7 @@ func runServer(ctx context.Context) {
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem)
+	manualRunSvc := manualrunapi.New(mem)
 	responsibilitiesSvc := responsibilitiesapi.New(lp, mem)
 	logSvc := logapi.New(cfg.Logging.File)
 
@@ -303,18 +305,21 @@ func runServer(ctx context.Context) {
 	var statusHandler http.Handler = statusSvc.Handler()
 	var memoryHandler http.Handler = memorySvc.Handler()
 	var approvalHandler http.Handler = approvalSvc.Handler()
+	var manualRunHandler http.Handler = manualRunSvc.Handler()
 	var responsibilitiesHandler http.Handler = responsibilitiesSvc.Handler()
 	var logHandler http.Handler = logSvc.Handler()
 	if cfg.Security.Scheme == "bearer" {
 		statusHandler = requireBearer(cfg.Security.Token, statusHandler)
 		memoryHandler = requireBearer(cfg.Security.Token, memoryHandler)
 		approvalHandler = requireBearer(cfg.Security.Token, approvalHandler)
+		manualRunHandler = requireBearer(cfg.Security.Token, manualRunHandler)
 		responsibilitiesHandler = requireBearer(cfg.Security.Token, responsibilitiesHandler)
 		logHandler = requireBearer(cfg.Security.Token, logHandler)
 	}
 	mux.Handle("/status", statusHandler)
 	mux.Handle("/memory", memoryHandler)
 	mux.Handle("/approvals/", approvalHandler)
+	mux.Handle("/manual-runs/", manualRunHandler)
 	mux.Handle("/responsibilities", responsibilitiesHandler)
 	mux.Handle("/log", logHandler)
 	mux.Handle("/", a2asrv.NewJSONRPCHandler(reqHandler))

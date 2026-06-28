@@ -99,6 +99,12 @@ export function decideApproval(approvalId, decision, agentId, reason = '') {
   return postJSON(`/approvals/${approvalId}/decision`, { decision, agentId, reason });
 }
 
+// Submits the operator's output for a pending manual-run request.
+// status must be "completed" (with output) or "skipped".
+export function submitManualRunResult(manualRunId, output, status, agentId) {
+  return postJSON(`/manual-runs/${manualRunId}/result`, { output, status, agentId });
+}
+
 // Aggregated issues/concerns plus per-severity counts.
 export function fetchIssues() {
   return getJSON('/issues');
