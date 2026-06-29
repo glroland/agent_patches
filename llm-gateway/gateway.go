@@ -273,6 +273,14 @@ func (g *Gateway) forward(p *pending) {
 		"queue_depth", len(g.queue),
 		"active", len(g.sem),
 	)
+	slog.Info("gateway: llm request",
+		"method", p.method,
+		"path", p.path,
+		"agent", p.name,
+		"responsibility", p.responsibility,
+		"body_bytes", len(p.body),
+		"body", truncateForLog(p.body, 4096),
+	)
 
 	resp, err := g.client.Do(upReq)
 	if err != nil {
@@ -289,6 +297,15 @@ func (g *Gateway) forward(p *pending) {
 		return
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusTooManyRequests {
+		slog.Error("gateway: LLM returned 429 Too Many Requests — rate limit hit",
+			"agent", p.name,
+			"responsibility", p.responsibility,
+			"path", p.path,
+			"host", p.host,
+		)
+	}
 
 	for key, vals := range resp.Header {
 		if hopByHopHeaders[key] {
@@ -316,6 +333,14 @@ func (g *Gateway) forward(p *pending) {
 				slog.Debug("gateway: client disconnected mid-response", "path", p.path)
 				// capBuf still has partial data — extract what we can.
 				capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
+				slog.Info("gateway: llm response (partial — client disconnected)",
+					"status", resp.StatusCode,
+					"agent", p.name,
+					"responsibility", p.responsibility,
+					"tokens", capturedTokens,
+					"body_bytes", capBuf.Len(),
+					"body", truncateForLog(capBuf.Bytes(), 4096),
+				)
 				return
 			}
 			if canFlush {
@@ -331,6 +356,14 @@ func (g *Gateway) forward(p *pending) {
 	}
 
 	capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
+	slog.Info("gateway: llm response",
+		"status", resp.StatusCode,
+		"agent", p.name,
+		"responsibility", p.responsibility,
+		"tokens", capturedTokens,
+		"body_bytes", capBuf.Len(),
+		"body", truncateForLog(capBuf.Bytes(), 4096),
+	)
 }
 
 func (g *Gateway) health(w http.ResponseWriter) {
@@ -345,6 +378,16 @@ func (g *Gateway) health(w http.ResponseWriter) {
 		MaxConcurrency:        cap(g.sem),
 		Upstream:              g.upstream.String(),
 	})
+}
+
+// truncateForLog returns b as a UTF-8 string, capped at maxLen bytes. If the
+// slice is longer a note showing the number of omitted bytes is appended so
+// callers can tell the log entry is incomplete.
+func truncateForLog(b []byte, maxLen int) string {
+	if len(b) <= maxLen {
+		return string(b)
+	}
+	return string(b[:maxLen]) + fmt.Sprintf("... [%d bytes truncated]", len(b)-maxLen)
 }
 
 // clientHost returns the originating IP of the request. It checks
