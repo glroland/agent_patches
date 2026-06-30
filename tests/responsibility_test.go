@@ -9,7 +9,7 @@ import (
 )
 
 func TestNewResponsibility_Frequency(t *testing.T) {
-	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "freq", Frequency: "1h"})
+	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "freq", Frequency: "1h"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -22,7 +22,7 @@ func TestNewResponsibility_Frequency(t *testing.T) {
 }
 
 func TestNewResponsibility_Time(t *testing.T) {
-	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "daily", Time: "07:00"})
+	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "daily", Time: "07:00"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -43,14 +43,14 @@ func TestNewResponsibility_Errors(t *testing.T) {
 		{Name: "bad-time", Time: "25:99"},
 	}
 	for _, c := range cases {
-		if _, err := loop.NewResponsibility(c); err == nil {
+		if _, err := loop.NewResponsibility(c, 0); err == nil {
 			t.Errorf("%s: expected error, got nil", c.Name)
 		}
 	}
 }
 
 func TestResponsibility_DueFrequency(t *testing.T) {
-	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "freq", Frequency: "1h"})
+	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "freq", Frequency: "1h"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestResponsibility_DueFrequency(t *testing.T) {
 }
 
 func TestResponsibility_DueTime(t *testing.T) {
-	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "daily", Time: "07:00"})
+	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "daily", Time: "07:00"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestLoop_CurrentTask(t *testing.T) {
 }
 
 func TestResponsibility_RunningGate(t *testing.T) {
-	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "freq", Frequency: "1h"})
+	r, err := loop.NewResponsibility(config.ResponsibilitySettings{Name: "freq", Frequency: "1h"}, 0)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

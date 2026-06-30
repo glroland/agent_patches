@@ -2,6 +2,8 @@ package status
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -27,9 +29,9 @@ func (t *headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 const (
-	summaryTTL     = 5 * time.Minute
-	summaryTimeout = 30 * time.Second
-	summaryMaxTok  = 80
+	defaultSummaryTTL = 5 * time.Minute
+	summaryTimeout    = 30 * time.Second
+	summaryMaxTok     = 80
 )
 
 const summarySystemPrompt = `You are a concise system status reporter for a server agent.
@@ -39,18 +41,29 @@ Be specific — name the actual issue, not vague phrases like "needs review".
 No preamble. No trailing punctuation.`
 
 // summarizer generates and caches an AI status description for the "attention"
-// state, using the same OpenAI-compatible model as the agent tool-use loop.
-// Results are cached for summaryTTL to avoid calling the model on every poll.
+// state. The cache is invalidated when the alert content changes (detected via
+// a SHA-256 hash of the prompt) or when the configurable TTL elapses, whichever
+// comes first.
 type summarizer struct {
-	client   openai.Client
-	model    string
-	mu       sync.Mutex
-	cached   string
-	cachedAt time.Time
-	running  bool
+	client     openai.Client
+	model      string
+	ttl        time.Duration
+	mu         sync.Mutex
+	cached     string
+	cachedHash string
+	cachedAt   time.Time
+	running    bool
 }
 
 func newSummarizer(cfg *config.Settings) *summarizer {
+	ttl := defaultSummaryTTL
+	if cfg.Status.SummaryTTL != "" {
+		if d, err := time.ParseDuration(cfg.Status.SummaryTTL); err == nil && d > 0 {
+			ttl = d
+		} else {
+			slog.Warn("status: invalid summary_ttl, using default", "value", cfg.Status.SummaryTTL, "default", ttl)
+		}
+	}
 	opts := []option.RequestOption{
 		option.WithHTTPClient(&http.Client{
 			Transport: &headerTransport{
@@ -68,16 +81,23 @@ func newSummarizer(cfg *config.Settings) *summarizer {
 	return &summarizer{
 		client: openai.NewClient(opts...),
 		model:  cfg.Agent.Model,
+		ttl:    ttl,
 	}
 }
 
-// get returns the latest cached summary and, if the cache is stale or empty,
-// spawns a background refresh. Callers get the previous result instantly while
-// the model generates the new one.
+// get returns the latest cached summary. If the alert content has changed or
+// the TTL has elapsed, a background refresh is spawned. Callers receive the
+// previous result instantly while the model generates the new one.
 func (s *summarizer) get(timeline []TimelineEntry) string {
+	prompt := buildSummaryPrompt(timeline)
+	if prompt == "" {
+		return ""
+	}
+	hash := promptHash(prompt)
+
 	s.mu.Lock()
 	cached := s.cached
-	stale := time.Since(s.cachedAt) >= summaryTTL
+	stale := time.Since(s.cachedAt) >= s.ttl || hash != s.cachedHash
 	running := s.running
 	s.mu.Unlock()
 
@@ -85,27 +105,20 @@ func (s *summarizer) get(timeline []TimelineEntry) string {
 		s.mu.Lock()
 		if !s.running {
 			s.running = true
-			snap := make([]TimelineEntry, len(timeline))
-			copy(snap, timeline)
-			go s.refresh(snap)
+			go s.refresh(prompt, hash)
 		}
 		s.mu.Unlock()
 	}
 
-	return cached // empty string on first call; caller uses programmatic fallback
+	return cached
 }
 
-func (s *summarizer) refresh(timeline []TimelineEntry) {
+func (s *summarizer) refresh(prompt, hash string) {
 	defer func() {
 		s.mu.Lock()
 		s.running = false
 		s.mu.Unlock()
 	}()
-
-	prompt := buildSummaryPrompt(timeline)
-	if prompt == "" {
-		return
-	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), summaryTimeout)
 	defer cancel()
@@ -133,9 +146,16 @@ func (s *summarizer) refresh(timeline []TimelineEntry) {
 
 	s.mu.Lock()
 	s.cached = summary
+	s.cachedHash = hash
 	s.cachedAt = time.Now()
 	s.mu.Unlock()
 	slog.Debug("status: AI summary updated", "summary", summary)
+}
+
+// promptHash returns a short hex fingerprint of the prompt string.
+func promptHash(prompt string) string {
+	sum := sha256.Sum256([]byte(prompt))
+	return fmt.Sprintf("%x", sum)
 }
 
 // buildSummaryPrompt assembles the health snapshot sent to the model.

@@ -72,6 +72,7 @@ type Settings struct {
 	Memory       MemorySettings       `yaml:"memory"`
 	Loop         LoopSettings         `yaml:"loop"`
 	LoginMonitor LoginMonitorSettings `yaml:"login_monitor"`
+	Status       StatusSettings       `yaml:"status"`
 
 	// Responsibilities is a dynamic list of recurring duties the agent should
 	// carry out, each on its own schedule.
@@ -180,6 +181,15 @@ type MemorySettings struct {
 	Root string `yaml:"root"`
 }
 
+// StatusSettings controls the status endpoint's AI summariser behaviour.
+type StatusSettings struct {
+	// SummaryTTL is a Go duration string (e.g. "1h") for the maximum time the
+	// AI summary is cached before a forced refresh, even when alert content has
+	// not changed. The summary is also refreshed immediately whenever the alert
+	// content changes. Defaults to "5m".
+	SummaryTTL string `yaml:"summary_ttl"`
+}
+
 // Load reads and parses the YAML config file. The file path is taken from the
 // AGENT_PATCHES_CONFIG environment variable; when unset it falls back to
 // ./config.yaml in the current working directory.
@@ -227,6 +237,9 @@ func Load() (*Settings, error) {
 	}
 	if s.LoginMonitor.FailedLoginThreshold <= 0 {
 		s.LoginMonitor.FailedLoginThreshold = 3
+	}
+	if s.Status.SummaryTTL == "" {
+		s.Status.SummaryTTL = "5m"
 	}
 
 	osResps, err := loadOSResponsibilities(path)
