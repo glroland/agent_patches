@@ -14,7 +14,7 @@
 
 responsibilities:
   - name: disk-space-check
-    frequency: "1h"
+    frequency: "4h"
     instruction: |
       Check disk usage on all mounted filesystems. Review disk space usage,
       SMART health, and the largest directories and files on each disk.
@@ -31,7 +31,7 @@ responsibilities:
     when_to_notify: "on error"
 
   - name: cpu-utilization-check
-    frequency: "30m"
+    frequency: "1h"
     instruction: |
       Check CPU utilization on this host. Report overall CPU usage percentage,
       logical CPU count, and load averages. If CPU usage is above 80% or any
@@ -47,7 +47,7 @@ responsibilities:
     when_to_notify: "on error"
 
   - name: memory-utilization-check
-    frequency: "30m"
+    frequency: "1h"
     instruction: |
       Check memory utilization on this host. Report total RAM, used memory,
       available memory, and swap usage. If memory usage is above 80%, use
@@ -63,7 +63,7 @@ responsibilities:
     when_to_notify: "on error"
 
   - name: network-utilization-check
-    frequency: "1h"
+    frequency: "2h"
     instruction: |
       Check network utilization on all active interfaces. Report upload and
       download rates. If any interface shows unusually high or unexpected traffic,
