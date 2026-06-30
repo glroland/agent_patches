@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -24,8 +25,9 @@ import (
 )
 
 const (
-	defaultHeartbeat = time.Second
-	maxSummaryLen    = 300
+	defaultHeartbeat    = time.Second
+	maxSummaryLen       = 300
+	startupJitterMaxMin = 30 // upper bound (inclusive) for the random startup delay in minutes
 
 	// AttrRunPrefix is the attrs key prefix for responsibility run state.
 	// Full key: AttrRunPrefix + responsibility name.
@@ -47,20 +49,24 @@ type Loop struct {
 	notify           *notifier.Notifier
 	mem              *memory.Store
 	responsibilities []*Responsibility
+	startupDelay     time.Duration
 }
 
 // New creates a Loop. Call Start to launch the background goroutine.
 func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifier, mem *memory.Store) *Loop {
+	jitterMin := rand.Intn(startupJitterMaxMin + 1) // 0–30 inclusive
+	startupDelay := time.Duration(jitterMin) * time.Minute
+
 	resp := make([]*Responsibility, 0, len(cfg.Responsibilities))
 	for _, rc := range cfg.Responsibilities {
-		r, err := NewResponsibility(rc)
+		r, err := NewResponsibility(rc, startupDelay)
 		if err != nil {
 			slog.Error("loop: invalid responsibility, skipping", "name", rc.Name, "error", err)
 			continue
 		}
 		resp = append(resp, r)
 	}
-	return &Loop{cfg: cfg, registry: registry, notify: notify, mem: mem, responsibilities: resp}
+	return &Loop{cfg: cfg, registry: registry, notify: notify, mem: mem, responsibilities: resp, startupDelay: startupDelay}
 }
 
 // Responsibilities returns the live list of scheduled responsibilities.
@@ -97,7 +103,11 @@ func (l *Loop) Start(ctx context.Context) {
 		slog.Error("loop: invalid heartbeat, defaulting", "heartbeat", l.cfg.Loop.Heartbeat, "default", defaultHeartbeat, "error", err)
 		heartbeat = defaultHeartbeat
 	}
-	slog.Info("loop: starting", "heartbeat", heartbeat, "responsibilities", len(l.responsibilities))
+	slog.Info("loop: starting — frequency-based responsibilities are delayed by a random startup jitter to spread LLM load across the fleet on simultaneous restarts",
+		"heartbeat", heartbeat,
+		"responsibilities", len(l.responsibilities),
+		"startup_jitter_minutes", int(l.startupDelay.Minutes()),
+	)
 	go l.run(ctx, heartbeat)
 }
 

@@ -30,7 +30,11 @@ type Responsibility struct {
 }
 
 // NewResponsibility validates cfg and builds its scheduling state.
-func NewResponsibility(cfg config.ResponsibilitySettings) (*Responsibility, error) {
+// startupDelay is added to the initial nextRun for frequency-based
+// responsibilities so agents stagger their first LLM call after restart.
+// Time-of-day responsibilities are unaffected (they already have fixed
+// wall-clock scheduling).
+func NewResponsibility(cfg config.ResponsibilitySettings, startupDelay time.Duration) (*Responsibility, error) {
 	if cfg.Frequency != "" && cfg.Time != "" {
 		return nil, fmt.Errorf("responsibility %q: specify either frequency or time, not both", cfg.Name)
 	}
@@ -43,7 +47,7 @@ func NewResponsibility(cfg config.ResponsibilitySettings) (*Responsibility, erro
 			return nil, fmt.Errorf("responsibility %q: invalid frequency %q: %w", cfg.Name, cfg.Frequency, err)
 		}
 		r.Freq = d
-		r.nextRun = time.Now()
+		r.nextRun = time.Now().Add(startupDelay)
 	case cfg.Time != "":
 		if _, err := time.Parse(timeOfDayFormat, cfg.Time); err != nil {
 			return nil, fmt.Errorf("responsibility %q: invalid time %q: %w", cfg.Name, cfg.Time, err)
