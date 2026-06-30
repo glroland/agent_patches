@@ -88,6 +88,7 @@ type GatewayStatsResponse struct {
 	ActiveRequests         int                           `json:"active_requests"`
 	QueuedRequests         int                           `json:"queued_requests"`
 	PriorityQueuedRequests int                           `json:"priority_queued_requests"`
+	GhostRequests          int                           `json:"ghost_requests"` // queued slots whose client has disconnected (excluded from Queued* counts above)
 	MaxConcurrency         int                           `json:"max_concurrency"`
 	QueueCapacity          int                           `json:"queue_capacity"`
 	PriorityQueueCapacity  int                           `json:"priority_queue_capacity"`
@@ -281,8 +282,12 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 		respSnaps = append(respSnaps, snap)
 	}
 
-	queued := len(g.queue)
-	priorityQueued := len(g.priorityQueue)
+	// Subtract ghost slots (queued but client disconnected) to report effective depths.
+	// max(0,...) guards against a transient overread between two separate atomics.
+	ghostN := int(g.ghostNormal.Load())
+	ghostP := int(g.ghostPriority.Load())
+	queued := max(0, len(g.queue)-ghostN)
+	priorityQueued := max(0, len(g.priorityQueue)-ghostP)
 	active := len(g.sem)
 	return GatewayStatsResponse{
 		GeneratedAt:            now,
@@ -290,6 +295,7 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 		ActiveRequests:         active,
 		QueuedRequests:         queued,
 		PriorityQueuedRequests: priorityQueued,
+		GhostRequests:          ghostN + ghostP,
 		MaxConcurrency:         cap(g.sem),
 		QueueCapacity:          cap(g.queue),
 		PriorityQueueCapacity:  cap(g.priorityQueue),

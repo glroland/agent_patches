@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -44,6 +45,12 @@ type Gateway struct {
 	dataFile      string
 	saveInterval  time.Duration
 	tracker       *Tracker
+
+	// ghostNormal/ghostPriority count requests that are still physically in their
+	// queue channel but whose client has already disconnected. Used to report
+	// accurate effective queue depths in /stats.
+	ghostNormal   atomic.Int64
+	ghostPriority atomic.Int64
 }
 
 // pending carries everything needed to proxy one request. It is enqueued
@@ -57,9 +64,15 @@ type pending struct {
 	body           []byte
 	w              http.ResponseWriter
 	done           chan struct{} // closed by forward() when the response is fully written
-	host           string        // originating endpoint-server IP for stats tracking
-	name           string        // agent display name from X-Agent-Name header
-	responsibility string        // scheduled responsibility name from X-Responsibility header; empty for ad-hoc runs
+	host           string       // originating endpoint-server IP for stats tracking
+	name           string       // agent display name from X-Agent-Name header
+	responsibility string       // scheduled responsibility name from X-Responsibility header; empty for ad-hoc runs
+	interactive    bool         // true when X-Priority: interactive; used to route ghost counter
+
+	// cancelled is set by ServeHTTP when p.ctx fires before the request is dispatched.
+	// pendingDecremented is a CAS gate ensuring exactly one path calls DecrPending.
+	cancelled          atomic.Bool
+	pendingDecremented atomic.Bool
 }
 
 type healthResponse struct {
@@ -71,6 +84,7 @@ type healthResponse struct {
 	ActiveRequests        int    `json:"active_requests"`
 	MaxConcurrency        int    `json:"max_concurrency"`
 	Upstream              string `json:"upstream"`
+	GhostRequests         int    `json:"ghost_requests"` // queued requests whose client has disconnected
 }
 
 // NewGateway creates a Gateway and starts the background dispatcher goroutine.
@@ -91,6 +105,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		dataFile:      cfg.DataFile,
 		saveInterval:  cfg.SaveInterval,
 		tracker:       NewTracker(),
+		// ghostNormal and ghostPriority are zero-value atomic.Int64; no init needed.
 	}
 	if cfg.DataFile != "" {
 		if err := g.tracker.Load(cfg.DataFile); err != nil {
@@ -168,6 +183,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		host:           host,
 		name:           r.Header.Get("X-Agent-Name"),
 		responsibility: r.Header.Get("X-Responsibility"),
+		interactive:    interactive,
 	}
 
 	// Interactive (UI-initiated) requests go to the priority queue; background
@@ -182,9 +198,25 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	select {
 	case targetQueue <- p:
 		g.tracker.IncrPending(p.host, p.name, p.responsibility)
-		// Block this goroutine until forward() closes p.done, keeping the
-		// HTTP connection alive and the ResponseWriter valid for the dispatcher.
-		<-p.done
+		select {
+		case <-p.done:
+			// forward() completed normally; ResponseWriter was valid throughout.
+		case <-p.ctx.Done():
+			// Endpoint-server disconnected while the request was queued.
+			// Mark cancelled so forward() skips the LLM call when dispatched.
+			p.cancelled.Store(true)
+			if p.pendingDecremented.CompareAndSwap(false, true) {
+				// We won the CAS — correct pending count immediately.
+				g.tracker.DecrPending(p.host)
+				// Track the ghost slot so /stats can report accurate queue depths.
+				if p.interactive {
+					g.ghostPriority.Add(1)
+				} else {
+					g.ghostNormal.Add(1)
+				}
+			}
+			// CAS loss means forward()'s defer already ran and won — no action needed.
+		}
 	default:
 		slog.Warn("gateway: queue full, returning 429",
 			"path", r.URL.Path,
@@ -237,12 +269,37 @@ func (g *Gateway) dispatcher() {
 // records the completed request in the tracker. It always closes p.done
 // and decrements the pending count before returning.
 func (g *Gateway) forward(p *pending) {
+	// Snapshot cancellation state before the defer so the defer uses a stable value,
+	// avoiding a race where ctx is cancelled mid-execution and would suppress Record.
+	wasAlreadyCancelled := p.cancelled.Load()
+
 	var capturedTokens int64
 	defer func() {
-		g.tracker.Record(p.host, p.name, p.responsibility, capturedTokens)
-		g.tracker.DecrPending(p.host)
+		// Skip Record for pre-dispatch cancellations — the client is gone and
+		// capturedTokens will always be 0, so counting the request is misleading.
+		if !wasAlreadyCancelled {
+			g.tracker.Record(p.host, p.name, p.responsibility, capturedTokens)
+		}
+		if p.pendingDecremented.CompareAndSwap(false, true) {
+			// Normal completion: ServeHTTP's ctx.Done branch did not fire first.
+			g.tracker.DecrPending(p.host)
+		} else {
+			// ServeHTTP won the CAS: it already called DecrPending and incremented
+			// the ghost counter. The slot is now consumed, so decrement ghost.
+			if p.interactive {
+				g.ghostPriority.Add(-1)
+			} else {
+				g.ghostNormal.Add(-1)
+			}
+		}
 		close(p.done)
 	}()
+
+	if wasAlreadyCancelled {
+		slog.Info("gateway: request abandoned before dispatch — client disconnected",
+			"agent", p.name, "responsibility", p.responsibility, "host", p.host)
+		return
+	}
 
 	target := *g.upstream
 	target.Path = p.path
@@ -289,7 +346,8 @@ func (g *Gateway) forward(p *pending) {
 			slog.Warn("gateway: upstream request timed out", "path", p.path, "timeout", g.timeout)
 			http.Error(p.w, "gateway: upstream timed out", http.StatusGatewayTimeout)
 		case errors.Is(err, context.Canceled):
-			slog.Debug("gateway: upstream request cancelled (client disconnected)", "path", p.path)
+			slog.Info("gateway: upstream request cancelled — client disconnected while queued or in-flight",
+				"path", p.path, "agent", p.name, "responsibility", p.responsibility, "host", p.host)
 		default:
 			slog.Error("gateway: upstream request failed", "path", p.path, "error", err)
 			http.Error(p.w, "gateway: upstream error: "+err.Error(), http.StatusBadGateway)
@@ -330,7 +388,8 @@ func (g *Gateway) forward(p *pending) {
 		n, readErr := bodyReader.Read(buf)
 		if n > 0 {
 			if _, writeErr := p.w.Write(buf[:n]); writeErr != nil {
-				slog.Debug("gateway: client disconnected mid-response", "path", p.path)
+				slog.Info("gateway: client disconnected mid-response",
+				"path", p.path, "agent", p.name, "responsibility", p.responsibility)
 				// capBuf still has partial data — extract what we can.
 				capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
 				slog.Info("gateway: llm response (partial — client disconnected)",
@@ -377,6 +436,7 @@ func (g *Gateway) health(w http.ResponseWriter) {
 		ActiveRequests:        len(g.sem),
 		MaxConcurrency:        cap(g.sem),
 		Upstream:              g.upstream.String(),
+		GhostRequests:         int(g.ghostNormal.Load() + g.ghostPriority.Load()),
 	})
 }
 
