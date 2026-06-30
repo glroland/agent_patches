@@ -64,10 +64,10 @@ type pending struct {
 	body           []byte
 	w              http.ResponseWriter
 	done           chan struct{} // closed by forward() when the response is fully written
-	host           string       // originating endpoint-server IP for stats tracking
-	name           string       // agent display name from X-Agent-Name header
-	responsibility string       // scheduled responsibility name from X-Responsibility header; empty for ad-hoc runs
-	interactive    bool         // true when X-Priority: interactive; used to route ghost counter
+	host           string        // originating endpoint-server IP for stats tracking
+	name           string        // agent display name from X-Agent-Name header
+	responsibility string        // scheduled responsibility name from X-Responsibility header; empty for ad-hoc runs
+	interactive    bool          // true when X-Priority: interactive; used to route ghost counter
 
 	// cancelled is set by ServeHTTP when p.ctx fires before the request is dispatched.
 	// pendingDecremented is a CAS gate ensuring exactly one path calls DecrPending.
@@ -389,7 +389,7 @@ func (g *Gateway) forward(p *pending) {
 		if n > 0 {
 			if _, writeErr := p.w.Write(buf[:n]); writeErr != nil {
 				slog.Info("gateway: client disconnected mid-response",
-				"path", p.path, "agent", p.name, "responsibility", p.responsibility)
+					"path", p.path, "agent", p.name, "responsibility", p.responsibility)
 				// capBuf still has partial data — extract what we can.
 				capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
 				slog.Info("gateway: llm response (partial — client disconnected)",
