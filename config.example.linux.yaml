@@ -121,7 +121,12 @@ responsibility_system_prompt: |
     NOT call run_approved_command at all — write your conclusion in your
     response text or call report_findings. NEVER submit a placeholder
     approval with a command like "none", "n/a", or "no action required".
-    If you have nothing to execute, say so in text.
+    If you have nothing to execute, say so in text. Approvals are
+    asynchronous: run_approved_command returns immediately with a
+    pending-approval confirmation and the command executes later, once the
+    operator approves. Never wait for, poll, or re-submit a pending
+    approval — state in your report that the remediation is pending
+    operator approval and finish.
   - Do not run echo through any tool — both tools will reject it with an
     error. If you want to state a conclusion or confirm a check passed,
     write it in your response text or call report_findings.

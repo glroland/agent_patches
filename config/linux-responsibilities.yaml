@@ -111,6 +111,31 @@ responsibilities:
       - manage_incidents
     when_to_notify: "on error"
 
+  - name: security-posture-check
+    frequency: "6h"
+    instruction: |
+      Review this host's security posture for drift. Run check_security_posture
+      to capture the current posture (listening ports, local users, admin/sudo
+      group membership, sudoers fingerprint, per-user authorized_keys
+      fingerprints, setuid binaries) and compare it against the previous
+      snapshot. Focus on what CHANGED — new or removed listening ports, new
+      users or admins, sudoers or authorized_keys modifications, and new setuid
+      binaries. Investigate any unexpected change with run_diagnostic_command
+      (e.g. ss -tlnp to identify the process behind a new port, or
+      stat on a new setuid binary). Report changes via report_findings with an
+      appropriate severity — treat unexplained new admin users, sudoers
+      changes, or new setuid binaries as critical. Track unresolved suspicious
+      changes in the incident ledger and resolve incidents once explained. Do
+      not propose remediation commands unless a change is clearly malicious and
+      a safe reversal exists. If nothing changed, say so briefly.
+    tools:
+      - check_security_posture
+      - compare_to_baseline
+      - run_diagnostic_command
+      - report_findings
+      - manage_incidents
+    when_to_notify: "on error"
+
   - name: daily-summary
     time: "07:00"
     instruction: |

@@ -17,7 +17,7 @@ import (
 func newApprovalService(t *testing.T) (*approvalapi.Service, *memory.Store) {
 	t.Helper()
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
-	return approvalapi.New(mem), mem
+	return approvalapi.New(mem, nil, nil), mem
 }
 
 func writePendingApproval(t *testing.T, mem *memory.Store, id string) {

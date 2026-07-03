@@ -42,6 +42,7 @@ import (
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
 	"agent_patches/endpoint-server/skills/check_nfs"
 	"agent_patches/endpoint-server/skills/check_reboot_required"
+	"agent_patches/endpoint-server/skills/check_security_posture"
 	"agent_patches/endpoint-server/skills/compare_to_baseline"
 	"agent_patches/endpoint-server/skills/manage_incidents"
 	"agent_patches/endpoint-server/skills/ping"
@@ -195,6 +196,13 @@ func runServer(ctx context.Context) {
 	}
 	registry.Register(readMemoryTool)
 
+	securityPostureTool, err := check_security_posture.NewCheckSecurityPostureTool(mem)
+	if err != nil {
+		slog.Error("failed to create check_security_posture tool", "error", err)
+		return
+	}
+	registry.Register(securityPostureTool)
+
 	compareToBaselineTool, err := compare_to_baseline.NewCompareToBaselineTool(mem)
 	if err != nil {
 		slog.Error("failed to create compare_to_baseline tool", "error", err)
@@ -317,7 +325,7 @@ func runServer(ctx context.Context) {
 	lp := loop.New(cfg, registry, notify, mem, incidentStore)
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
 	memorySvc := memoryapi.New(mem)
-	approvalSvc := approvalapi.New(mem)
+	approvalSvc := approvalapi.New(mem, notify, policyStore)
 	manualRunSvc := manualrunapi.New(mem)
 	responsibilitiesSvc := responsibilitiesapi.New(lp, mem)
 	policySvc := policyapi.New(policyStore)
@@ -368,6 +376,7 @@ func runServer(ctx context.Context) {
 
 	loginMon.Start(ctx)
 	failedLoginMon.Start(ctx)
+	request_approval.StartExpirySweeper(ctx, mem, notify)
 	lp.Start(ctx)
 
 	go func() {

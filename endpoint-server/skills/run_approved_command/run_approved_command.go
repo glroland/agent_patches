@@ -1,5 +1,13 @@
 // Package run_approved_command provides a skill that proposes a shell command
-// to the operator via the HITL approval flow and, once approved, executes it.
+// to the operator via the HITL approval flow.
+//
+// The flow is asynchronous: the tool files the approval and returns
+// immediately, so a pending approval never parks the agent run (or its
+// responsibility slot) waiting on the operator. When the operator approves
+// via the dashboard, the approvalapi decision handler calls ExecuteOnApproval
+// to run the command and record the result on the timeline. Pending requests
+// survive agent restarts and are expired by the request_approval sweeper
+// after 24 hours.
 //
 // The operator sees the full command, the reason it was chosen, and the
 // assessed risk level before deciding. Nothing is executed unless they
@@ -111,8 +119,11 @@ type runCommandInput struct {
 func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier, policies *policy.Store) (tool.Tool, error) {
 	return tool.New(
 		"run_approved_command",
-		"Propose a state-modifying shell command to the operator for approval, then execute it only "+
-			"if approved. Use this tool ONLY for commands that change system state: installing or "+
+		"Propose a state-modifying shell command for operator approval. The request is filed "+
+			"asynchronously: this tool returns immediately with a pending-approval confirmation, and "+
+			"the command executes automatically once the operator approves (within 24 hours), with the "+
+			"result recorded on the host timeline. Do not wait for or poll the decision. "+
+			"Use this tool ONLY for commands that change system state: installing or "+
 			"removing packages, restarting or reconfiguring services, deleting or overwriting files, "+
 			"modifying users or permissions, or applying updates. "+
 			"NEVER use this for read-only commands. Commands such as du, ls, df, find, ps, cat, "+
@@ -126,8 +137,8 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier, pol
 			"rejected and must be retried via run_diagnostic_command instead. "+
 			"The operator sees the full command, reason, and risk level before deciding. "+
 			"Commands matching an operator-created standing approval policy execute "+
-			"immediately without a fresh approval; the result says so when that happens. "+
-			"Returns the command output on approval, or a cancellation message on rejection.",
+			"immediately without a fresh approval and return their output directly; "+
+			"the result says so when that happens.",
 		func(ctx context.Context, in runCommandInput) (string, error) {
 			cmd := strings.TrimSpace(in.Command)
 			if cmd == "" {
@@ -174,55 +185,103 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier, pol
 				return policyNote + "\n\n" + output, nil
 			}
 
-			decision, err := reqapproval.RequestApproval(
+			// Async approval: file the request and return immediately so the
+			// agent run (and its responsibility slot) is never parked waiting
+			// on the operator. The approvalapi decision handler executes the
+			// command when the operator approves; the expiry sweeper cancels
+			// it after 24 hours without a decision.
+			id, err := reqapproval.SubmitApproval(
 				ctx, mem, notify,
 				title,
 				fmt.Sprintf("Host: %s\n\nReason: %s", host, in.Reason),
 				cmd,
 				in.Risk,
+				true,
+				in.Reason,
 			)
 			if err != nil {
-				return "", fmt.Errorf("approval interrupted: %w", err)
+				return "", fmt.Errorf("approval request failed: %w", err)
 			}
 
-			switch decision {
-			case "rejected":
-				slog.Info("run_approved_command: operator rejected command", "command", cmd)
-				return "Command rejected by operator — not executed.", nil
-			case "timed_out":
-				slog.Info("run_approved_command: approval timed out", "command", cmd)
-				return "Command not executed: approval request timed out.", nil
-			}
-
-			// Approved — run it.
-			slog.Info("run_approved_command: executing approved command", "command", cmd)
-			output, err := executeApproved(ctx, mem, notify, cmd, host, in.Reason)
-			if err != nil {
-				return "", err
-			}
-
-			// Count this approval and, once the operator has approved the same
-			// command enough times, suggest promoting it to a standing policy
-			// so future runs skip the HITL round-trip.
-			if n, recErr := policies.RecordApproval(cmd); recErr == nil && n >= policy.PromotionThreshold {
-				suggestion := fmt.Sprintf(
-					"The operator has now approved this exact command %d times. Consider suggesting a standing approval policy for it so future runs execute without waiting for approval (the operator creates policies via POST /policies with a pattern matching the full command).",
-					n,
-				)
-				if err := status.AppendTimeline(mem, status.TimelineEntry{
-					Type:     "recommendation",
-					Title:    fmt.Sprintf("Candidate for standing approval policy (approved %dx)", n),
-					Detail:   fmt.Sprintf("Command: %s\n\nThis command has been operator-approved %d times. Creating a standing approval policy (POST /policies) would let the agent run it without a fresh approval each time.", policy.NormalizeCommand(cmd), n),
-					Severity: "info",
-				}); err != nil {
-					slog.Warn("run_approved_command: failed to record policy recommendation", "error", err)
-				}
-				output = output + "\n\n[" + suggestion + "]"
-			}
-
-			return output, nil
+			slog.Info("run_approved_command: approval submitted, not waiting", "id", id, "command", cmd, "risk", in.Risk)
+			return fmt.Sprintf(
+				"Approval requested (id %s, risk %s) — the command has NOT been executed yet. "+
+					"It will run automatically if the operator approves within 24 hours, and the "+
+					"result will be recorded on the host timeline. Do not wait for the decision and "+
+					"do not resubmit this command; state in your report that the remediation is "+
+					"pending operator approval.",
+				id, in.Risk,
+			), nil
 		},
 	)
+}
+
+// ExecuteOnApproval runs an auto-execute command whose approval the operator
+// just granted. Called by the approvalapi decision handler in a detached
+// goroutine (the HTTP response does not wait for the command). It records the
+// output on the approval entry and the timeline, notifies the operator of the
+// result, and tracks the approval for standing-policy promotion suggestions.
+func ExecuteOnApproval(mem *memory.Store, notify *notifier.Notifier, policies *policy.Store, entry reqapproval.ApprovalEntry) {
+	cmd := strings.TrimSpace(entry.ProposedAction)
+	host, _ := os.Hostname()
+
+	slog.Info("run_approved_command: executing operator-approved command", "id", entry.ID, "command", cmd)
+
+	// Detached from the HTTP request: the decision response has already been
+	// sent, so the command gets its own lifetime (bounded by commandTimeout
+	// inside executeApproved; a manual-run escalation may wait longer).
+	ctx := context.Background()
+	output, err := executeApproved(ctx, mem, notify, cmd, host, entry.ExecReason)
+	if err != nil {
+		output = fmt.Sprintf("Execution error: %v", err)
+	}
+
+	if err := reqapproval.SetOutput(mem, entry.ID, output); err != nil {
+		slog.Warn("run_approved_command: failed to record output on approval entry", "id", entry.ID, "error", err)
+	}
+
+	failed := strings.HasPrefix(output, "Command failed") || strings.HasPrefix(output, "Execution error")
+	severity := "info"
+	if failed {
+		severity = "warning"
+	}
+	detail := fmt.Sprintf("Command: %s\n\nResult:\n%s", cmd, truncate(output, 1500))
+	if err := status.AppendTimeline(mem, status.TimelineEntry{
+		Type:     "action",
+		Title:    fmt.Sprintf("Executed approved command: %s", entry.Title),
+		Detail:   detail,
+		Severity: severity,
+	}); err != nil {
+		slog.Warn("run_approved_command: failed to record execution on timeline", "id", entry.ID, "error", err)
+	}
+
+	subject := fmt.Sprintf("[Approved Command Executed] %s", entry.Title)
+	if failed {
+		subject = fmt.Sprintf("[Approved Command FAILED] %s", entry.Title)
+	}
+	notify.Notify(ctx, subject, fmt.Sprintf("Host: %s\n\n%s", host, detail))
+
+	// Count this approval and, once the operator has approved the same
+	// command enough times, recommend promoting it to a standing policy so
+	// future runs skip the HITL round-trip.
+	if n, recErr := policies.RecordApproval(cmd); recErr == nil && n >= policy.PromotionThreshold {
+		if err := status.AppendTimeline(mem, status.TimelineEntry{
+			Type:     "recommendation",
+			Title:    fmt.Sprintf("Candidate for standing approval policy (approved %dx)", n),
+			Detail:   fmt.Sprintf("Command: %s\n\nThis command has been operator-approved %d times. Creating a standing approval policy (POST /policies) would let the agent run it without a fresh approval each time.", policy.NormalizeCommand(cmd), n),
+			Severity: "info",
+		}); err != nil {
+			slog.Warn("run_approved_command: failed to record policy recommendation", "error", err)
+		}
+	}
+}
+
+// truncate shortens s to at most n bytes, appending an ellipsis marker.
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "\n… (truncated)"
 }
 
 // executeApproved runs a command that has passed the approval gate (HITL or

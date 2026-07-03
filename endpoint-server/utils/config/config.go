@@ -55,7 +55,11 @@ const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system a
 	`If no corrective action is needed, do NOT call run_approved_command at all — simply ` +
 	`write your conclusion in your response text or call report_findings. ` +
 	`NEVER submit an approval request with a placeholder command such as "none", "n/a", ` +
-	`"no action", or "no action required". If you have nothing to execute, say so in text.` + "\n" +
+	`"no action", or "no action required". If you have nothing to execute, say so in text. ` +
+	`Approvals are asynchronous: run_approved_command returns immediately with a ` +
+	`pending-approval confirmation and the command executes later, once the operator ` +
+	`approves. Never wait for, poll, or re-submit a pending approval — state in your ` +
+	`report that the remediation is pending operator approval and finish.` + "\n" +
 	`- Do not run echo (or Write-Output / Write-Host) through any tool — both tools ` +
 	`will reject it with an error. If you want to state a conclusion or confirm that ` +
 	`a check passed, write it in your response text or call report_findings. ` +

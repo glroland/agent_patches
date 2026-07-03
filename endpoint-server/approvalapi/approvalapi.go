@@ -1,8 +1,12 @@
 // Package approvalapi implements POST /approvals/:id/decision.
 //
-// The request_approval skill writes a pending entry to AttrsStore and polls
-// it. This endpoint writes the operator's decision to that same key, which
-// the polling loop detects within one poll interval (≤5 s).
+// Two kinds of approvals land here:
+//   - Blocking (request_approval skill): a goroutine polls the attrs entry;
+//     this endpoint writes the decision, which the poll detects within ≤5 s.
+//   - Async (run_approved_command, AutoExecute=true): no goroutine is
+//     waiting. On approval, this endpoint launches the stored command in a
+//     detached goroutine via run_approved_command.ExecuteOnApproval, which
+//     records the result on the approval entry and the timeline.
 package approvalapi
 
 import (
@@ -13,17 +17,23 @@ import (
 	"time"
 
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/policy"
 	reqapproval "agent_patches/endpoint-server/skills/request_approval"
+	"agent_patches/endpoint-server/skills/run_approved_command"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 // Service handles operator approval decision requests.
 type Service struct {
-	mem *memory.Store
+	mem      *memory.Store
+	notify   *notifier.Notifier
+	policies *policy.Store
 }
 
-// New returns a Service backed by mem.
-func New(mem *memory.Store) *Service {
-	return &Service{mem: mem}
+// New returns a Service backed by mem. notify and policies are used when an
+// approved entry carries an auto-execute command.
+func New(mem *memory.Store, notify *notifier.Notifier, policies *policy.Store) *Service {
+	return &Service{mem: mem, notify: notify, policies: policies}
 }
 
 // Handler returns an http.Handler for:
@@ -105,6 +115,14 @@ func (s *Service) Handler() http.Handler {
 		// approval as pending without waiting for the next poll cycle.
 		if err := reqapproval.PatchTimeline(s.mem, id, req.Decision); err != nil {
 			slog.Warn("approvalapi: failed to update timeline status", "id", id, "error", err)
+		}
+
+		// Async approvals have no waiting goroutine — execute the stored
+		// command now, detached from this request (the response returns
+		// immediately; the result lands on the timeline and approval entry).
+		if req.Decision == "approved" && entry.AutoExecute {
+			slog.Info("approvalapi: launching auto-execute command", "id", id)
+			go run_approved_command.ExecuteOnApproval(s.mem, s.notify, s.policies, entry)
 		}
 
 		slog.Info("approvalapi: decision recorded", "id", id, "decision", req.Decision)

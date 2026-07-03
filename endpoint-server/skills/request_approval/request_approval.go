@@ -15,6 +15,7 @@ package request_approval
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -47,6 +48,17 @@ type ApprovalEntry struct {
 	Reason         string     `json:"reason,omitempty"`
 	RetryCount     int        `json:"retry_count,omitempty"`
 	ParentID       string     `json:"parent_id,omitempty"` // ID of the first attempt; empty on attempt 0
+
+	// AutoExecute marks an async approval: no goroutine is waiting on the
+	// decision; instead the approvalapi decision handler executes
+	// ProposedAction when the operator approves. Async approvals survive
+	// agent restarts (there is no waiter to cancel them on shutdown).
+	AutoExecute bool `json:"auto_execute,omitempty"`
+	// ExecReason is the agent's original reason for the command, used in the
+	// manual-run escalation message if execution hits a sudoers restriction.
+	ExecReason string `json:"exec_reason,omitempty"`
+	// Output is the command output recorded after an async execution.
+	Output string `json:"output,omitempty"`
 }
 
 // AttrsKey returns the AttrsStore key for the given approval ID.
@@ -90,12 +102,10 @@ func RequestApproval(ctx context.Context, mem *memory.Store, notify *notifier.No
 	return result, nil
 }
 
-// requestApprovalOnce runs a single approval wait cycle bounded by approvalTimeout.
-// Returns "approved", "rejected", or "timed_out"; returns a non-nil error only
-// on context cancellation.
-func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, risk string) (string, error) {
+// createPending writes the pending approval entry, its timeline card, and the
+// immediate high-risk notification. Shared by the blocking and async flows.
+func createPending(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, risk string, autoExecute bool, execReason string) error {
 	now := time.Now()
-	attrKey := AttrsKey(id)
 
 	entry := ApprovalEntry{
 		ID:             id,
@@ -105,9 +115,11 @@ func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifie
 		Risk:           risk,
 		Status:         "pending",
 		RequestedAt:    now,
+		AutoExecute:    autoExecute,
+		ExecReason:     execReason,
 	}
-	if err := mem.Attrs().Set(attrKey, entry); err != nil {
-		return "", fmt.Errorf("request_approval: write attrs: %w", err)
+	if err := mem.Attrs().Set(AttrsKey(id), entry); err != nil {
+		return fmt.Errorf("request_approval: write attrs: %w", err)
 	}
 
 	if err := writeTimeline(mem, id, title, detail, proposedAction, risk, now); err != nil {
@@ -124,6 +136,48 @@ func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifie
 				proposedAction, detail, risk,
 			),
 		)
+	}
+	return nil
+}
+
+// SubmitApproval writes a pending approval and returns its ID immediately,
+// without waiting for the operator. When autoExecute is true, the approvalapi
+// decision handler executes proposedAction on approval. Unlike the blocking
+// RequestApproval, the submitting agent run finishes right away, so a pending
+// approval never parks a responsibility goroutine — and the request survives
+// agent restarts. Expiry is enforced by the sweeper (see StartExpirySweeper).
+func SubmitApproval(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, detail, proposedAction, risk string, autoExecute bool, execReason string) (string, error) {
+	id := newUUID()
+	if err := createPending(ctx, mem, notify, id, title, detail, proposedAction, risk, autoExecute, execReason); err != nil {
+		return "", err
+	}
+	slog.Info("request_approval: submitted async approval", "id", id, "title", title, "risk", risk, "auto_execute", autoExecute)
+	return id, nil
+}
+
+// SetOutput records the execution output on an approval entry after an async
+// auto-execute run. Output is truncated to keep attrs.json bounded.
+func SetOutput(mem *memory.Store, id, output string) error {
+	const maxOutputLen = 4000
+	var entry ApprovalEntry
+	key := AttrsKey(id)
+	if err := mem.Attrs().Get(key, &entry); err != nil {
+		return err
+	}
+	if len(output) > maxOutputLen {
+		output = output[:maxOutputLen] + "\n… (truncated)"
+	}
+	entry.Output = output
+	return mem.Attrs().Set(key, entry)
+}
+
+// requestApprovalOnce runs a single approval wait cycle bounded by approvalTimeout.
+// Returns "approved", "rejected", or "timed_out"; returns a non-nil error only
+// on context cancellation.
+func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, risk string) (string, error) {
+	attrKey := AttrsKey(id)
+	if err := createPending(ctx, mem, notify, id, title, detail, proposedAction, risk, false, ""); err != nil {
+		return "", err
 	}
 
 	slog.Info("request_approval: waiting for operator decision", "id", id, "title", title, "risk", risk)
@@ -259,6 +313,72 @@ func patchAttrs(mem *memory.Store, key, newStatus, reason string, decidedAt *tim
 	entry.Reason = reason
 	entry.DecidedAt = decidedAt
 	return mem.Attrs().Set(key, entry)
+}
+
+// sweepInterval is how often the expiry sweeper scans for stale approvals.
+const sweepInterval = time.Minute
+
+// StartExpirySweeper launches a background goroutine that expires pending
+// approvals older than the approval timeout. The blocking RequestApproval
+// flow enforces its own timeout in-process; the sweeper exists for async
+// (AutoExecute) approvals, which have no waiting goroutine, and for orphaned
+// pendings left behind by a crash. It exits when ctx is cancelled.
+func StartExpirySweeper(ctx context.Context, mem *memory.Store, notify *notifier.Notifier) {
+	go func() {
+		ticker := time.NewTicker(sweepInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				ExpirePending(ctx, mem, notify, time.Now())
+			}
+		}
+	}()
+}
+
+// ExpirePending marks every pending approval older than the approval timeout
+// as timed_out, patching attrs and the timeline. Async approvals additionally
+// notify the operator that the action was NOT taken (the blocking flow sends
+// its own expiry notification via its in-process waiter). Returns the number
+// of approvals expired. Exported for the sweeper and for tests.
+func ExpirePending(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, now time.Time) int {
+	attrs, err := mem.Attrs().All()
+	if err != nil {
+		slog.Warn("request_approval: expiry sweep read failed", "error", err)
+		return 0
+	}
+
+	expired := 0
+	for key, raw := range attrs {
+		if !strings.HasPrefix(key, "approval:") {
+			continue
+		}
+		var entry ApprovalEntry
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			continue
+		}
+		if entry.Status != "pending" || now.Sub(entry.RequestedAt) <= approvalTimeout {
+			continue
+		}
+
+		_ = patchAttrs(mem, key, "timed_out", "no operator response within timeout window", nil)
+		_ = PatchTimeline(mem, entry.ID, "timed_out")
+		expired++
+		slog.Warn("request_approval: expired stale pending approval", "id", entry.ID, "title", entry.Title, "requested_at", entry.RequestedAt)
+
+		if entry.AutoExecute {
+			notify.Notify(ctx,
+				fmt.Sprintf("[Approval Expired] %s", entry.Title),
+				fmt.Sprintf(
+					"The approval request %q expired without a decision.\n\nProposed action: %s\nRisk: %s\n\nThe action was NOT taken. If it is still needed, reissue from the agent dashboard.",
+					entry.Title, entry.ProposedAction, entry.Risk,
+				),
+			)
+		}
+	}
+	return expired
 }
 
 // newUUID generates a random UUID v4.

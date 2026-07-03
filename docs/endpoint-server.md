@@ -92,6 +92,7 @@ All tools are registered in `endpoint-server/main.go`.
 | `analyze_memory_utilization` | RAM and swap usage |
 | `analyze_network_utilization` | Per-interface traffic statistics |
 | `check_interactive_logins` | Active interactive login sessions |
+| `check_security_posture` | Security posture drift: listening ports (with owning process), login-capable users, admin group membership, sudoers fingerprint, per-user authorized_keys fingerprints, setuid binaries. Reports what changed since the previous snapshot; drift sets a `warning` skillstate. Snapshots stored in the `check_security_posture` domain. |
 | `read_agent_memory` | Lets the LLM read the agent's own memory store. `history=true` with a `window` duration (default `"1h"`, up to 90 days) bounds how much of the tiered history is returned. |
 | `compare_to_baseline` | Returns a domain's current snapshot plus the nearest retained snapshots from ~1h, ~24h, and ~7d ago so the agent can judge readings against the host's own baseline (growth rates, anomalies, time-to-full). |
 | `run_diagnostic_command` | Executes a read-only shell command immediately with no approval gate |
@@ -102,8 +103,8 @@ All tools are registered in `endpoint-server/main.go`.
 |---|---|
 | `report_findings` | Writes an observation, action, recommendation, or approval-needed entry to the `timeline` memory domain. Surfaced via `GET /status`. |
 | `manage_incidents` | Reads and updates the incident ledger (`list`, `report`, `log_action`, `resolve`). See "Incident ledger" below. |
-| `request_approval` | HITL gate. Writes a `pending` `ApprovalEntry` to AttrsStore and blocks until an operator decides or the 24-hour window expires. See below. |
-| `run_approved_command` | Executes a state-changing shell command after operator approval — or immediately when the command matches a standing approval policy. See "Standing approval policies" below. |
+| `request_approval` | Blocking HITL gate. Writes a `pending` `ApprovalEntry` to AttrsStore and blocks until an operator decides or the 24-hour window expires. Used internally by the patch flow. See below. |
+| `run_approved_command` | Files an **async** approval and returns immediately; the command executes when the operator approves (see "Async approval flow"). Commands matching a standing approval policy execute immediately instead. |
 
 `check_for_pending_system_patches` also drives the update application path (calls `Patcher.Run`), which uses `request_approval` internally before applying changes.
 
@@ -131,7 +132,19 @@ The `policy` package stores operator-created policies in AttrsStore under `appro
 - In `run_approved_command`, after all validation checks, a command matching an enabled policy executes immediately (same sudo/manual-run path as an approved command), records an `action` timeline entry naming the policy, and prefixes its output with a policy note.
 - Every operator approval is counted per normalised command (`approval_history`). At 3 approvals of the same command, the tool result and a `recommendation` timeline entry suggest promoting it to a standing policy.
 
-### request_approval
+### Async approval flow (run_approved_command)
+
+`run_approved_command` never blocks on the operator. It calls `request_approval.SubmitApproval` with `AutoExecute=true`, which writes the pending `ApprovalEntry` + timeline card (+ immediate notification for high risk) and returns the approval ID at once. The tool tells the model the command has NOT run and will execute on approval.
+
+- On **approve** (`POST /approvals/:id/decision`), the approvalapi handler launches `run_approved_command.ExecuteOnApproval` in a detached goroutine: it runs the command (same sudo / manual-run escalation path), records the output on the approval entry (`Output`) and as an `action` timeline entry, notifies the operator of the result, and counts the approval for standing-policy promotion.
+- On **reject**, nothing executes.
+- Pending async approvals **survive agent restarts** (there is no waiting goroutine to cancel) and are expired by a background sweeper (`request_approval.StartExpirySweeper`, every minute) after 24 hours, with an "action NOT taken" notification.
+
+Because the run finishes immediately, a pending approval no longer parks the responsibility's `Running` flag — monitoring continues at full cadence while approvals wait.
+
+### request_approval (blocking)
+
+Used by flows that need the decision in-run (the patch pipeline applies updates in the same 03:00 run after approval):
 
 - Writes an `ApprovalEntry` to `AttrsStore` under key `approval:<uuid>`
 - Writes a `TimelineEntry` (type=approval, status=pending) to the `timeline` domain

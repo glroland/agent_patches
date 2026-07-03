@@ -68,7 +68,7 @@ func TestApprovalAPI_DecisionOnCancelled_Returns409WithClearMessage(t *testing.T
 	}
 	id := entries[0].ID
 
-	svc := approvalapi.New(mem)
+	svc := approvalapi.New(mem, nil, nil)
 	rec := doApprovalDecision(t, svc, id, "approved")
 
 	if rec.Code != http.StatusConflict {

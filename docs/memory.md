@@ -88,6 +88,7 @@ One mutex for the entire `AttrsStore`. All reads and writes hold it.
 | `analyze_memory_utilization` | memory skill | memory skill (ReadHistory) | RAM/swap snapshot |
 | `analyze_network_utilization` | network skill | network skill (ReadHistory) | Network stats snapshot |
 | `check_interactive_logins` | login skill | — | Login session snapshot |
+| `check_security_posture` | `check_security_posture` skill | same skill (previous-snapshot diff), `compare_to_baseline` | Security posture snapshot: listening ports, users, admins, sudoers/authorized_keys fingerprints, setuid binaries |
 
 Skills that track trends call `ReadHistory()` on their own domain to compare current values against recent history. This is how disk growth rate and SMART attribute drift are detected. The `compare_to_baseline` skill additionally uses `ReadNearest()` to compare any domain's current snapshot against its ~1-hour, ~24-hour, and ~7-day-old baselines, and `read_agent_memory` accepts a `window` parameter (default `"1h"`) to bound how much history is returned to the model.
 
@@ -95,7 +96,7 @@ Skills that track trends call `ReadHistory()` on their own domain to compare cur
 
 | Key pattern | Type | Written by | Read by | Description |
 |---|---|---|---|---|
-| `approval:<uuid>` | `ApprovalEntry` | `request_approval` | `approvalapi`, `request_approval` (poll) | HITL approval state. Status transitions: `pending` → `approved \| rejected \| timed_out \| cancelled`. |
+| `approval:<uuid>` | `ApprovalEntry` | `request_approval` | `approvalapi`, `request_approval` (poll or expiry sweeper) | HITL approval state. Status transitions: `pending` → `approved \| rejected \| timed_out \| cancelled`. Async entries carry `auto_execute: true` plus `exec_reason`, and record the command `output` after execution. |
 | `responsibility_run:<name>` | `RunState` | `loop.execute` | `GET /responsibilities` | Last run outcome: `{ lastRunAt, status, summary }` |
 | `last_patched_at` | RFC3339 string | `check_for_pending_system_patches` | `GET /status` | Timestamp of the last successful OS update |
 | `disk_trends` | JSON object | `check_drives` | `GET /status` | Serialized disk trend data for the UI |
@@ -117,9 +118,14 @@ Skills that track trends call `ReadHistory()` on their own domain to compare cur
   "status": "pending | approved | rejected | timed_out | cancelled",
   "requestedAt": "<RFC3339>",
   "decidedAt": "<RFC3339 or null>",
-  "reason": "<operator comment or empty>"
+  "reason": "<operator comment or empty>",
+  "auto_execute": true,
+  "exec_reason": "<agent's reason, used in manual-run escalation>",
+  "output": "<command output recorded after async execution>"
 }
 ```
+
+The last three fields are present only on async approvals filed by `run_approved_command`.
 
 ### RunState schema
 

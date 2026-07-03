@@ -112,22 +112,31 @@ poller (every AGENT_POLL_INTERVAL_SECONDS)
 
 ### HITL approval flow
 
-Commands matching an operator-created standing approval policy (managed via `/policies`) skip this flow entirely: `run_approved_command` executes them immediately and records an `action` timeline entry naming the policy. Everything else goes through:
+Commands matching an operator-created standing approval policy (managed via `/policies`) skip this flow entirely: `run_approved_command` executes them immediately and records an `action` timeline entry naming the policy. Everything else goes through the **async** flow:
 
 ```
-Agent calls request_approval tool
-  └─► writes ApprovalEntry to AttrsStore (approval:<uuid>)
+Agent calls run_approved_command tool
+  └─► SubmitApproval writes ApprovalEntry (AutoExecute=true) to AttrsStore
         └─► writes TimelineEntry (type=approval, status=pending) to timeline domain
               └─► high-risk: notifier.Notify fires immediately (email)
-                    └─► polls AttrsStore every 5s (up to 24h)
+                    └─► tool returns "pending approval" at once — agent run ends,
+                        monitoring continues; request survives restarts
 
 Operator sees pending approval in central-ui (via WS broadcast)
   └─► submits decision (approve/reject)
         └─► central-backend POST /api/approvals/:agentId/:approvalId/decision
               └─► forwards to agent: POST /approvals/:id/decision
                     └─► handler updates ApprovalEntry status in AttrsStore
-                          └─► polling loop unblocks, returns decision to agent
+                          ├─► approved: detached goroutine executes the command,
+                          │   records output on the entry + an action timeline
+                          │   entry, notifies the operator of the result
+                          └─► rejected: nothing executes
+
+Expiry sweeper (every 1m): pending approvals older than 24h → timed_out
+  └─► timeline patched + "action NOT taken" notification
 ```
+
+The blocking variant (`request_approval` tool, used by the patch pipeline) still polls AttrsStore in-process every 5s until decided or timed out.
 
 ## HTTP API Surface (endpoint-server)
 
