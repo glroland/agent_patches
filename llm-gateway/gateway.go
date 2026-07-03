@@ -16,6 +16,10 @@ import (
 	"time"
 )
 
+// nextPendingID is a monotonically-incrementing counter used to assign a unique
+// ID to each pending request so it can be tracked in the live pending registry.
+var nextPendingID atomic.Int64
+
 // hopByHopHeaders are per-connection headers that must not be forwarded
 // to the upstream or returned to the caller (RFC 2616 §13.5.1).
 var hopByHopHeaders = map[string]bool{
@@ -73,6 +77,11 @@ type pending struct {
 	// pendingDecremented is a CAS gate ensuring exactly one path calls DecrPending.
 	cancelled          atomic.Bool
 	pendingDecremented atomic.Bool
+
+	// id uniquely identifies this request in the live pending registry.
+	// submittedAt is when the request was placed on the queue.
+	id          string
+	submittedAt time.Time
 }
 
 type healthResponse struct {
@@ -160,6 +169,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "/stats":
 			g.tracker.statsHandler(g)(w, r)
 			return
+		case "/pending":
+			g.tracker.pendingHandler()(w, r)
+			return
 		}
 	}
 
@@ -184,6 +196,8 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		name:           r.Header.Get("X-Agent-Name"),
 		responsibility: r.Header.Get("X-Responsibility"),
 		interactive:    interactive,
+		id:             fmt.Sprintf("req-%d", nextPendingID.Add(1)),
+		submittedAt:    time.Now(),
 	}
 
 	// Interactive (UI-initiated) requests go to the priority queue; background
@@ -197,7 +211,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	select {
 	case targetQueue <- p:
-		g.tracker.IncrPending(p.host, p.name, p.responsibility)
+		g.tracker.IncrPending(p.host, p.name, p.responsibility, p.id, p.body, p.submittedAt, p.interactive)
 		select {
 		case <-p.done:
 			// forward() completed normally; ResponseWriter was valid throughout.
@@ -207,7 +221,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			p.cancelled.Store(true)
 			if p.pendingDecremented.CompareAndSwap(false, true) {
 				// We won the CAS — correct pending count immediately.
-				g.tracker.DecrPending(p.host)
+				g.tracker.DecrPending(p.host, p.id)
 				// Track the ghost slot so /stats can report accurate queue depths.
 				if p.interactive {
 					g.ghostPriority.Add(1)
@@ -282,7 +296,7 @@ func (g *Gateway) forward(p *pending) {
 		}
 		if p.pendingDecremented.CompareAndSwap(false, true) {
 			// Normal completion: ServeHTTP's ctx.Done branch did not fire first.
-			g.tracker.DecrPending(p.host)
+			g.tracker.DecrPending(p.host, p.id)
 		} else {
 			// ServeHTTP won the CAS: it already called DecrPending and incremented
 			// the ghost counter. The slot is now consumed, so decrement ghost.

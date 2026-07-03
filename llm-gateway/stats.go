@@ -25,6 +25,8 @@ type Tracker struct {
 	mu               sync.RWMutex
 	endpoints        map[string]*endpointStats
 	responsibilities map[string]*responsibilityStats
+	pendingMu        sync.RWMutex
+	pendingMap       map[string]*pendingDetail
 }
 
 type endpointStats struct {
@@ -81,6 +83,27 @@ type ResponsibilityStatsSnapshot struct {
 	LastSeen         time.Time `json:"last_seen"`
 }
 
+// pendingDetail holds the live detail of one in-flight or queued request.
+type pendingDetail struct {
+	host           string
+	name           string
+	responsibility string
+	prompt         string
+	submittedAt    time.Time
+	priority       bool
+}
+
+// PendingRequestSnapshot is the JSON-serialisable view of one pending request.
+type PendingRequestSnapshot struct {
+	ID             string    `json:"id"`
+	Host           string    `json:"host"`
+	Name           string    `json:"name,omitempty"`
+	Responsibility string    `json:"responsibility,omitempty"`
+	Prompt         string    `json:"prompt"`
+	SubmittedAt    time.Time `json:"submitted_at"`
+	Priority       bool      `json:"priority"`
+}
+
 // GatewayStatsResponse is the top-level payload returned by GET /stats.
 type GatewayStatsResponse struct {
 	GeneratedAt            time.Time                     `json:"generated_at"`
@@ -101,6 +124,7 @@ func NewTracker() *Tracker {
 	return &Tracker{
 		endpoints:        make(map[string]*endpointStats),
 		responsibilities: make(map[string]*responsibilityStats),
+		pendingMap:       make(map[string]*pendingDetail),
 	}
 }
 
@@ -136,14 +160,29 @@ func (t *Tracker) getResponsibility(name string) *responsibilityStats {
 	return rs
 }
 
-// IncrPending marks one request as pending for the given host.
-func (t *Tracker) IncrPending(host, name, responsibility string) {
+// IncrPending marks one request as pending for the given host and stores its
+// details in the live pending registry so they can be surfaced via GET /pending.
+func (t *Tracker) IncrPending(host, name, responsibility, id string, body []byte, submittedAt time.Time, priority bool) {
 	t.get(host, name).pending.Add(1)
+	t.pendingMu.Lock()
+	t.pendingMap[id] = &pendingDetail{
+		host:           host,
+		name:           name,
+		responsibility: responsibility,
+		prompt:         extractPrompt(body),
+		submittedAt:    submittedAt,
+		priority:       priority,
+	}
+	t.pendingMu.Unlock()
 }
 
-// DecrPending marks one request as no longer pending for the given host.
-func (t *Tracker) DecrPending(host string) {
+// DecrPending marks one request as no longer pending for the given host and
+// removes it from the live pending registry.
+func (t *Tracker) DecrPending(host, id string) {
 	t.get(host, "").pending.Add(-1)
+	t.pendingMu.Lock()
+	delete(t.pendingMap, id)
+	t.pendingMu.Unlock()
 }
 
 // Record appends a completed request to the host's event log and, when a
@@ -305,6 +344,46 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 	}
 }
 
+// PendingSnapshot returns a list of all currently pending requests sorted
+// oldest-first. The returned slice is a copy; the caller may freely mutate it.
+func (t *Tracker) PendingSnapshot() []PendingRequestSnapshot {
+	t.pendingMu.RLock()
+	snaps := make([]PendingRequestSnapshot, 0, len(t.pendingMap))
+	for id, d := range t.pendingMap {
+		snaps = append(snaps, PendingRequestSnapshot{
+			ID:             id,
+			Host:           d.host,
+			Name:           d.name,
+			Responsibility: d.responsibility,
+			Prompt:         d.prompt,
+			SubmittedAt:    d.submittedAt,
+			Priority:       d.priority,
+		})
+	}
+	t.pendingMu.RUnlock()
+	sort.Slice(snaps, func(i, j int) bool {
+		return snaps[i].SubmittedAt.Before(snaps[j].SubmittedAt)
+	})
+	return snaps
+}
+
+// pendingHandler is the http.HandlerFunc for GET /pending.
+func (t *Tracker) pendingHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := struct {
+			GeneratedAt time.Time                `json:"generated_at"`
+			Requests    []PendingRequestSnapshot `json:"requests"`
+		}{
+			GeneratedAt: time.Now(),
+			Requests:    t.PendingSnapshot(),
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			slog.Warn("gateway: write pending response", "error", err)
+		}
+	}
+}
+
 // statsHandler is the http.HandlerFunc for GET /stats.
 func (t *Tracker) statsHandler(g *Gateway) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -358,6 +437,61 @@ func extractTokensSSE(data []byte) int64 {
 		}
 	}
 	return 0
+}
+
+// extractPrompt attempts to pull a human-readable prompt string from a raw LLM
+// request body. It handles Anthropic messages format (content as string or
+// content-block array), OpenAI messages format, and flat prompt fields.
+// Falls back to a truncated copy of the raw body when the JSON cannot be parsed.
+func extractPrompt(body []byte) string {
+	if len(body) == 0 {
+		return ""
+	}
+	var req struct {
+		System   string `json:"system"`
+		Prompt   string `json:"prompt"`
+		Messages []struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"messages"`
+	}
+	if err := json.Unmarshal(body, &req); err == nil {
+		for i := len(req.Messages) - 1; i >= 0; i-- {
+			if req.Messages[i].Role != "user" {
+				continue
+			}
+			var s string
+			if err := json.Unmarshal(req.Messages[i].Content, &s); err == nil {
+				return truncatePrompt(s)
+			}
+			var blocks []struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			}
+			if err := json.Unmarshal(req.Messages[i].Content, &blocks); err == nil {
+				for _, b := range blocks {
+					if b.Type == "text" && b.Text != "" {
+						return truncatePrompt(b.Text)
+					}
+				}
+			}
+		}
+		if req.System != "" {
+			return truncatePrompt(req.System)
+		}
+		if req.Prompt != "" {
+			return truncatePrompt(req.Prompt)
+		}
+	}
+	return truncatePrompt(string(body))
+}
+
+func truncatePrompt(s string) string {
+	const maxLen = 2000
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "…"
 }
 
 // limitedCapture is an io.Writer that fills a bytes.Buffer up to max bytes

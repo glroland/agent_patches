@@ -1,4 +1,4 @@
-export default function StatCard({ label, value, hint, tone = 'default', icon }) {
+export default function StatCard({ label, value, hint, tone = 'default', icon, onClick }) {
   const toneStyles = {
     default: 'text-black',
     danger: 'text-rose-700',
@@ -6,8 +6,11 @@ export default function StatCard({ label, value, hint, tone = 'default', icon })
     success: 'text-emerald-700',
   };
 
+  const base = 'rounded-xl border border-navy-200 bg-white p-3 text-center shadow-sm shadow-black/20';
+  const interactive = onClick ? ' cursor-pointer transition-colors hover:border-navy-400 hover:bg-navy-50' : '';
+
   return (
-    <div className="rounded-xl border border-navy-200 bg-white p-3 text-center shadow-sm shadow-black/20">
+    <div className={base + interactive} onClick={onClick} role={onClick ? 'button' : undefined}>
       <div className="flex items-center justify-center gap-1.5">
         <p className="text-xs font-medium uppercase tracking-wide text-navy-500">{label}</p>
         {icon && <div className="text-navy-500">{icon}</div>}

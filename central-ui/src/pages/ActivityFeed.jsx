@@ -6,7 +6,7 @@ import StatCard from '../components/StatCard';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { useFleetSocket } from '../hooks/useFleetSocket';
-import { fetchGatewayStats } from '../api/client';
+import { fetchGatewayStats, fetchGatewayPending } from '../api/client';
 import { relativeTime } from '../utils/time';
 
 // ─── Gateway stats hook ──────────────────────────────────────────────────────
@@ -158,9 +158,9 @@ function patchTone(lastPatchedAt) {
   return 'text-emerald-700';
 }
 
-// ─── Sub-tab: Statistics ─────────────────────────────────────────────────────
+// ─── Sub-tab: Token Consumption ───────────────────────────────────────────────
 
-function StatisticsTab() {
+function TokenConsumptionTab({ onPendingClick }) {
   const { stats, history, error, lastUpdated } = useGatewayStats();
 
   const endpoints = stats?.endpoints ?? [];
@@ -240,8 +240,9 @@ function StatisticsTab() {
               <StatCard
                 label="Pending"
                 value={totalPending}
-                hint="queued + active"
+                hint="queued + active · click to inspect"
                 tone={totalPending > 10 ? 'warning' : 'default'}
+                onClick={onPendingClick}
               />
               <StatCard label="Tokens / hr"   value={fmtNum(totalTokensHr)}  hint={`${fmtNum(totalReqHr)} requests`} />
               <StatCard label="Tokens / day"  value={fmtNum(totalTokensDay)} hint={`${fmtNum(totalReqDay)} requests`} />
@@ -485,16 +486,135 @@ function ActivityFeedTab({ activity }) {
   );
 }
 
+// ─── Sub-tab: Pending LLM Requests ───────────────────────────────────────────
+
+function fmtPendingAge(iso) {
+  if (!iso) return '';
+  const ms = Date.now() - new Date(iso).getTime();
+  if (ms < 60_000) return `${Math.round(ms / 1000)}s`;
+  if (ms < 3_600_000) {
+    const m = Math.floor(ms / 60_000);
+    const s = Math.floor((ms % 60_000) / 1000);
+    return `${m}m ${s}s`;
+  }
+  const h = Math.floor(ms / 3_600_000);
+  const m = Math.floor((ms % 3_600_000) / 60_000);
+  return `${h}h ${m}m`;
+}
+
+function PendingLLMRequestsTab() {
+  const [requests, setRequests] = useState([]);
+  const [error, setError] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [, tick] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const data = await fetchGatewayPending();
+        if (cancelled) return;
+        setRequests(data.requests ?? []);
+        setError(null);
+        setLastUpdated(new Date());
+      } catch (err) {
+        if (!cancelled) setError(err);
+      }
+    };
+    poll();
+    const pollId = setInterval(poll, 3000);
+    const tickId = setInterval(() => tick(n => n + 1), 1000);
+    return () => { cancelled = true; clearInterval(pollId); clearInterval(tickId); };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+        {/503|configured/i.test(error.message)
+          ? 'Gateway unavailable — set GATEWAY_STATS_URL on central-backend.'
+          : `Error: ${error.message}`}
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        {lastUpdated ? (
+          <p className="text-xs text-navy-400">Updated {lastUpdated.toLocaleTimeString()} · refreshes every 3 s</p>
+        ) : (
+          <p className="text-xs text-navy-400">Loading…</p>
+        )}
+        {requests.length > 0 && (
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+            {requests.length} pending
+          </span>
+        )}
+      </div>
+
+      {requests.length === 0 && lastUpdated ? (
+        <div className="rounded-xl border border-navy-200 bg-navy-50 p-12 text-center">
+          <p className="text-sm text-navy-500">No pending LLM requests.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((req) => {
+            const age = fmtPendingAge(req.submitted_at);
+            const displayName = req.name || req.host;
+            const showHost = req.name && req.name !== req.host;
+            return (
+              <div key={req.id} className="overflow-hidden rounded-xl border border-navy-200 bg-white shadow-sm shadow-black/10">
+                {/* Header */}
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 border-b border-navy-100 bg-navy-50/60 px-4 py-2.5">
+                  <span className="font-mono text-xs font-semibold text-navy-900">{displayName}</span>
+                  {showHost && (
+                    <span className="font-mono text-[11px] text-navy-400">{req.host}</span>
+                  )}
+                  {req.responsibility && (
+                    <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-[11px] font-medium text-violet-700">
+                      {req.responsibility}
+                    </span>
+                  )}
+                  {req.priority && (
+                    <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-sky-700">
+                      interactive
+                    </span>
+                  )}
+                  <span className="ml-auto shrink-0 text-[11px] text-navy-500">
+                    {new Date(req.submitted_at).toLocaleTimeString()}{' '}
+                    <span className="text-navy-400">({age})</span>
+                  </span>
+                </div>
+                {/* Prompt body */}
+                <div className="px-4 py-3">
+                  {req.prompt ? (
+                    <p className="whitespace-pre-wrap break-words text-xs leading-relaxed text-navy-700">
+                      {req.prompt}
+                    </p>
+                  ) : (
+                    <p className="text-xs italic text-navy-400">No prompt content available.</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: 'statistics', label: 'Statistics' },
-  { id: 'status',     label: 'Status' },
-  { id: 'feed',       label: 'Activity Feed' },
+  { id: 'token-consumption', label: 'Token Consumption' },
+  { id: 'pending',           label: 'Pending LLM Requests' },
+  { id: 'status',            label: 'Status' },
+  { id: 'feed',              label: 'Activity Feed' },
 ];
 
 export default function ActivityFeed() {
-  const [activeTab, setActiveTab] = useState('statistics');
+  const [activeTab, setActiveTab] = useState('token-consumption');
   const { dashboard, agents } = useFleetSocket();
 
   const isFleetReady = !!dashboard;
@@ -523,7 +643,11 @@ export default function ActivityFeed() {
         ))}
       </div>
 
-      {activeTab === 'statistics' && <StatisticsTab />}
+      {activeTab === 'token-consumption' && (
+        <TokenConsumptionTab onPendingClick={() => setActiveTab('pending')} />
+      )}
+
+      {activeTab === 'pending' && <PendingLLMRequestsTab />}
 
       {activeTab === 'status' && (
         isFleetReady

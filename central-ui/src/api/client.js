@@ -146,3 +146,8 @@ export function clearAllAgentsMemory() {
 export function fetchGatewayStats() {
   return getJSON('/gateway/stats');
 }
+
+// Live list of in-flight and queued LLM requests from the gateway.
+export function fetchGatewayPending() {
+  return getJSON('/gateway/pending');
+}
