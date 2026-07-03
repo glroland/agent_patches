@@ -1,6 +1,6 @@
 global:
   registry: registry.home.glroland.com/agent_patches
-  tag: "39"
+  tag: "40"
   clusterDomain: apps.ocp.home.glroland.com
 
   # Optional OpenTelemetry trace export — same OTEL_* env var names used by
