@@ -25,17 +25,21 @@ Each `Write(v)` call:
 2. Creates a file named `<unix_nanoseconds>.json` (temp file + rename for atomicity)
 3. Prunes the directory according to the retention policy
 
-Retention policy (enforced on every write):
-- One snapshot per 5-minute age bucket for the last 60 minutes
-- Anything older than 60 minutes is deleted
-- Within a bucket, the newest snapshot is kept and older ones are deleted
+Retention is tiered (enforced on every write). A snapshot is assigned to the first tier whose horizon covers its age; within each tier bucket only the newest snapshot is kept:
 
-This means the domain stores up to 12 snapshots in normal operation (one per 5-minute bucket over 60 minutes).
+| Tier | Horizon | Bucket (resolution) |
+|---|---|---|
+| Recent | 60 minutes | 5 minutes |
+| Hourly | 7 days | 1 hour |
+| Daily baseline | 90 days | 24 hours |
+
+Anything older than 90 days is deleted. In steady state a domain holds roughly 12 recent + ~167 hourly + ~83 daily ≈ 260 small JSON files. The long tiers exist so the agent can compare current readings against the host's own history (growth rates, anomalies, time-to-full predictions) via the `compare_to_baseline` skill.
 
 ### Read semantics
 
 - `ReadCurrent(v)` — deserialises the newest file into `v`. Returns an error if no files exist.
 - `ReadHistory()` — returns all retained snapshots as `[]Snapshot` sorted oldest-first. Each `Snapshot` has a `Timestamp` and a `json.RawMessage`.
+- `ReadNearest(target)` — returns the single retained snapshot whose timestamp is closest to `target` (either direction). Used by `compare_to_baseline` to fetch the ~1h/~24h/~7d-ago points.
 
 ### Concurrency
 
@@ -85,7 +89,7 @@ One mutex for the entire `AttrsStore`. All reads and writes hold it.
 | `analyze_network_utilization` | network skill | network skill (ReadHistory) | Network stats snapshot |
 | `check_interactive_logins` | login skill | — | Login session snapshot |
 
-Skills that track trends call `ReadHistory()` on their own domain to compare current values against the 60-minute history window. This is how disk growth rate and SMART attribute drift are detected.
+Skills that track trends call `ReadHistory()` on their own domain to compare current values against recent history. This is how disk growth rate and SMART attribute drift are detected. The `compare_to_baseline` skill additionally uses `ReadNearest()` to compare any domain's current snapshot against its ~1-hour, ~24-hour, and ~7-day-old baselines, and `read_agent_memory` accepts a `window` parameter (default `"1h"`) to bound how much history is returned to the model.
 
 ## Attrs Keys in Production
 
@@ -97,6 +101,9 @@ Skills that track trends call `ReadHistory()` on their own domain to compare cur
 | `disk_trends` | JSON object | `check_drives` | `GET /status` | Serialized disk trend data for the UI |
 | `smart_trends` | JSON object | `check_drives` | `GET /status` | Serialized SMART attribute trends for the UI |
 | `skillstate:<skill>` | `HealthState` | `check_*`, `analyze_*` skills | `GET /status` | Health state from the last skill run: `{ health: ok\|warning\|critical, summary, time }`. Non-OK states are merged into the `/status` timeline even if `report_findings` was not called. |
+| `incidents` | `[]Incident` | `manage_incidents` skill (via `incidents.Store`) | responsibility loop (prompt injection), `manage_incidents` | The incident ledger: fingerprinted ongoing problems with first/last-seen times, occurrence counts, actions taken, and resolutions. Open incidents are appended to every responsibility instruction. Resolved incidents pruned after 30 days; ledger capped at 100 entries. |
+| `approval_policies` | `[]Policy` | `POST /policies` (operator only) | `run_approved_command` (via `policy.Store`) | Standing approval policies: `{ id, description, pattern, risk, createdAt, enabled }`. `pattern` is a Go regex matched against the ENTIRE command (anchored). A matching command executes without a fresh HITL approval. |
+| `approval_history` | `map[string]int` | `run_approved_command` after each operator approval | `run_approved_command` | Count of operator approvals per (whitespace-normalised) command. At 3 approvals of the same command, a recommendation to create a standing policy is added to the timeline. Capped at 200 entries. |
 
 ### ApprovalEntry schema
 

@@ -59,7 +59,31 @@ const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system a
 	`- Do not run echo (or Write-Output / Write-Host) through any tool — both tools ` +
 	`will reject it with an error. If you want to state a conclusion or confirm that ` +
 	`a check passed, write it in your response text or call report_findings. ` +
-	`Running echo via a command tool produces no useful information and wastes an approval slot.`
+	`Running echo via a command tool produces no useful information and wastes an approval slot.` + "\n\n" +
+	`INCIDENT LEDGER (when manage_incidents is available):` + "\n" +
+	`- The ledger records ongoing problems so they persist across runs. Any open ` +
+	`incidents are appended to your instructions — treat them as already known.` + "\n" +
+	`- When you find a persistent problem worth tracking (a filling disk, a runaway ` +
+	`process, a failing drive), report it with a stable kebab-case fingerprint such as ` +
+	`"disk-full-var" or "high-cpu-chrome". If the same underlying problem is already ` +
+	`open, report against the existing fingerprint to record the recurrence — never ` +
+	`open a duplicate incident or file a duplicate finding for it.` + "\n" +
+	`- Log actions you take against an incident (action=log_action) and resolve ` +
+	`incidents that are no longer occurring (action=resolve, with a resolution note). ` +
+	`Do not open incidents for routine healthy check results.` + "\n\n" +
+	`BASELINES (when compare_to_baseline or read_agent_memory is available):` + "\n" +
+	`- Judge readings against this host's own history, not just fixed thresholds. ` +
+	`Call compare_to_baseline with your skill's memory domain (e.g. check_drives, ` +
+	`analyze_cpu_utilization, analyze_memory_utilization, analyze_network_utilization) ` +
+	`to get the current snapshot plus ~1-hour, ~24-hour, and ~7-day-old baselines.` + "\n" +
+	`- Report trends, not just levels: disk growth rate and predicted time-to-full, ` +
+	`sustained versus momentary load, and readings far above the same time last week ` +
+	`even when still below alert thresholds.` + "\n\n" +
+	`STANDING POLICIES:` + "\n" +
+	`- Some state-changing commands are pre-approved by operator-created standing ` +
+	`policies; when a run_approved_command call matches one it executes immediately and ` +
+	`the result says so. You cannot create or modify policies — only the operator can. ` +
+	`Submit commands normally and let the tool decide.`
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {

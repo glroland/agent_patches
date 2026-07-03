@@ -22,12 +22,15 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/approvalapi"
 	"agent_patches/endpoint-server/buildinfo"
+	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/logapi"
 	"agent_patches/endpoint-server/loginmonitor"
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/manualrunapi"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/memoryapi"
+	"agent_patches/endpoint-server/policy"
+	"agent_patches/endpoint-server/policyapi"
 	"agent_patches/endpoint-server/responsibilitiesapi"
 	"agent_patches/endpoint-server/skills/analyze_cpu_utilization"
 	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
@@ -39,6 +42,8 @@ import (
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
 	"agent_patches/endpoint-server/skills/check_nfs"
 	"agent_patches/endpoint-server/skills/check_reboot_required"
+	"agent_patches/endpoint-server/skills/compare_to_baseline"
+	"agent_patches/endpoint-server/skills/manage_incidents"
 	"agent_patches/endpoint-server/skills/ping"
 	"agent_patches/endpoint-server/skills/read_agent_memory"
 	"agent_patches/endpoint-server/skills/report_findings"
@@ -108,6 +113,8 @@ func runServer(ctx context.Context) {
 	store := storage.NewStore(cfg.Storage.TasksFile)
 	mem := memory.New(&cfg.Memory)
 	notify := notifier.New(mem)
+	incidentStore := incidents.New(mem)
+	policyStore := policy.New(mem)
 
 	registry := tasks.NewRegistry()
 
@@ -188,6 +195,20 @@ func runServer(ctx context.Context) {
 	}
 	registry.Register(readMemoryTool)
 
+	compareToBaselineTool, err := compare_to_baseline.NewCompareToBaselineTool(mem)
+	if err != nil {
+		slog.Error("failed to create compare_to_baseline tool", "error", err)
+		return
+	}
+	registry.Register(compareToBaselineTool)
+
+	manageIncidentsTool, err := manage_incidents.NewManageIncidentsTool(incidentStore)
+	if err != nil {
+		slog.Error("failed to create manage_incidents tool", "error", err)
+		return
+	}
+	registry.Register(manageIncidentsTool)
+
 	systemInfoTool, err := capture_system_info.NewSystemInfoTool()
 	if err != nil {
 		slog.Error("failed to create capture_system_info tool", "error", err)
@@ -209,7 +230,7 @@ func runServer(ctx context.Context) {
 	}
 	registry.Register(requestApprovalTool)
 
-	runApprovedCommandTool, err := run_approved_command.NewRunApprovedCommandTool(mem, notify)
+	runApprovedCommandTool, err := run_approved_command.NewRunApprovedCommandTool(mem, notify, policyStore)
 	if err != nil {
 		slog.Error("failed to create run_approved_command tool", "error", err)
 		return
@@ -293,12 +314,13 @@ func runServer(ctx context.Context) {
 	loginMon := loginmonitor.New(mem, notify, cfg.LoginMonitor)
 	failedLoginMon := loginmonitor.NewFailedMonitor(mem, notify, cfg.LoginMonitor)
 
-	lp := loop.New(cfg, registry, notify, mem)
+	lp := loop.New(cfg, registry, notify, mem, incidentStore)
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem)
 	manualRunSvc := manualrunapi.New(mem)
 	responsibilitiesSvc := responsibilitiesapi.New(lp, mem)
+	policySvc := policyapi.New(policyStore)
 	logSvc := logapi.New(cfg.Logging.File)
 
 	mux := http.NewServeMux()
@@ -308,6 +330,7 @@ func runServer(ctx context.Context) {
 	var approvalHandler http.Handler = approvalSvc.Handler()
 	var manualRunHandler http.Handler = manualRunSvc.Handler()
 	var responsibilitiesHandler http.Handler = responsibilitiesSvc.Handler()
+	var policyHandler http.Handler = policySvc.Handler()
 	var logHandler http.Handler = logSvc.Handler()
 	if cfg.Security.Scheme == "bearer" {
 		statusHandler = requireBearer(cfg.Security.Token, statusHandler)
@@ -315,6 +338,7 @@ func runServer(ctx context.Context) {
 		approvalHandler = requireBearer(cfg.Security.Token, approvalHandler)
 		manualRunHandler = requireBearer(cfg.Security.Token, manualRunHandler)
 		responsibilitiesHandler = requireBearer(cfg.Security.Token, responsibilitiesHandler)
+		policyHandler = requireBearer(cfg.Security.Token, policyHandler)
 		logHandler = requireBearer(cfg.Security.Token, logHandler)
 	}
 	mux.Handle("/status", statusHandler)
@@ -322,6 +346,8 @@ func runServer(ctx context.Context) {
 	mux.Handle("/approvals/", approvalHandler)
 	mux.Handle("/manual-runs/", manualRunHandler)
 	mux.Handle("/responsibilities", responsibilitiesHandler)
+	mux.Handle("/policies", policyHandler)
+	mux.Handle("/policies/", policyHandler)
 	mux.Handle("/log", logHandler)
 	mux.Handle("/", interactivePriorityMiddleware(a2asrv.NewJSONRPCHandler(reqHandler)))
 

@@ -18,80 +18,123 @@ responsibilities:
     instruction: |
       Check disk usage on all mounted filesystems. Review disk space usage,
       SMART health, and the largest directories and files on each disk.
+      Compare current usage against history with compare_to_baseline
+      (domain: check_drives): report each filesystem's growth rate and, for
+      any filesystem trending upward, the predicted time until full.
       If any filesystem is above 90% capacity, use run_diagnostic_command to
       investigate the root cause (e.g. du -sh /var/log/* or find /var -name
       "*.log" -size +100M). Once you have identified a safe remediation (e.g.
       clearing old logs or temporary files), submit that command via
       run_approved_command for operator approval before executing it. Do not
       propose commands for SMART hardware failures — report those findings only.
+      Track persistent problems in the incident ledger: report new ones with a
+      stable fingerprint, record recurrences and actions, and resolve incidents
+      that have cleared.
     tools:
       - check_drives
+      - compare_to_baseline
       - run_diagnostic_command
       - run_approved_command
+      - report_findings
+      - manage_incidents
     when_to_notify: "on error"
 
   - name: cpu-utilization-check
     frequency: "1h"
     instruction: |
       Check CPU utilization on this host. Report overall CPU usage percentage,
-      logical CPU count, and load averages. If CPU usage is above 80% or any
-      load average exceeds the number of logical CPUs, use run_diagnostic_command
-      to investigate — for example (ps aux --sort=-%cpu | head -20) to identify
-      the top consumers. Report your findings. Only use run_approved_command if
-      you determine a specific remediation action is warranted and safe to propose.
-      Do not act if CPU usage is within normal bounds.
+      logical CPU count, and load averages. Use compare_to_baseline
+      (domain: analyze_cpu_utilization) to judge whether current load is normal
+      for this host — distinguish sustained pressure from a momentary spike.
+      If CPU usage is above 80% or any load average exceeds the number of
+      logical CPUs, use run_diagnostic_command to investigate — for example
+      (ps aux --sort=-%cpu | head -20) to identify the top consumers. Report
+      your findings. Only use run_approved_command if you determine a specific
+      remediation action is warranted and safe to propose. Do not act if CPU
+      usage is within normal bounds. Track persistent problems (e.g. the same
+      runaway process seen across runs) in the incident ledger rather than
+      re-reporting them each time, and resolve incidents that have cleared.
     tools:
       - analyze_cpu_utilization
+      - compare_to_baseline
       - run_diagnostic_command
       - run_approved_command
+      - report_findings
+      - manage_incidents
     when_to_notify: "on error"
 
   - name: memory-utilization-check
     frequency: "1h"
     instruction: |
       Check memory utilization on this host. Report total RAM, used memory,
-      available memory, and swap usage. If memory usage is above 80%, use
-      run_diagnostic_command to investigate — for example
+      available memory, and swap usage. Use compare_to_baseline
+      (domain: analyze_memory_utilization) to compare against this host's
+      normal usage — flag steady growth that suggests a leak even when the
+      current level is below alert thresholds. If memory usage is above 80%,
+      use run_diagnostic_command to investigate — for example
       (ps aux --sort=-%mem | head -20) to identify top consumers. Report your
-      findings. For sustained critical memory pressure above 90% where a specific
-      safe remediation exists, propose it via run_approved_command for operator
-      approval. Do not act if memory is within normal bounds.
+      findings. For sustained critical memory pressure above 90% where a
+      specific safe remediation exists, propose it via run_approved_command for
+      operator approval. Do not act if memory is within normal bounds. Track
+      persistent problems in the incident ledger and resolve incidents that
+      have cleared.
     tools:
       - analyze_memory_utilization
+      - compare_to_baseline
       - run_diagnostic_command
       - run_approved_command
+      - report_findings
+      - manage_incidents
     when_to_notify: "on error"
 
   - name: network-utilization-check
     frequency: "2h"
     instruction: |
       Check network utilization on all active interfaces. Report upload and
-      download rates. If any interface shows unusually high or unexpected traffic,
-      use run_diagnostic_command to investigate — for example
-      (ss -tunap | head -40) to list active connections and the processes behind
-      them. Report findings even when no action is needed. Only use
-      run_approved_command if a specific remediation is warranted; do not propose
-      commands unless traffic is clearly anomalous.
+      download rates. Use compare_to_baseline
+      (domain: analyze_network_utilization) to judge whether current traffic is
+      normal for this host — flag traffic well above the 24-hour or 7-day
+      baseline even if it looks unremarkable in isolation. If any interface
+      shows unusually high or unexpected traffic, use run_diagnostic_command to
+      investigate — for example (ss -tunap | head -40) to list active
+      connections and the processes behind them. Report findings even when no
+      action is needed. Only use run_approved_command if a specific remediation
+      is warranted; do not propose commands unless traffic is clearly
+      anomalous. Track persistent anomalies in the incident ledger and resolve
+      incidents that have cleared.
     tools:
       - analyze_network_utilization
+      - compare_to_baseline
       - run_diagnostic_command
       - run_approved_command
+      - report_findings
+      - manage_incidents
     when_to_notify: "on error"
 
   - name: daily-summary
     time: "07:00"
     instruction: |
       Summarize overnight system activity, including any errors, restarts,
-      or completed patch runs, and produce a short report.
+      or completed patch runs, and produce a short report. Use
+      read_agent_memory with history=true and window="24h" on the timeline and
+      notifications domains to cover the full night, and compare_to_baseline
+      on check_drives and the utilization domains to include day-over-day and
+      week-over-week trends (disk growth, load changes). List the open
+      incidents from the ledger with how long each has been open, and note any
+      incidents resolved since yesterday.
     tools:
       - read_agent_memory
+      - compare_to_baseline
+      - manage_incidents
     when_to_notify: "always"
 
   - name: keep-system-up-to-date
     time: "03:00"
     instruction: |
-      Ensure the system is up to date. Use the patch tool to check for and
-      apply any available OS updates, rebooting if required.
+      Ensure the system is up to date. Use the check_for_pending_system_patches
+      tool to check for and apply any available OS updates, rebooting if
+      required.
     tools:
       - check_for_pending_system_patches
+      - report_findings
     when_to_notify: "always"

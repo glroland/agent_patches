@@ -99,7 +99,7 @@ func TestLoop_CurrentTask(t *testing.T) {
 			{Name: "daily-summary", Time: "07:00"},
 		},
 	}
-	l := loop.New(cfg, nil, nil, nil)
+	l := loop.New(cfg, nil, nil, nil, nil)
 
 	if got := l.CurrentTask(); got != "" {
 		t.Errorf("CurrentTask() = %q, want empty when nothing running", got)

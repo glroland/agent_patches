@@ -19,6 +19,7 @@ import (
 	"agent_patches/endpoint-server/a2a/agent"
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/a2a/tool"
+	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
@@ -48,12 +49,13 @@ type Loop struct {
 	registry         *tasks.Registry
 	notify           *notifier.Notifier
 	mem              *memory.Store
+	incidents        *incidents.Store
 	responsibilities []*Responsibility
 	startupDelay     time.Duration
 }
 
 // New creates a Loop. Call Start to launch the background goroutine.
-func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifier, mem *memory.Store) *Loop {
+func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifier, mem *memory.Store, inc *incidents.Store) *Loop {
 	jitterMin := rand.Intn(startupJitterMaxMin + 1) // 0–30 inclusive
 	startupDelay := time.Duration(jitterMin) * time.Minute
 
@@ -66,7 +68,7 @@ func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifi
 		}
 		resp = append(resp, r)
 	}
-	return &Loop{cfg: cfg, registry: registry, notify: notify, mem: mem, responsibilities: resp, startupDelay: startupDelay}
+	return &Loop{cfg: cfg, registry: registry, notify: notify, mem: mem, incidents: inc, responsibilities: resp, startupDelay: startupDelay}
 }
 
 // Responsibilities returns the live list of scheduled responsibilities.
@@ -159,7 +161,7 @@ func (l *Loop) execute(ctx context.Context, r *Responsibility) {
 	log.Info("loop: responsibility started")
 
 	a := agent.NewWithResponsibility(l.filterTools(r.cfg.Tools), l.cfg, l.cfg.ResponsibilitySystemPrompt, r.cfg.Name)
-	result, err := a.Run(ctx, r.cfg.Instruction)
+	result, err := a.Run(ctx, l.withOpenIncidents(r.cfg.Instruction))
 	if err != nil {
 		log.Error("loop: responsibility failed", "error", err)
 		span.RecordError(err)
@@ -172,6 +174,23 @@ func (l *Loop) execute(ctx context.Context, r *Responsibility) {
 
 	l.persistRunState(r, result, err)
 	l.maybeNotify(ctx, r, result, err)
+}
+
+// withOpenIncidents appends the open-incident ledger to a responsibility
+// instruction so every run starts knowing what is already being tracked,
+// instead of rediscovering (and re-reporting) the same problems each cycle.
+func (l *Loop) withOpenIncidents(instruction string) string {
+	summary := l.incidents.OpenSummary()
+	if summary == "" {
+		return instruction
+	}
+	return instruction + "\n\n" +
+		"OPEN INCIDENTS already being tracked from previous runs:\n" + summary + "\n" +
+		"Do not file duplicate findings for these. If you observe one of them again, " +
+		"record the recurrence (manage_incidents action=report with the same fingerprint) " +
+		"or log any action you take against it (action=log_action). If it is no longer " +
+		"occurring, resolve it (action=resolve) and mention that in your report. " +
+		"Open a new incident only for a problem not covered by the list above."
 }
 
 // persistRunState writes the outcome of a responsibility run to attrs so it

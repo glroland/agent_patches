@@ -112,6 +112,8 @@ poller (every AGENT_POLL_INTERVAL_SECONDS)
 
 ### HITL approval flow
 
+Commands matching an operator-created standing approval policy (managed via `/policies`) skip this flow entirely: `run_approved_command` executes them immediately and records an `action` timeline entry naming the policy. Everything else goes through:
+
 ```
 Agent calls request_approval tool
   └─► writes ApprovalEntry to AttrsStore (approval:<uuid>)
@@ -139,6 +141,8 @@ Operator sees pending approval in central-ui (via WS broadcast)
 | `/approvals/` | GET | List pending approvals |
 | `/approvals/:id/decision` | POST | Submit approve/reject |
 | `/responsibilities` | GET | Responsibilities + last run state |
+| `/policies` | GET / POST | List / create standing approval policies |
+| `/policies/:id` | DELETE | Remove a standing approval policy |
 
 All endpoints except `/.well-known/agent.json` and `/` require `Authorization: Bearer <token>` when `security.scheme = bearer`.
 

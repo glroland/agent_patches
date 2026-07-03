@@ -2,7 +2,10 @@
 // to the operator via the HITL approval flow and, once approved, executes it.
 //
 // The operator sees the full command, the reason it was chosen, and the
-// assessed risk level before deciding. Nothing is executed unless they approve.
+// assessed risk level before deciding. Nothing is executed unless they
+// approve — with one exception: commands matching an operator-created
+// standing approval policy (see the policy package) execute immediately,
+// because the operator has already approved that command class in advance.
 package run_approved_command
 
 import (
@@ -17,9 +20,11 @@ import (
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/policy"
 	reqapproval "agent_patches/endpoint-server/skills/request_approval"
 	reqmanualrun "agent_patches/endpoint-server/skills/request_manual_run"
 	"agent_patches/endpoint-server/skills/run_diagnostic_command"
+	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/notifier"
 )
 
@@ -100,8 +105,10 @@ type runCommandInput struct {
 // NewRunApprovedCommandTool returns a tool that presents a proposed shell
 // command to the operator for approval, then executes it if approved.
 // The command is run via sh -c so pipelines and shell builtins work.
-// Nothing is executed unless the operator explicitly approves.
-func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (tool.Tool, error) {
+// Nothing is executed unless the operator explicitly approves, except
+// commands matching a standing approval policy in policies (nil disables
+// policy matching), which the operator has pre-approved.
+func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier, policies *policy.Store) (tool.Tool, error) {
 	return tool.New(
 		"run_approved_command",
 		"Propose a state-modifying shell command to the operator for approval, then execute it only "+
@@ -118,6 +125,8 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 			"Read-only commands never require operator approval; submitting one here is "+
 			"rejected and must be retried via run_diagnostic_command instead. "+
 			"The operator sees the full command, reason, and risk level before deciding. "+
+			"Commands matching an operator-created standing approval policy execute "+
+			"immediately without a fresh approval; the result says so when that happens. "+
 			"Returns the command output on approval, or a cancellation message on rejection.",
 		func(ctx context.Context, in runCommandInput) (string, error) {
 			cmd := strings.TrimSpace(in.Command)
@@ -143,6 +152,28 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 				title = "Run command on " + host
 			}
 
+			// Standing approval policy: the operator has pre-approved this
+			// command class, so execute immediately and record it on the
+			// timeline so the action is still visible in the dashboard.
+			if p := policies.Match(cmd); p != nil {
+				slog.Info("run_approved_command: executing under standing policy",
+					"command", cmd, "policy_id", p.ID, "policy", p.Description)
+				policyNote := fmt.Sprintf("Executed immediately under standing approval policy %s (%q).", p.ID, p.Description)
+				if err := status.AppendTimeline(mem, status.TimelineEntry{
+					Type:     "action",
+					Title:    title,
+					Detail:   fmt.Sprintf("Command: %s\n\nReason: %s\n\n%s", cmd, in.Reason, policyNote),
+					Severity: "info",
+				}); err != nil {
+					slog.Warn("run_approved_command: failed to record policy execution on timeline", "error", err)
+				}
+				output, err := executeApproved(ctx, mem, notify, cmd, host, in.Reason)
+				if err != nil {
+					return "", err
+				}
+				return policyNote + "\n\n" + output, nil
+			}
+
 			decision, err := reqapproval.RequestApproval(
 				ctx, mem, notify,
 				title,
@@ -165,58 +196,89 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier) (to
 
 			// Approved — run it.
 			slog.Info("run_approved_command: executing approved command", "command", cmd)
-			cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout)
-			defer cancel()
-
-			// Use sudo -n on Linux when running as a non-root user so approved
-			// commands can perform privileged operations (e.g. systemctl restart,
-			// snap remove). The HITL gate ensures the operator has already seen
-			// and approved the exact command text before we reach this point.
-			usingSudo := runtime.GOOS == "linux" && os.Getuid() != 0
-			var execCmd *exec.Cmd
-			if usingSudo {
-				execCmd = exec.CommandContext(cmdCtx, "sudo", "-n", "sh", "-c", cmd) //nolint:gosec
-			} else {
-				execCmd = exec.CommandContext(cmdCtx, "sh", "-c", cmd) //nolint:gosec
+			output, err := executeApproved(ctx, mem, notify, cmd, host, in.Reason)
+			if err != nil {
+				return "", err
 			}
-			out, execErr := execCmd.CombinedOutput()
-			output := strings.TrimRight(string(out), "\n")
 
-			if execErr != nil {
-				// If sudo -n failed because the command is not in the sudoers
-				// policy, escalate to a manual-run task rather than absorbing
-				// the error. The operator runs the command themselves and pastes
-				// the output back via the dashboard.
-				if usingSudo && isSudoersError(output) {
-					slog.Warn("run_approved_command: sudoers restriction — escalating to manual run", "command", cmd)
-					host, _ := os.Hostname()
-					manualTitle := fmt.Sprintf("Run Command Manually on %s", host)
-					manualOutput, manualStatus, manualErr := reqmanualrun.RequestManualRun(ctx, mem, notify, manualTitle, cmd, host, in.Reason)
-					if manualErr != nil {
-						return "", fmt.Errorf("manual run interrupted: %w", manualErr)
-					}
-					switch manualStatus {
-					case "completed":
-						return manualOutput, nil
-					case "skipped":
-						return "Operator chose to skip manual execution. No output available.", nil
-					default:
-						return "Manual run request timed out without a response.", nil
-					}
+			// Count this approval and, once the operator has approved the same
+			// command enough times, suggest promoting it to a standing policy
+			// so future runs skip the HITL round-trip.
+			if n, recErr := policies.RecordApproval(cmd); recErr == nil && n >= policy.PromotionThreshold {
+				suggestion := fmt.Sprintf(
+					"The operator has now approved this exact command %d times. Consider suggesting a standing approval policy for it so future runs execute without waiting for approval (the operator creates policies via POST /policies with a pattern matching the full command).",
+					n,
+				)
+				if err := status.AppendTimeline(mem, status.TimelineEntry{
+					Type:     "recommendation",
+					Title:    fmt.Sprintf("Candidate for standing approval policy (approved %dx)", n),
+					Detail:   fmt.Sprintf("Command: %s\n\nThis command has been operator-approved %d times. Creating a standing approval policy (POST /policies) would let the agent run it without a fresh approval each time.", policy.NormalizeCommand(cmd), n),
+					Severity: "info",
+				}); err != nil {
+					slog.Warn("run_approved_command: failed to record policy recommendation", "error", err)
 				}
-
-				slog.Warn("run_approved_command: command failed", "command", cmd, "error", execErr)
-				if output != "" {
-					return fmt.Sprintf("Command failed (%v):\n%s", execErr, output), nil
-				}
-				return fmt.Sprintf("Command failed: %v", execErr), nil
+				output = output + "\n\n[" + suggestion + "]"
 			}
 
-			slog.Info("run_approved_command: command completed successfully", "command", cmd, "output_len", len(output))
-			if output == "" {
-				return "Command completed with no output.", nil
-			}
 			return output, nil
 		},
 	)
+}
+
+// executeApproved runs a command that has passed the approval gate (HITL or
+// standing policy). On Linux under a non-root user it escalates via sudo -n;
+// a sudoers restriction escalates further to a manual-run request so the
+// operator can execute the command themselves.
+func executeApproved(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, cmd, host, reason string) (string, error) {
+	cmdCtx, cancel := context.WithTimeout(ctx, commandTimeout)
+	defer cancel()
+
+	// Use sudo -n on Linux when running as a non-root user so approved
+	// commands can perform privileged operations (e.g. systemctl restart,
+	// snap remove). The approval gate ensures the operator has already seen
+	// and approved the exact command text (or its policy) before this point.
+	usingSudo := runtime.GOOS == "linux" && os.Getuid() != 0
+	var execCmd *exec.Cmd
+	if usingSudo {
+		execCmd = exec.CommandContext(cmdCtx, "sudo", "-n", "sh", "-c", cmd) //nolint:gosec
+	} else {
+		execCmd = exec.CommandContext(cmdCtx, "sh", "-c", cmd) //nolint:gosec
+	}
+	out, execErr := execCmd.CombinedOutput()
+	output := strings.TrimRight(string(out), "\n")
+
+	if execErr != nil {
+		// If sudo -n failed because the command is not in the sudoers
+		// policy, escalate to a manual-run task rather than absorbing
+		// the error. The operator runs the command themselves and pastes
+		// the output back via the dashboard.
+		if usingSudo && isSudoersError(output) {
+			slog.Warn("run_approved_command: sudoers restriction — escalating to manual run", "command", cmd)
+			manualTitle := fmt.Sprintf("Run Command Manually on %s", host)
+			manualOutput, manualStatus, manualErr := reqmanualrun.RequestManualRun(ctx, mem, notify, manualTitle, cmd, host, reason)
+			if manualErr != nil {
+				return "", fmt.Errorf("manual run interrupted: %w", manualErr)
+			}
+			switch manualStatus {
+			case "completed":
+				return manualOutput, nil
+			case "skipped":
+				return "Operator chose to skip manual execution. No output available.", nil
+			default:
+				return "Manual run request timed out without a response.", nil
+			}
+		}
+
+		slog.Warn("run_approved_command: command failed", "command", cmd, "error", execErr)
+		if output != "" {
+			return fmt.Sprintf("Command failed (%v):\n%s", execErr, output), nil
+		}
+		return fmt.Sprintf("Command failed: %v", execErr), nil
+	}
+
+	slog.Info("run_approved_command: command completed successfully", "command", cmd, "output_len", len(output))
+	if output == "" {
+		return "Command completed with no output.", nil
+	}
+	return output, nil
 }

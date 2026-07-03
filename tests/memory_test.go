@@ -124,14 +124,14 @@ func TestMemoryDomain_Snapshot_DataRoundtrips(t *testing.T) {
 // DomainStore — retention algorithm
 // ---------------------------------------------------------------------------
 
-func TestMemoryRetention_DeletesFilesOlderThan60Min(t *testing.T) {
+func TestMemoryRetention_DeletesFilesOlderThan90Days(t *testing.T) {
 	store, root := newMemoryStore(t)
 	d := store.Domain("prune_old")
 
 	now := time.Now()
 
-	// write a snapshot 65 minutes in the past
-	old := now.Add(-65 * time.Minute)
+	// write a snapshot 91 days in the past — beyond the last retention tier
+	old := now.Add(-91 * 24 * time.Hour)
 	d.Clock = func() time.Time { return old }
 	if err := d.Write(map[string]string{"when": "old"}); err != nil {
 		t.Fatalf("Write old: %v", err)
@@ -146,6 +146,84 @@ func TestMemoryRetention_DeletesFilesOlderThan60Min(t *testing.T) {
 	entries := jsonFilesInDir(t, filepath.Join(root, "prune_old"))
 	if len(entries) != 1 {
 		t.Errorf("want 1 file after pruning old snapshot, got %d: %v", len(entries), entries)
+	}
+}
+
+func TestMemoryRetention_KeepsHourlyTierForBaselines(t *testing.T) {
+	store, root := newMemoryStore(t)
+	d := store.Domain("tiered")
+
+	now := time.Now()
+
+	// Written oldest-first (pruning runs relative to each write's clock):
+	// - 30d old lands in the daily tier, 3d old in the hourly tier
+	// - 190m and 185m fall in the same hourly bucket — only the newest survives
+	// - 65m old used to be deleted under the flat 60-minute policy; under
+	//   tiered retention it falls into the hourly tier and is kept
+	offsets := []time.Duration{
+		30 * 24 * time.Hour,
+		3 * 24 * time.Hour,
+		190 * time.Minute,
+		185 * time.Minute,
+		65 * time.Minute,
+	}
+	for _, off := range offsets {
+		ts := now.Add(-off)
+		d.Clock = func() time.Time { return ts }
+		if err := d.Write(map[string]string{"age": off.String()}); err != nil {
+			t.Fatalf("Write %v: %v", off, err)
+		}
+	}
+
+	// trigger pruning
+	d.Clock = func() time.Time { return now }
+	if err := d.Write(map[string]string{"when": "now"}); err != nil {
+		t.Fatalf("Write now: %v", err)
+	}
+
+	// now + 65m + one-of-two-in-same-hour + 3d + 30d = 5 files
+	entries := jsonFilesInDir(t, filepath.Join(root, "tiered"))
+	if len(entries) != 5 {
+		t.Errorf("want 5 files under tiered retention, got %d: %v", len(entries), entries)
+	}
+}
+
+func TestMemoryDomain_ReadNearest(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("nearest")
+
+	now := time.Now()
+	for _, off := range []time.Duration{25 * time.Hour, 2 * time.Hour, 0} {
+		ts := now.Add(-off)
+		d.Clock = func() time.Time { return ts }
+		if err := d.Write(map[string]string{"age": off.String()}); err != nil {
+			t.Fatalf("Write %v: %v", off, err)
+		}
+	}
+
+	snap, err := d.ReadNearest(now.Add(-24 * time.Hour))
+	if err != nil {
+		t.Fatalf("ReadNearest: %v", err)
+	}
+	// nearest to -24h is the -25h snapshot (1h away vs 22h for the -2h one)
+	wantTs := now.Add(-25 * time.Hour)
+	if diff := snap.Timestamp.Sub(wantTs); diff > time.Second || diff < -time.Second {
+		t.Errorf("ReadNearest timestamp = %v, want ~%v", snap.Timestamp, wantTs)
+	}
+
+	var got map[string]string
+	if err := json.Unmarshal(snap.Data, &got); err != nil {
+		t.Fatalf("unmarshal snapshot: %v", err)
+	}
+	if got["age"] != (25 * time.Hour).String() {
+		t.Errorf("ReadNearest data age = %q, want %q", got["age"], (25 * time.Hour).String())
+	}
+}
+
+func TestMemoryDomain_ReadNearest_Empty_ReturnsError(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	if _, err := store.Domain("nearest_empty").ReadNearest(time.Now()); err == nil {
+		t.Error("expected error reading nearest from empty domain, got nil")
 	}
 }
 

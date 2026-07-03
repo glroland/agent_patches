@@ -14,10 +14,27 @@ import (
 	"agent_patches/endpoint-server/utils/config"
 )
 
-const (
-	maxAge      = 60 * time.Minute
-	bucketWidth = 5 * time.Minute
-)
+// retentionTier keeps one snapshot per bucket for snapshots newer than horizon.
+// Tiers are evaluated in order; a snapshot falls into the first tier whose
+// horizon covers its age. Anything older than the last tier's horizon is
+// deleted.
+type retentionTier struct {
+	horizon time.Duration
+	bucket  time.Duration
+}
+
+// retentionTiers implements tiered baseline retention: full 5-minute
+// resolution for the last hour (as before), hourly snapshots for a week, and
+// daily snapshots for 90 days. The long tiers give the agent a baseline of
+// "normal" to compare current readings against (growth rates, anomalies).
+var retentionTiers = []retentionTier{
+	{horizon: 60 * time.Minute, bucket: 5 * time.Minute},
+	{horizon: 7 * 24 * time.Hour, bucket: time.Hour},
+	{horizon: 90 * 24 * time.Hour, bucket: 24 * time.Hour},
+}
+
+// maxAge is the oldest any snapshot may be before it is pruned.
+var maxAge = retentionTiers[len(retentionTiers)-1].horizon
 
 // Store is the root memory store. Use Domain to get a history-backed domain
 // store, or Attrs to get the global attribute store.
@@ -134,8 +151,9 @@ func (s *Store) Dump() (Dump, error) {
 // ---------------------------------------------------------------------------
 
 // DomainStore persists timestamped JSON snapshots for one domain.
-// It retains one snapshot per 5-minute bucket covering the last 60 minutes;
-// anything older is deleted on each write.
+// Retention is tiered (see retentionTiers): one snapshot per 5-minute bucket
+// for the last hour, one per hour for the last 7 days, and one per day for
+// the last 90 days; anything older is deleted on each write.
 type DomainStore struct {
 	root  string
 	mu    sync.Mutex
@@ -251,6 +269,52 @@ func (d *DomainStore) ReadHistory() ([]Snapshot, error) {
 	return snaps, nil
 }
 
+// ReadNearest returns the retained snapshot whose timestamp is closest to
+// target, in either direction. Returns an error if no snapshots exist.
+// A nil DomainStore always returns an error.
+func (d *DomainStore) ReadNearest(target time.Time) (Snapshot, error) {
+	if d == nil {
+		return Snapshot{}, fmt.Errorf("memory: nil DomainStore")
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	entries, err := os.ReadDir(d.root)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("memory: readdir %s: %w", d.root, err)
+	}
+
+	var bestName string
+	var bestNs int64
+	var bestDist time.Duration
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
+			continue
+		}
+		ns, err := strconv.ParseInt(strings.TrimSuffix(e.Name(), ".json"), 10, 64)
+		if err != nil {
+			continue
+		}
+		dist := target.Sub(time.Unix(0, ns))
+		if dist < 0 {
+			dist = -dist
+		}
+		if bestName == "" || dist < bestDist {
+			bestName, bestNs, bestDist = e.Name(), ns, dist
+		}
+	}
+	if bestName == "" {
+		return Snapshot{}, fmt.Errorf("memory: no snapshots in %s", d.root)
+	}
+
+	data, err := os.ReadFile(filepath.Join(d.root, bestName))
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("memory: read %s: %w", bestName, err)
+	}
+	return Snapshot{Timestamp: time.Unix(0, bestNs), Data: json.RawMessage(data)}, nil
+}
+
 // newestFile returns the filename of the most recent snapshot in d.root.
 // Caller must hold d.mu.
 func (d *DomainStore) newestFile() (string, error) {
@@ -283,22 +347,26 @@ func (d *DomainStore) newestFile() (string, error) {
 	return newestName, nil
 }
 
-// prune deletes snapshots that fall outside the retention policy.
-// For each 5-minute age bucket within the last 60 minutes, only the newest
-// snapshot is kept. Any snapshot older than 60 minutes is deleted.
-// Caller must hold d.mu.
+// prune deletes snapshots that fall outside the tiered retention policy.
+// A snapshot is assigned to the first tier whose horizon covers its age; only
+// the newest snapshot per tier bucket is kept. Any snapshot older than the
+// last tier's horizon is deleted. Caller must hold d.mu.
 func (d *DomainStore) prune(now time.Time) {
 	entries, err := os.ReadDir(d.root)
 	if err != nil {
 		return
 	}
 
-	// bucket index -> path of the newest file in that bucket
+	// bucket key (tier index + bucket index within tier) -> newest file
+	type bucketKey struct {
+		tier   int
+		bucket int
+	}
 	type entry struct {
 		path string
 		ns   int64
 	}
-	buckets := make(map[int]entry)
+	buckets := make(map[bucketKey]entry)
 	var toDelete []string
 
 	for _, e := range entries {
@@ -319,13 +387,19 @@ func (d *DomainStore) prune(now time.Time) {
 		if age < 0 {
 			age = 0
 		}
-		bucket := int(age / bucketWidth)
+		key := bucketKey{}
+		for i, tier := range retentionTiers {
+			if age <= tier.horizon {
+				key = bucketKey{tier: i, bucket: int(age / tier.bucket)}
+				break
+			}
+		}
 		path := filepath.Join(d.root, e.Name())
-		if prev, ok := buckets[bucket]; !ok || ns > prev.ns {
+		if prev, ok := buckets[key]; !ok || ns > prev.ns {
 			if ok {
 				toDelete = append(toDelete, prev.path)
 			}
-			buckets[bucket] = entry{path: path, ns: ns}
+			buckets[key] = entry{path: path, ns: ns}
 		} else {
 			toDelete = append(toDelete, path)
 		}

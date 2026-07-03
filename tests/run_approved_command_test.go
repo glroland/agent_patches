@@ -3,11 +3,15 @@ package tests
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/policy"
 	"agent_patches/endpoint-server/skills/run_approved_command"
 	"agent_patches/endpoint-server/utils/config"
 )
@@ -15,7 +19,7 @@ import (
 func newRunApprovedCommandTool(t *testing.T) (tool.Tool, *memory.Store) {
 	t.Helper()
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
-	tl, err := run_approved_command.NewRunApprovedCommandTool(mem, nil)
+	tl, err := run_approved_command.NewRunApprovedCommandTool(mem, nil, policy.New(mem))
 	if err != nil {
 		t.Fatalf("NewRunApprovedCommandTool: %v", err)
 	}
@@ -129,5 +133,84 @@ func TestRunApprovedCommandTool_RejectsEchoStatus(t *testing.T) {
 	_, err := tool.Execute(context.Background(), runApprovedCommandInput(t, "echo all good"))
 	if err == nil {
 		t.Fatal("Execute: want error for bare echo, got nil")
+	}
+}
+
+// newRunApprovedCommandToolWithPolicies builds the tool with an explicit
+// policy store so tests can pre-approve command classes.
+func newRunApprovedCommandToolWithPolicies(t *testing.T) (tool.Tool, *memory.Store, *policy.Store) {
+	t.Helper()
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	policies := policy.New(mem)
+	tl, err := run_approved_command.NewRunApprovedCommandTool(mem, nil, policies)
+	if err != nil {
+		t.Fatalf("NewRunApprovedCommandTool: %v", err)
+	}
+	return tl, mem, policies
+}
+
+// A command matching an operator-created standing approval policy executes
+// immediately — no pending approval is created — and the run is recorded on
+// the timeline as an action referencing the policy.
+func TestRunApprovedCommandTool_StandingPolicyExecutesImmediately(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test executes via sh -c")
+	}
+	tool, mem, policies := newRunApprovedCommandToolWithPolicies(t)
+
+	dir := t.TempDir()
+	if _, err := policies.Add("touch test marker files", "touch "+dir+"/[a-z]+", "low"); err != nil {
+		t.Fatalf("Add policy: %v", err)
+	}
+
+	marker := filepath.Join(dir, "created")
+	out, err := tool.Execute(context.Background(), runApprovedCommandInput(t, "touch "+marker))
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !strings.Contains(out, "standing approval policy") {
+		t.Errorf("output = %q, want it to mention the standing approval policy", out)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("marker file not created — command did not execute: %v", err)
+	}
+
+	var entries []map[string]any
+	if err := mem.Domain("timeline").ReadCurrent(&entries); err != nil {
+		t.Fatalf("read timeline: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("timeline entries = %d, want 1 action entry", len(entries))
+	}
+	if entries[0]["type"] != "action" {
+		t.Errorf("timeline entry type = %v, want action", entries[0]["type"])
+	}
+	// No approval attrs entry should exist — the HITL flow was skipped.
+	attrs, err := mem.Attrs().All()
+	if err != nil {
+		t.Fatalf("read attrs: %v", err)
+	}
+	for k := range attrs {
+		if strings.HasPrefix(k, "approval:") {
+			t.Errorf("unexpected pending approval %s — standing policy should skip HITL", k)
+		}
+	}
+}
+
+// A command that does NOT match any standing policy must not execute through
+// the policy fast-path (it would instead block on HITL approval, which the
+// anchored-match tests in policy_test.go cover at the store level).
+func TestRunApprovedCommandTool_PolicyDoesNotMatchChainedCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test executes via sh -c")
+	}
+	_, _, policies := newRunApprovedCommandToolWithPolicies(t)
+
+	dir := t.TempDir()
+	if _, err := policies.Add("touch test marker files", "touch "+dir+"/[a-z]+", "low"); err != nil {
+		t.Fatalf("Add policy: %v", err)
+	}
+	if p := policies.Match("touch " + dir + "/ok && rm -rf /"); p != nil {
+		t.Errorf("chained command matched policy %q — pattern anchoring is broken", p.Pattern)
 	}
 }

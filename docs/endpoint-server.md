@@ -14,6 +14,9 @@ The endpoint-server is a Go binary that runs on each managed host. It exposes an
 | `/approvals/` | GET | Yes (if bearer) | List approval entries from AttrsStore |
 | `/approvals/:id/decision` | POST | Yes (if bearer) | Submit an operator approve/reject decision |
 | `/responsibilities` | GET | Yes (if bearer) | Responsibilities with last run state and next run time |
+| `/policies` | GET | Yes (if bearer) | List standing approval policies |
+| `/policies` | POST | Yes (if bearer) | Create a standing approval policy `{description, pattern, risk}` |
+| `/policies/:id` | DELETE | Yes (if bearer) | Remove a standing approval policy |
 
 ### GET /status response shape
 
@@ -89,7 +92,8 @@ All tools are registered in `endpoint-server/main.go`.
 | `analyze_memory_utilization` | RAM and swap usage |
 | `analyze_network_utilization` | Per-interface traffic statistics |
 | `check_interactive_logins` | Active interactive login sessions |
-| `read_agent_memory` | Lets the LLM read the agent's own memory store |
+| `read_agent_memory` | Lets the LLM read the agent's own memory store. `history=true` with a `window` duration (default `"1h"`, up to 90 days) bounds how much of the tiered history is returned. |
+| `compare_to_baseline` | Returns a domain's current snapshot plus the nearest retained snapshots from ~1h, ~24h, and ~7d ago so the agent can judge readings against the host's own baseline (growth rates, anomalies, time-to-full). |
 | `run_diagnostic_command` | Executes a read-only shell command immediately with no approval gate |
 
 ### Action tools (require HITL or are used for reporting)
@@ -97,8 +101,9 @@ All tools are registered in `endpoint-server/main.go`.
 | Tool | Description |
 |---|---|
 | `report_findings` | Writes an observation, action, recommendation, or approval-needed entry to the `timeline` memory domain. Surfaced via `GET /status`. |
+| `manage_incidents` | Reads and updates the incident ledger (`list`, `report`, `log_action`, `resolve`). See "Incident ledger" below. |
 | `request_approval` | HITL gate. Writes a `pending` `ApprovalEntry` to AttrsStore and blocks until an operator decides or the 24-hour window expires. See below. |
-| `run_approved_command` | Executes a state-changing shell command after verifying that the corresponding approval is in `approved` state. |
+| `run_approved_command` | Executes a state-changing shell command after operator approval — or immediately when the command matches a standing approval policy. See "Standing approval policies" below. |
 
 `check_for_pending_system_patches` also drives the update application path (calls `Patcher.Run`), which uses `request_approval` internally before applying changes.
 
@@ -109,6 +114,22 @@ The system prompt enforces a strict separation:
 - `run_approved_command` — any state-changing command (package install/remove, service start/stop, file delete, config change). Requires HITL approval before execution.
 
 The LLM is instructed never to route a read-only command through `run_approved_command`.
+
+### Incident ledger
+
+The `incidents` package stores fingerprinted incidents (`{fingerprint, title, detail, severity, status, firstSeen, lastSeen, timesSeen, actions, resolution}`) in AttrsStore under the `incidents` key, with a per-store mutex serialising read-modify-write across concurrent responsibility runs.
+
+- Before each responsibility run, `loop.execute` appends the open incidents (with dedupe instructions) to the responsibility's instruction, so the agent starts every run knowing what is already tracked.
+- The `manage_incidents` tool lets the agent open incidents (stable kebab-case fingerprints like `disk-full-var`), record recurrences, log actions taken, and resolve incidents that have cleared.
+- Resolved incidents are pruned after 30 days; the ledger is capped at 100 entries (resolved dropped first).
+
+### Standing approval policies
+
+The `policy` package stores operator-created policies in AttrsStore under `approval_policies`. Each policy has a Go-regex `pattern` that is matched against the ENTIRE (whitespace-normalised) command — the match is anchored, so a chained command containing an approved prefix does not match.
+
+- Policies are managed exclusively through the `/policies` HTTP endpoints; the agent has no tool to create or modify them.
+- In `run_approved_command`, after all validation checks, a command matching an enabled policy executes immediately (same sudo/manual-run path as an approved command), records an `action` timeline entry naming the policy, and prefixes its output with a policy note.
+- Every operator approval is counted per normalised command (`approval_history`). At 3 approvals of the same command, the tool result and a `recommendation` timeline entry suggest promoting it to a standing policy.
 
 ### request_approval
 
@@ -137,7 +158,7 @@ Storage failures are logged but never propagate — a failing write never aborts
 For each due responsibility:
 1. Sets an `atomic.Bool` to mark it as running (prevents overlapping runs)
 2. Launches a goroutine that creates a new `agent.Agent` with the responsibility's filtered tool set
-3. Calls `agent.Run(responsibility.Instruction)` — same tool-use loop as on-demand requests
+3. Calls `agent.Run(instruction)` — the instruction is the responsibility's `Instruction` with any open incidents from the ledger appended (see "Incident ledger"), so the agent dedupes against known problems instead of re-reporting them
 4. Persists run state (`lastRunAt`, `status`, `summary`) to `AttrsStore` under `responsibility_run:<name>`
 5. Fires a notification based on `when_to_notify`: `"always"`, `"on_error"` (default), or `"never"`
 
