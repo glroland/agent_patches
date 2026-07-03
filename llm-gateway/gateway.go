@@ -245,36 +245,37 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// dispatcher drains both queues, always preferring the priority queue over
-// the normal queue. Stage 1 does a non-blocking check of the priority queue
-// so that an interactive request already waiting is picked up immediately
-// when a concurrency slot opens. Stage 2 blocks on whichever queue has work,
-// with the priority queue listed first (select picks randomly when both are
-// ready, so interactive requests race ahead of background work on average).
+// dispatcher drains both queues, always preferring the priority queue over the
+// normal queue. The critical invariant is that a concurrency slot is acquired
+// BEFORE a request is dequeued. This means the queue-selection decision is
+// made with an in-hand slot, so a priority request that arrives while we are
+// waiting for capacity always beats a normal request already sitting in the
+// queue — preventing the priority inversion that occurs when the dispatcher
+// commits to a normal request and then blocks for a slot.
 func (g *Gateway) dispatcher() {
-	dispatch := func(p *pending) {
-		g.sem <- struct{}{} // blocks when max_concurrency slots are occupied
+	for {
+		// Block until a concurrency slot is available. The decision of which
+		// request to serve is deferred until we actually hold a slot.
+		g.sem <- struct{}{}
+
+		var p *pending
+
+		// Stage 1: non-blocking priority drain — grab an interactive request
+		// immediately if one is waiting.
+		select {
+		case p = <-g.priorityQueue:
+		default:
+			// Stage 2: block until work arrives on either queue.
+			select {
+			case p = <-g.priorityQueue:
+			case p = <-g.queue:
+			}
+		}
+
 		go func(p *pending) {
 			defer func() { <-g.sem }()
 			g.forward(p)
 		}(p)
-	}
-
-	for {
-		// Stage 1: non-blocking drain of priority queue.
-		select {
-		case p := <-g.priorityQueue:
-			dispatch(p)
-			continue
-		default:
-		}
-		// Stage 2: block until work arrives on either queue.
-		select {
-		case p := <-g.priorityQueue:
-			dispatch(p)
-		case p := <-g.queue:
-			dispatch(p)
-		}
 	}
 }
 
