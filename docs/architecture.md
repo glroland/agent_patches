@@ -159,11 +159,11 @@ All endpoints except `/.well-known/agent.json` and `/` require `Authorization: B
 
 ### endpoint-server (Linux)
 
-Deployed via `deploy/linux/deploy.sh` (Ansible-driven). The binary is cross-compiled for each target platform and installed to `/opt/agent_patches/bin/`. Runs as a systemd service (`deploy/linux/agent_patches.service`) under the `agent_patches` system user. See [security.md](security.md) for the full privilege model.
+Deployed via `deploy/linux/deploy.sh` (Ansible-driven). The binary is cross-compiled for each target platform and installed to `/opt/agent_patches/bin/`; the OS responsibilities file (`linux-responsibilities.yaml`) and responsibility system prompt (`linux-system-prompt.txt`, both from `config/` in the repo) are installed next to `config.yaml` under `/opt/agent_patches/config/`. Runs as a systemd service (`deploy/linux/agent_patches.service`) under the `agent_patches` system user. See [security.md](security.md) for the full privilege model.
 
 ### endpoint-server (Windows)
 
-Deploy script at `deploy/linux/deploy.sh` includes a PowerShell section that SCPs the binary and config to the target via SSH and registers a Windows Service via `sc.exe`. Runs as the `agent_patches` local user account.
+Deploy script at `deploy/linux/deploy.sh` includes a PowerShell section that SCPs the binary, config, `windows-responsibilities.yaml`, and `windows-system-prompt.txt` to the target via SSH and registers a Windows Service via `sc.exe`. Runs as the `agent_patches` local user account.
 
 ### central-backend and central-ui (Kubernetes/OpenShift)
 

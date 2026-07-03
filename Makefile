@@ -38,7 +38,7 @@ CENTRAL_BACKEND_DIR := $(CURDIR)/central-backend
 INVENTORY_ROOT := $(CURDIR)/../home-utils/admin/agent_patches
 DEPLOY_SCRIPT  := $(CURDIR)/deploy/linux/deploy.sh
 
-# OS-specific default responsibilities files (in-repo).
+# OS-specific default responsibilities and system prompt files (in-repo).
 CONFIG_DIR := $(CURDIR)/config
 
 .PHONY: install build build-server build-cli release release-server release-cli \
@@ -114,6 +114,8 @@ deploy:
 	WINDOWS_CONFIG=$(INVENTORY_ROOT)/endpoint-server-config-windows.yaml \
 	WINDOWS_RESPONSIBILITIES=$(CONFIG_DIR)/windows-responsibilities.yaml \
 	LINUX_RESPONSIBILITIES=$(CONFIG_DIR)/linux-responsibilities.yaml \
+	WINDOWS_SYSTEM_PROMPT=$(CONFIG_DIR)/windows-system-prompt.txt \
+	LINUX_SYSTEM_PROMPT=$(CONFIG_DIR)/linux-system-prompt.txt \
 	$(DEPLOY_SCRIPT) \
 		$(INVENTORY_ROOT)/inventory.csv \
 		$(LINUX_AMD64_DIR)/$(BINARY) \

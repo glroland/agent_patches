@@ -2,6 +2,8 @@ package tests
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -117,6 +119,75 @@ responsibility_system_prompt: "custom sysadmin prompt"
 	}
 	if s.ResponsibilitySystemPrompt != "custom sysadmin prompt" {
 		t.Errorf("ResponsibilitySystemPrompt = %q, want %q", s.ResponsibilitySystemPrompt, "custom sysadmin prompt")
+	}
+}
+
+func TestLoad_OSSystemPromptFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(validYAML), 0o644); err != nil {
+		t.Fatalf("could not write config: %v", err)
+	}
+	promptPath := filepath.Join(dir, runtime.GOOS+"-system-prompt.txt")
+	if err := os.WriteFile(promptPath, []byte("prompt from os file\n"), 0o644); err != nil {
+		t.Fatalf("could not write prompt file: %v", err)
+	}
+	t.Setenv(config.EnvKey, cfgPath)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.ResponsibilitySystemPrompt != "prompt from os file" {
+		t.Errorf("ResponsibilitySystemPrompt = %q, want prompt loaded from %s", s.ResponsibilitySystemPrompt, promptPath)
+	}
+}
+
+func TestLoad_ConfigOverridesOSSystemPromptFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	yamlContent := validYAML + `
+responsibility_system_prompt: "yaml wins"
+`
+	if err := os.WriteFile(cfgPath, []byte(yamlContent), 0o644); err != nil {
+		t.Fatalf("could not write config: %v", err)
+	}
+	promptPath := filepath.Join(dir, runtime.GOOS+"-system-prompt.txt")
+	if err := os.WriteFile(promptPath, []byte("prompt from os file"), 0o644); err != nil {
+		t.Fatalf("could not write prompt file: %v", err)
+	}
+	t.Setenv(config.EnvKey, cfgPath)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.ResponsibilitySystemPrompt != "yaml wins" {
+		t.Errorf("ResponsibilitySystemPrompt = %q, want %q (config override beats OS file)", s.ResponsibilitySystemPrompt, "yaml wins")
+	}
+}
+
+func TestLoad_EmptyOSSystemPromptFileFallsBack(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(validYAML), 0o644); err != nil {
+		t.Fatalf("could not write config: %v", err)
+	}
+	promptPath := filepath.Join(dir, runtime.GOOS+"-system-prompt.txt")
+	if err := os.WriteFile(promptPath, []byte("  \n\t\n"), 0o644); err != nil {
+		t.Fatalf("could not write prompt file: %v", err)
+	}
+	t.Setenv(config.EnvKey, cfgPath)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.ResponsibilitySystemPrompt == "" {
+		t.Error("ResponsibilitySystemPrompt should fall back to built-in default when OS file is empty")
+	}
+	if !strings.Contains(s.ResponsibilitySystemPrompt, "TOOL SELECTION RULES") {
+		t.Errorf("ResponsibilitySystemPrompt = %q, want built-in default", s.ResponsibilitySystemPrompt[:min(80, len(s.ResponsibilitySystemPrompt))])
 	}
 }
 

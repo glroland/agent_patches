@@ -10,6 +10,8 @@
 #   SSH_KEY                 Path to a private key (-i flag)
 #   LINUX_RESPONSIBILITIES  Path to linux-responsibilities.yaml (optional)
 #   WINDOWS_RESPONSIBILITIES Path to windows-responsibilities.yaml (optional)
+#   LINUX_SYSTEM_PROMPT     Path to linux-system-prompt.txt (optional)
+#   WINDOWS_SYSTEM_PROMPT   Path to windows-system-prompt.txt (optional)
 #   SUDOERS_FILE            Path to sudoers drop-in (default: <service-file-dir>/sudoers.d/agent_patches)
 
 set -uo pipefail
@@ -35,15 +37,19 @@ SSH_PORT="${SSH_PORT:-22}"
 #   WINDOWS_CONFIG           Path to the Windows config file
 #   WINDOWS_USER             Login user on Windows hosts (default: Administrator)
 #   WINDOWS_RESPONSIBILITIES Path to windows-responsibilities.yaml
+#   WINDOWS_SYSTEM_PROMPT    Path to windows-system-prompt.txt
 WINDOWS_BINARY="${WINDOWS_BINARY:-}"
 WINDOWS_CONFIG="${WINDOWS_CONFIG:-}"
 WINDOWS_USER="${WINDOWS_USER:-Administrator}"
 WINDOWS_RESPONSIBILITIES="${WINDOWS_RESPONSIBILITIES:-}"
+WINDOWS_SYSTEM_PROMPT="${WINDOWS_SYSTEM_PROMPT:-}"
 
 # Linux-specific env vars.
 #   LINUX_RESPONSIBILITIES  Path to linux-responsibilities.yaml
+#   LINUX_SYSTEM_PROMPT     Path to linux-system-prompt.txt
 #   SUDOERS_FILE            Path to agent_patches sudoers drop-in (default: auto-detected)
 LINUX_RESPONSIBILITIES="${LINUX_RESPONSIBILITIES:-}"
+LINUX_SYSTEM_PROMPT="${LINUX_SYSTEM_PROMPT:-}"
 SUDOERS_FILE="${SUDOERS_FILE:-$(dirname "$SERVICE_FILE")/sudoers.d/agent_patches}"
 
 for f in "$INVENTORY_CSV" "$BINARY" "$SERVICE_FILE"; do
@@ -304,6 +310,16 @@ else
     warn "no linux-responsibilities.yaml found in /tmp — skipping (existing file preserved)"
 fi
 
+# ── Responsibility system prompt ──────────────────────────────────────────────
+step "Deploying responsibility system prompt..."
+if [[ -f /tmp/linux-system-prompt.txt ]]; then
+    install -o root -g "$SERVICE_USER" -m 640 \
+        /tmp/linux-system-prompt.txt "$INSTALL_ROOT/config/linux-system-prompt.txt"
+    ok "system prompt written to $INSTALL_ROOT/config/linux-system-prompt.txt"
+else
+    warn "no linux-system-prompt.txt found in /tmp — skipping (existing file preserved)"
+fi
+
 # ── Start service ─────────────────────────────────────────────────────────────
 step "Enabling and starting agent_patches service..."
 systemctl enable --now agent_patches
@@ -316,6 +332,7 @@ rm -f /tmp/patches-endpoint-server \
       /tmp/agent_patches.service \
       /tmp/endpoint-server-config.yaml \
       /tmp/linux-responsibilities.yaml \
+      /tmp/linux-system-prompt.txt \
       /tmp/agent_patches_sudoers \
       /tmp/agent_patches_setup.*.sh
 ok "done"
@@ -326,7 +343,8 @@ cat > "$WIN_SETUP_SCRIPT" << 'WIN_REMOTE_SCRIPT'
 # Files are SCP'd to C:\Windows\Temp\ before this script runs.
 param(
     [string]$ConfigFile = "",
-    [string]$ResponsibilitiesFile = ""
+    [string]$ResponsibilitiesFile = "",
+    [string]$SystemPromptFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -457,6 +475,14 @@ if ($ResponsibilitiesFile -ne "" -and (Test-Path "$Tmp\$ResponsibilitiesFile")) 
     Warn "no responsibilities file supplied - existing file preserved"
 }
 
+Step "Installing responsibility system prompt..."
+if ($SystemPromptFile -ne "" -and (Test-Path "$Tmp\$SystemPromptFile")) {
+    Copy-Item -Path "$Tmp\$SystemPromptFile" -Destination "$ConfigDir\windows-system-prompt.txt" -Force
+    OK "system prompt written to $ConfigDir\windows-system-prompt.txt"
+} else {
+    Warn "no system prompt file supplied - existing file preserved"
+}
+
 Step "Configuring Windows service..."
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
@@ -517,6 +543,9 @@ if ($ConfigFile -ne "") {
 if ($ResponsibilitiesFile -ne "") {
     Remove-Item -Path "$Tmp\$ResponsibilitiesFile" -Force -ErrorAction SilentlyContinue
 }
+if ($SystemPromptFile -ne "") {
+    Remove-Item -Path "$Tmp\$SystemPromptFile" -Force -ErrorAction SilentlyContinue
+}
 OK "done"
 WIN_REMOTE_SCRIPT
 
@@ -555,6 +584,13 @@ deploy_host_windows() {
     elif [[ -n "$WINDOWS_RESPONSIBILITIES" ]]; then
         echo "│  ⚠ WARNING: windows-responsibilities.yaml not found ($WINDOWS_RESPONSIBILITIES) — skipping"
     fi
+    local prompt_base=""
+    if [[ -n "$WINDOWS_SYSTEM_PROMPT" && -f "$WINDOWS_SYSTEM_PROMPT" ]]; then
+        prompt_base=$(basename "$WINDOWS_SYSTEM_PROMPT")
+        files+=("$WINDOWS_SYSTEM_PROMPT")
+    elif [[ -n "$WINDOWS_SYSTEM_PROMPT" ]]; then
+        echo "│  ⚠ WARNING: windows-system-prompt.txt not found ($WINDOWS_SYSTEM_PROMPT) — skipping"
+    fi
 
     local win_setup_base
     win_setup_base=$(basename "$WIN_SETUP_SCRIPT")
@@ -580,7 +616,8 @@ deploy_host_windows() {
         "powershell -NoProfile -ExecutionPolicy Bypass \
             -File ${win_tmp}/${win_setup_base} \
             -ConfigFile ${cfg_base} \
-            -ResponsibilitiesFile ${resp_base}" \
+            -ResponsibilitiesFile ${resp_base} \
+            -SystemPromptFile ${prompt_base}" \
         2>&1 | sed 's/^/│  /' || rc=$?
 
     if [[ $rc -eq 0 ]]; then
@@ -615,6 +652,11 @@ deploy_host() {
         files+=("$LINUX_RESPONSIBILITIES")
     elif [[ -n "$LINUX_RESPONSIBILITIES" ]]; then
         echo "│  ⚠ WARNING: linux-responsibilities.yaml not found ($LINUX_RESPONSIBILITIES) — skipping"
+    fi
+    if [[ -n "$LINUX_SYSTEM_PROMPT" && -f "$LINUX_SYSTEM_PROMPT" ]]; then
+        files+=("$LINUX_SYSTEM_PROMPT")
+    elif [[ -n "$LINUX_SYSTEM_PROMPT" ]]; then
+        echo "│  ⚠ WARNING: linux-system-prompt.txt not found ($LINUX_SYSTEM_PROMPT) — skipping"
     fi
     if [[ -n "$SUDOERS_FILE" && -f "$SUDOERS_FILE" ]]; then
         files+=("$SUDOERS_FILE")
@@ -659,6 +701,16 @@ deploy_host() {
         if [[ "$resp_base" != "linux-responsibilities.yaml" ]]; then
             "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
                 "mv /tmp/$resp_base /tmp/linux-responsibilities.yaml" 2>/dev/null || true
+        fi
+    fi
+
+    # Rename the system prompt file to the expected name on the remote
+    if [[ -n "$LINUX_SYSTEM_PROMPT" && -f "$LINUX_SYSTEM_PROMPT" ]]; then
+        local prompt_base
+        prompt_base=$(basename "$LINUX_SYSTEM_PROMPT")
+        if [[ "$prompt_base" != "linux-system-prompt.txt" ]]; then
+            "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
+                "mv /tmp/$prompt_base /tmp/linux-system-prompt.txt" 2>/dev/null || true
         fi
     fi
 

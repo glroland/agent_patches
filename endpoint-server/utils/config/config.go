@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -16,8 +17,11 @@ const EnvKey = "AGENT_PATCHES_CONFIG"
 // defaultFile is resolved relative to the working directory when EnvKey is unset.
 const defaultFile = "config.yaml"
 
-// defaultResponsibilitySystemPrompt is used as the system prompt for every
-// responsibility run when ResponsibilitySystemPrompt is unset.
+// defaultResponsibilitySystemPrompt is the built-in fallback system prompt
+// for responsibility runs, used only when ResponsibilitySystemPrompt is unset
+// in the config file AND no OS-specific "<GOOS>-system-prompt.txt" file exists
+// next to it. The canonical prompts live in config/linux-system-prompt.txt and
+// config/windows-system-prompt.txt and are installed by deploy.sh.
 const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system administrator. ` +
 	`You are responsible for the health, security, and upkeep of this system. ` +
 	`You will be given one specific responsibility to carry out using the tools ` +
@@ -108,7 +112,9 @@ type Settings struct {
 
 	// ResponsibilitySystemPrompt is the system prompt used for every
 	// responsibility run; the responsibility's Instruction is sent as the
-	// user prompt. Defaults to defaultResponsibilitySystemPrompt when unset.
+	// user prompt. When unset, it is loaded from "<GOOS>-system-prompt.txt"
+	// in the config file's directory, falling back to
+	// defaultResponsibilitySystemPrompt if that file is absent.
 	ResponsibilitySystemPrompt string `yaml:"responsibility_system_prompt"`
 }
 
@@ -261,7 +267,15 @@ func Load() (*Settings, error) {
 		s.Agent.RequestTimeout = "6m"
 	}
 	if s.ResponsibilitySystemPrompt == "" {
-		s.ResponsibilitySystemPrompt = defaultResponsibilitySystemPrompt
+		prompt, err := loadOSSystemPrompt(path)
+		if err != nil {
+			slog.Warn("config: could not load OS system prompt file, using built-in default",
+				"file", OSSystemPromptPath(path), "error", err)
+		}
+		if prompt == "" {
+			prompt = defaultResponsibilitySystemPrompt
+		}
+		s.ResponsibilitySystemPrompt = prompt
 	}
 	if s.LoginMonitor.FailedLoginThreshold <= 0 {
 		s.LoginMonitor.FailedLoginThreshold = 3
@@ -290,6 +304,36 @@ func FilePath() string {
 // "<runtime.GOOS>-responsibilities.yaml" and lives in the same directory.
 func OSResponsibilitiesPath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), runtime.GOOS+"-responsibilities.yaml")
+}
+
+// OSSystemPromptPath returns the path of the OS-specific responsibility
+// system prompt file that is loaded alongside the given config file path.
+// The file is named "<runtime.GOOS>-system-prompt.txt" and lives in the
+// same directory.
+func OSSystemPromptPath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), runtime.GOOS+"-system-prompt.txt")
+}
+
+// loadOSSystemPrompt reads the OS-specific responsibility system prompt file.
+// Returns "", nil when the file does not exist or is empty (not an error —
+// the file is optional and the built-in default applies).
+func loadOSSystemPrompt(configPath string) (string, error) {
+	path := OSSystemPromptPath(configPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			slog.Info("config: no OS system prompt file found, using built-in default", "path", path)
+			return "", nil
+		}
+		return "", fmt.Errorf("reading %s: %w", path, err)
+	}
+	prompt := strings.TrimSpace(string(data))
+	if prompt == "" {
+		slog.Warn("config: OS system prompt file is empty, using built-in default", "path", path)
+		return "", nil
+	}
+	slog.Info("config: loaded OS responsibility system prompt", "file", path, "bytes", len(prompt))
+	return prompt, nil
 }
 
 // osResponsibilitiesFile is the YAML structure of a standalone responsibilities file.

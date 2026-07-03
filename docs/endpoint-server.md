@@ -190,6 +190,10 @@ Exactly one of `frequency` or `time` must be set per responsibility.
 
 On startup, `config.Load` looks for `<goos>-responsibilities.yaml` in the same directory as the main config file (e.g. `linux-responsibilities.yaml`). These define the default scheduled tasks for each OS. Per-host overrides in the main `config.yaml` take precedence: if a per-host entry shares a name with an OS-level entry, the OS-level entry is dropped.
 
+### OS-specific responsibility system prompt
+
+The system prompt used for every responsibility run is loaded the same way: `config.Load` looks for `<goos>-system-prompt.txt` (e.g. `linux-system-prompt.txt`) in the same directory as the main config file. The canonical prompts are versioned in-repo at `config/linux-system-prompt.txt` and `config/windows-system-prompt.txt` and installed by `deploy/linux/deploy.sh` alongside the responsibilities file. Precedence: a `responsibility_system_prompt` value in `config.yaml` (host-specific override) > the OS prompt file > a built-in default compiled into the binary.
+
 ## Login Monitoring
 
 Two background monitors start alongside the loop:
@@ -237,8 +241,10 @@ responsibilities:
     tools: [check_for_pending_system_patches, report_findings, request_approval]
     when_to_notify: on_error
 
-responsibility_system_prompt: |
-  You are agent_patches, an AI system administrator...
+# optional host-specific override; normally the prompt comes from
+# <goos>-system-prompt.txt next to this file (see above)
+#responsibility_system_prompt: |
+#  You are agent_patches, an AI system administrator...
 ```
 
 Defaults applied by `config.Load`:
@@ -248,7 +254,7 @@ Defaults applied by `config.Load`:
 - `memory.root` → `./agent_memory`
 - `loop.heartbeat` → `1s`
 - `login_monitor.failed_login_threshold` → `3`
-- `responsibility_system_prompt` → built-in prompt with tool selection rules
+- `responsibility_system_prompt` → `<goos>-system-prompt.txt` next to the config file, else a built-in prompt with tool selection rules
 
 ## Startup Sequence
 
