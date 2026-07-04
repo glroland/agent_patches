@@ -326,15 +326,23 @@ func buildMountSection(s NFSMountStats, h skillstate.Health, issue string) strin
 }
 
 // AutoResponsibility returns the built-in nfs-health-check responsibility and
-// true on Linux (where full monitoring is supported). Returns false on other
-// platforms; callers should skip injection.
+// true on Linux hosts that have at least one NFS mount. Returns false on other
+// platforms or when no NFS mounts are present; callers should skip injection.
 func AutoResponsibility() (config.ResponsibilitySettings, bool) {
 	if !nfsSupported() {
 		return config.ResponsibilitySettings{}, false
 	}
+	mounts, err := listNFSMounts()
+	if err != nil {
+		slog.Warn("check_nfs: failed to list NFS mounts for auto-responsibility", "error", err)
+		return config.ResponsibilitySettings{}, false
+	}
+	if len(mounts) == 0 {
+		return config.ResponsibilitySettings{}, false
+	}
 	return config.ResponsibilitySettings{
 		Name:      "nfs-health-check",
-		Frequency: "5m",
+		Frequency: "60m",
 		Instruction: `Check the health of all NFS mount points on this host.
 Run check_nfs and review the output. If the result is "no NFS mounts found on
 this host", stop — do NOT call report_findings; the outcome is logged automatically.
