@@ -24,14 +24,21 @@ type cmdStub struct {
 }
 
 type mockCmdr struct {
-	stubs    map[string]cmdStub // keyed by executable name
+	stubs    map[string]cmdStub // keyed by executable name, or "name subcommand" for a more specific match
 	calls    []cmdCall
 	fallback cmdStub // returned when no stub matches
 }
 
 func (m *mockCmdr) Run(_ context.Context, name string, args ...string) (string, error) {
 	m.calls = append(m.calls, cmdCall{name: name, args: args})
-	stub, ok := m.stubs[name]
+	var stub cmdStub
+	var ok bool
+	if len(args) > 0 {
+		stub, ok = m.stubs[name+" "+args[0]]
+	}
+	if !ok {
+		stub, ok = m.stubs[name]
+	}
 	if !ok {
 		stub = m.fallback
 	}

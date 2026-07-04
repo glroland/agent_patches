@@ -13,10 +13,16 @@ agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get update
 agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get update -q
 agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get upgrade --dry-run
 agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get upgrade -y
+# Read-only package metadata used to build CVE-enriched approval summaries.
+agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-cache show --no-all-versions *
+agent_patches ALL=(root) NOPASSWD: /usr/bin/apt-get changelog *
 
 # Fedora/RHEL
 agent_patches ALL=(root) NOPASSWD: /usr/bin/dnf check-update
 agent_patches ALL=(root) NOPASSWD: /usr/bin/dnf update -y
+# Read-only package metadata used to build CVE-enriched approval summaries.
+agent_patches ALL=(root) NOPASSWD: /usr/bin/dnf info *
+agent_patches ALL=(root) NOPASSWD: /usr/bin/dnf updateinfo info *
 agent_patches ALL=(root) NOPASSWD: /usr/bin/yum check-update
 agent_patches ALL=(root) NOPASSWD: /usr/bin/yum update -y
 

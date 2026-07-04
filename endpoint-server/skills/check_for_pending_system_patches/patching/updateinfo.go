@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
+	"os"
 	"regexp"
 	"sort"
 	"strings"
@@ -22,6 +24,12 @@ type PackageUpdate struct {
 	NewVersion  string    // version being upgraded to (empty when unknown)
 	Description string    // brief description of the package's purpose
 	CVEs        []CVEInfo // security advisories fixed by this update
+
+	// CVELookupFailed is set when CVE enrichment for this package produced no
+	// usable data because of an error (network failure, command failure,
+	// context expiry). It lets the approval summary distinguish "no CVEs" from
+	// "no CVE data" instead of silently presenting the update as routine.
+	CVELookupFailed bool
 }
 
 // CVEInfo holds severity details for one CVE identifier.
@@ -34,6 +42,17 @@ type CVEInfo struct {
 
 // defaultHTTPClient is used for vendor and NVD API calls.
 var defaultHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
+// maxNVDLookupsPerPackage caps how many rate-limited NVD queries a single
+// package may spend. NVD allows one call per ~7 s, so unbounded lookups are
+// what used to blow the enrichment time budget and leave later packages with
+// no CVE data at all. CVEs beyond the cap keep severity "UNKNOWN".
+const maxNVDLookupsPerPackage = 8
+
+// enrichConcurrency bounds the parallel HTTP CVE lookups during enrichment.
+// Vendor APIs (Ubuntu, Red Hat) are not rate-limited the way NVD is, so a
+// small worker pool keeps large update sets within the enrichment deadline.
+const enrichConcurrency = 4
 
 // nvdState rate-limits and caches NVD API lookups.
 // NVD allows 5 requests per 30 s without an API key; we use 1 per 7 s (safe margin).
@@ -181,14 +200,108 @@ func shortestName(names []string) string {
 	return root
 }
 
+// RiskAssessment maps pending updates to an approval risk level ("low",
+// "medium", or "high") and a one-line rationale tying that level to evidence,
+// so the operator sees *why* a request needs review, not just what it lists.
+//
+// Critical CVEs make the request high risk; any other CVE makes it medium.
+// A run where most per-package CVE lookups failed is also medium, because
+// "no CVEs found" cannot be distinguished from "no CVE data" — only verified
+// routine updates are low risk.
+func RiskAssessment(updates []PackageUpdate) (risk, rationale string) {
+	var critical, high, other, failed int
+	seen := make(map[string]bool)
+	for _, u := range updates {
+		if u.CVELookupFailed {
+			failed++
+		}
+		for _, c := range u.CVEs {
+			if seen[c.ID] {
+				continue
+			}
+			seen[c.ID] = true
+			switch strings.ToUpper(c.Severity) {
+			case "CRITICAL":
+				critical++
+			case "HIGH":
+				high++
+			default:
+				other++
+			}
+		}
+	}
+	total := critical + high + other
+
+	switch {
+	case critical > 0:
+		r := fmt.Sprintf("fixes %d CRITICAL", critical)
+		if high > 0 {
+			r += fmt.Sprintf(" and %d HIGH", high)
+		}
+		return "high", r + " severity CVE(s) — review promptly"
+
+	case total > 0:
+		var parts []string
+		if high > 0 {
+			parts = append(parts, fmt.Sprintf("%d HIGH", high))
+		}
+		if other > 0 {
+			parts = append(parts, fmt.Sprintf("%d MEDIUM/LOW/unrated", other))
+		}
+		rationale = fmt.Sprintf("fixes %d CVE(s) (%s); none rated CRITICAL",
+			total, strings.Join(parts, ", "))
+		if failed > 0 {
+			rationale += fmt.Sprintf("; CVE data unavailable for %d of %d packages",
+				failed, len(updates))
+		}
+		return "medium", rationale
+
+	case failed > 0 && failed*2 >= len(updates):
+		return "medium", fmt.Sprintf(
+			"CVE data unavailable for %d of %d packages — severity could not be assessed",
+			failed, len(updates))
+
+	default:
+		rationale = "routine updates; no known CVEs addressed"
+		if failed > 0 {
+			rationale += fmt.Sprintf(" (CVE data unavailable for %d of %d packages)",
+				failed, len(updates))
+		}
+		return "low", rationale
+	}
+}
+
+// FormatFallbackSummary builds the approval detail used when ListUpdates could
+// not produce structured update data at all. Updates ARE pending in this path,
+// so it must never claim the system is up to date; it shows the raw
+// package-manager output and states that severity could not be assessed.
+func FormatFallbackSummary(rawCheckOutput string, listErr error) string {
+	reason := "CVE analysis unavailable"
+	if listErr != nil {
+		reason += ": " + listErr.Error()
+	}
+	const maxRaw = 3000
+	raw := strings.TrimSpace(rawCheckOutput)
+	if len(raw) > maxRaw {
+		raw = raw[:maxRaw] + "\n… (truncated)"
+	}
+	return fmt.Sprintf(
+		"Risk: MEDIUM — %s; update severity could not be assessed.\n\n"+
+			"Pending updates as reported by the package manager:\n\n%s",
+		reason, raw)
+}
+
 // FormatUpdateSummary produces an operator-readable dashboard summary of pending
 // updates. It surfaces what matters most:
 //
-//  1. One bullet per HIGH/CRITICAL CVE being addressed.
-//  2. One bullet summarising packages that will require a reboot.
-//  3. One bullet per version-group of notable server packages (security libs,
+//  1. A "Risk: LEVEL — rationale" header explaining why the request needs review.
+//  2. One bullet per HIGH/CRITICAL CVE being addressed.
+//  3. One bullet per package whose fixes are all MEDIUM/LOW/unrated CVEs.
+//  4. One bullet summarising packages that will require a reboot.
+//  5. One bullet per version-group of notable server packages (security libs,
 //     container runtime, language runtimes, etc.) not already covered by a CVE bullet.
-//  4. A count of remaining packages with nothing significant to call out.
+//  6. A count of remaining packages, and a call-out of packages whose CVE
+//     lookup failed.
 func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) string {
 	if len(updates) == 0 {
 		return "All packages are up to date."
@@ -198,10 +311,11 @@ func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) st
 
 	type cat int
 	const (
-		catOther   cat = iota
-		catReboot      // requires reboot (kernel, glibc, dracut, …)
-		catNotable     // important server package, no high CVE
-		catCVE         // has HIGH or CRITICAL CVE — gets its own CVE bullet
+		catOther    cat = iota
+		catReboot       // requires reboot (kernel, glibc, dracut, …)
+		catNotable      // important server package, no CVE
+		catMinorCVE     // only MEDIUM/LOW/unrated CVEs — gets a per-package bullet
+		catCVE          // has HIGH or CRITICAL CVE — gets its own CVE bullet
 	)
 
 	pkgCat := make(map[string]cat, len(updates))
@@ -242,6 +356,19 @@ func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) st
 		}
 		return topCVEs[i].info.CVSSScore > topCVEs[j].info.CVSSScore
 	})
+
+	// ── Collect packages whose fixes are all MEDIUM/LOW/unrated CVEs ─────────
+	// These used to be invisible in approvals: the risk level said "medium"
+	// while the detail showed only a bare package list. One bullet per package.
+
+	var minorPkgs []PackageUpdate
+	for _, u := range updates {
+		if len(u.CVEs) == 0 || pkgCat[u.Name] == catCVE {
+			continue
+		}
+		pkgCat[u.Name] = catMinorCVE
+		minorPkgs = append(minorPkgs, u)
+	}
 
 	// ── Collect reboot packages ───────────────────────────────────────────────
 
@@ -305,7 +432,11 @@ func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) st
 
 	var sb strings.Builder
 
-	// 1. CVE bullets — one per HIGH/CRITICAL CVE.
+	// 1. Risk header — why this request needs review, not just what it lists.
+	risk, rationale := RiskAssessment(updates)
+	fmt.Fprintf(&sb, "Risk: %s — %s\n\n", strings.ToUpper(risk), rationale)
+
+	// 2. CVE bullets — one per HIGH/CRITICAL CVE.
 	for _, ref := range topCVEs {
 		sev := strings.ToUpper(ref.info.Severity)
 		line := fmt.Sprintf("• [%s", sev)
@@ -316,7 +447,25 @@ func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) st
 		sb.WriteString(line + "\n")
 	}
 
-	// 2. Reboot bullet.
+	// 3. Minor CVE bullets — packages fixing only MEDIUM/LOW/unrated CVEs.
+	for _, u := range minorPkgs {
+		const maxListed = 3
+		var refs []string
+		for i, c := range u.CVEs {
+			if i == maxListed {
+				refs = append(refs, fmt.Sprintf("+%d more", len(u.CVEs)-maxListed))
+				break
+			}
+			sev := strings.ToUpper(c.Severity)
+			if sev == "" || sev == "UNKNOWN" {
+				sev = "unrated"
+			}
+			refs = append(refs, fmt.Sprintf("%s (%s)", c.ID, sev))
+		}
+		fmt.Fprintf(&sb, "• %s → %s fixes %s\n", u.Name, u.NewVersion, strings.Join(refs, ", "))
+	}
+
+	// 4. Reboot bullet.
 	if len(rebootPkgs) > 0 {
 		if len(rebootPkgs) <= 3 {
 			names := make([]string, len(rebootPkgs))
@@ -350,7 +499,7 @@ func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) st
 		}
 	}
 
-	// 3. Notable package bullets.
+	// 5. Notable package bullets.
 	for _, g := range notableGroups {
 		line := fmt.Sprintf("• %s → %s", strings.Join(g.names, ", "), g.version)
 		if g.desc != "" {
@@ -359,14 +508,31 @@ func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) st
 		sb.WriteString(line + "\n")
 	}
 
-	// 4. Remaining count.
+	// 6. Remaining count.
 	if remaining > 0 {
-		called := len(topCVEs) + len(rebootPkgs) + len(notableGroups)
+		called := len(topCVEs) + len(minorPkgs) + len(rebootPkgs) + len(notableGroups)
 		if called == 0 {
 			fmt.Fprintf(&sb, "• %d packages ready to update\n", remaining)
 		} else {
 			fmt.Fprintf(&sb, "• %d additional packages\n", remaining)
 		}
+	}
+
+	// 7. Packages whose CVE lookup failed — "no CVEs" must not be conflated
+	// with "no CVE data".
+	var failedNames []string
+	for _, u := range updates {
+		if u.CVELookupFailed {
+			failedNames = append(failedNames, u.Name)
+		}
+	}
+	if len(failedNames) > 0 {
+		shown := failedNames
+		if len(shown) > 5 {
+			shown = append(append([]string{}, shown[:5]...), "…")
+		}
+		fmt.Fprintf(&sb, "• CVE data unavailable for %d package(s): %s\n",
+			len(failedNames), strings.Join(shown, ", "))
 	}
 
 	return sb.String()
@@ -386,20 +552,148 @@ func (p *Patcher) listDebianUpdates(ctx context.Context) ([]PackageUpdate, error
 	}
 
 	pkgs := ParseDebianInstLines(out)
-	client := p.httpClient()
+	codename := debianCodename()
+
+	// Phase 1 (serial, local commands): package descriptions and the CVE IDs
+	// named in the changelog delta between the installed and candidate
+	// versions. The delta is what this update actually fixes; the Ubuntu API
+	// alone would report CVEs the host may have patched long ago.
+	deltaIDs := make([][]string, len(pkgs))
+	deltaOK := make([]bool, len(pkgs))
 	for i := range pkgs {
+		if ctx.Err() != nil {
+			pkgs[i].CVELookupFailed = true
+			continue
+		}
 		if desc, err := p.debianDescription(ctx, pkgs[i].Name); err == nil {
 			pkgs[i].Description = desc
 		} else {
 			slog.Warn("updateinfo: apt-cache show failed", "pkg", pkgs[i].Name, "error", err)
 		}
-		cves, err := canonicalPackageCVEs(ctx, client, pkgs[i].Name)
-		if err != nil {
-			slog.Warn("updateinfo: Canonical CVE lookup failed", "pkg", pkgs[i].Name, "error", err)
-		}
-		pkgs[i].CVEs = cves
+		deltaIDs[i], deltaOK[i] = p.debianChangelogCVEs(ctx, pkgs[i].Name, pkgs[i].OldVersion)
 	}
+
+	// Phase 2 (bounded concurrency, HTTP): severity from the Ubuntu Security
+	// API, with NVD only for CVEs the API does not rate.
+	client := p.httpClient()
+	sem := make(chan struct{}, enrichConcurrency)
+	var wg sync.WaitGroup
+	for i := range pkgs {
+		if pkgs[i].CVELookupFailed {
+			continue
+		}
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			apiCVEs, err := canonicalPackageCVEs(ctx, client, pkgs[i].Name, codename)
+			if err != nil {
+				slog.Warn("updateinfo: Canonical CVE lookup failed", "pkg", pkgs[i].Name, "error", err)
+			}
+			pkgs[i].CVEs = resolveDebianCVEs(ctx, client, deltaIDs[i], deltaOK[i], apiCVEs)
+			// Flag failure only when neither source produced usable data.
+			pkgs[i].CVELookupFailed = err != nil && !deltaOK[i]
+		}(i)
+	}
+	wg.Wait()
 	return pkgs, nil
+}
+
+// resolveDebianCVEs picks the CVE set for one package. When the changelog
+// delta is known it is authoritative: only CVEs fixed between the installed
+// and candidate versions are reported, with severity taken from the Ubuntu
+// API results and a bounded number of NVD lookups for the rest. Without a
+// delta the API list is used as-is — potentially overbroad, but honest about
+// what the vendor tracks for the package.
+func resolveDebianCVEs(ctx context.Context, client *http.Client, deltaIDs []string, deltaOK bool, apiCVEs []CVEInfo) []CVEInfo {
+	if !deltaOK {
+		return apiCVEs
+	}
+	byID := make(map[string]CVEInfo, len(apiCVEs))
+	for _, c := range apiCVEs {
+		byID[c.ID] = c
+	}
+	nvdBudget := maxNVDLookupsPerPackage
+	cves := make([]CVEInfo, 0, len(deltaIDs))
+	for _, id := range deltaIDs {
+		if c, ok := byID[id]; ok {
+			cves = append(cves, c)
+			continue
+		}
+		c := CVEInfo{ID: id, Severity: "UNKNOWN", URL: "https://ubuntu.com/security/" + id}
+		if nvdBudget > 0 {
+			nvdBudget--
+			if score, sev, err := cachedNVDCVSS(ctx, client, id); err == nil {
+				c.CVSSScore = score
+				c.Severity = sev
+			} else {
+				slog.Debug("updateinfo: NVD lookup failed", "cve", id, "error", err)
+			}
+		}
+		cves = append(cves, c)
+	}
+	return cves
+}
+
+// debianCodename returns VERSION_CODENAME from /etc/os-release (e.g. "noble"),
+// or "" when unavailable. Used to scope Ubuntu Security API queries to the
+// running release instead of every release Canonical tracks.
+func debianCodename() string {
+	data, err := os.ReadFile("/etc/os-release")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(line), "VERSION_CODENAME="); ok {
+			return strings.Trim(strings.TrimSpace(v), `"`)
+		}
+	}
+	return ""
+}
+
+// debianChangelogCVEs fetches the candidate changelog for pkg and extracts the
+// CVE IDs mentioned in entries newer than the installed version. The boolean
+// reports whether the installed version was found in the changelog — when it
+// is not (new installs, third-party repos, download failures), the caller must
+// fall back to the less precise package-level CVE list.
+func (p *Patcher) debianChangelogCVEs(ctx context.Context, pkg, oldVersion string) ([]string, bool) {
+	if oldVersion == "" {
+		return nil, false
+	}
+	out, err := p.commander.Run(ctx, "apt-get", "changelog", pkg)
+	if err != nil {
+		slog.Debug("updateinfo: apt-get changelog failed", "pkg", pkg, "error", err)
+		return nil, false
+	}
+	return DebianChangelogCVEsSince(out, oldVersion)
+}
+
+// changelogEntryRe matches a Debian changelog entry header, e.g.
+// "curl (8.5.0-2ubuntu10.6) noble-security; urgency=medium".
+// Body and signature lines are indented, so ^\S anchors headers only.
+var changelogEntryRe = regexp.MustCompile(`^\S+ \(([^)]+)\)`)
+
+// DebianChangelogCVEsSince scans a Debian changelog (newest entry first) and
+// returns the unique CVE IDs mentioned in entries strictly newer than
+// oldVersion. The boolean is false when oldVersion never appears — the delta
+// cannot be established and the result must not be trusted.
+func DebianChangelogCVEsSince(changelog, oldVersion string) ([]string, bool) {
+	seen := make(map[string]bool)
+	var ids []string
+	for _, line := range strings.Split(changelog, "\n") {
+		if m := changelogEntryRe.FindStringSubmatch(line); m != nil && m[1] == oldVersion {
+			return ids, true
+		}
+		for _, id := range cveIDRe.FindAllString(line, -1) {
+			if !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
+			}
+		}
+	}
+	return nil, false
 }
 
 // ParseDebianInstLines extracts package name and versions from apt dry-run "Inst" lines.
@@ -443,14 +737,66 @@ func (p *Patcher) debianDescription(ctx context.Context, pkg string) (string, er
 }
 
 // canonicalPackageCVEs queries the Ubuntu Security API for released CVEs
-// affecting pkg, then supplements with NVD CVSS scores.
+// affecting pkg, scoped to the given release codename when known.
 // A 404 response means the package is not tracked by the Ubuntu security team
 // (common for third-party packages) and is treated as "no CVEs".
-func canonicalPackageCVEs(ctx context.Context, client *http.Client, pkg string) ([]CVEInfo, error) {
-	apiURL := fmt.Sprintf(
-		"https://ubuntu.com/security/api/v1/cves?package=%s&limit=20&status=released",
-		pkg,
-	)
+//
+// Severity comes from Canonical's priority rating. NVD — slow because of its
+// rate limit — is consulted only for CVEs Canonical has not rated, and only up
+// to maxNVDLookupsPerPackage times.
+func canonicalPackageCVEs(ctx context.Context, client *http.Client, pkg, codename string) ([]CVEInfo, error) {
+	query := "package=" + url.QueryEscape(pkg) + "&limit=20&status=released"
+	if codename != "" {
+		query += "&version=" + url.QueryEscape(codename)
+	}
+
+	results, err := canonicalCVEQuery(ctx, client, query)
+	if err != nil && codename != "" && ctx.Err() == nil {
+		// The release filter is best-effort; retry unscoped if the API
+		// rejects it rather than losing CVE data entirely.
+		slog.Debug("updateinfo: release-scoped CVE query failed, retrying unscoped", "pkg", pkg, "error", err)
+		results, err = canonicalCVEQuery(ctx, client, "package="+url.QueryEscape(pkg)+"&limit=20&status=released")
+	}
+	if err != nil {
+		return nil, err
+	}
+	if results == nil {
+		slog.Debug("updateinfo: package not tracked by Ubuntu security team", "pkg", pkg)
+		return nil, nil
+	}
+
+	nvdBudget := maxNVDLookupsPerPackage
+	cves := make([]CVEInfo, 0, len(results))
+	for _, r := range results {
+		c := CVEInfo{
+			ID:       r.ID,
+			Severity: canonicalPriorityToSeverity(r.Priority),
+			URL:      "https://ubuntu.com/security/" + r.ID,
+		}
+		if c.Severity == "UNKNOWN" && nvdBudget > 0 {
+			nvdBudget--
+			if score, sev, err := cachedNVDCVSS(ctx, client, r.ID); err == nil {
+				c.CVSSScore = score
+				c.Severity = sev
+			} else {
+				slog.Debug("updateinfo: NVD lookup failed", "cve", r.ID, "error", err)
+			}
+		}
+		cves = append(cves, c)
+	}
+	return cves, nil
+}
+
+type canonicalCVEResult struct {
+	ID       string `json:"id"`
+	Priority string `json:"priority"`
+}
+
+// canonicalCVEQuery performs one Ubuntu Security API list request. A 404
+// (untracked package) returns (nil, nil); success always returns a non-nil
+// (possibly empty) slice.
+func canonicalCVEQuery(ctx context.Context, client *http.Client, query string) ([]canonicalCVEResult, error) {
+	apiURL := "https://ubuntu.com/security/api/v1/cves?" + query
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		return nil, err
@@ -465,7 +811,6 @@ func canonicalPackageCVEs(ctx context.Context, client *http.Client, pkg string) 
 	defer httpResp.Body.Close()
 
 	if httpResp.StatusCode == http.StatusNotFound {
-		slog.Debug("updateinfo: package not tracked by Ubuntu security team", "pkg", pkg)
 		return nil, nil
 	}
 	if httpResp.StatusCode != http.StatusOK {
@@ -477,33 +822,15 @@ func canonicalPackageCVEs(ctx context.Context, client *http.Client, pkg string) 
 		return nil, err
 	}
 	var resp struct {
-		Results []struct {
-			ID       string `json:"id"`
-			Priority string `json:"priority"`
-		} `json:"results"`
+		Results []canonicalCVEResult `json:"results"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, err
 	}
-
-	cves := make([]CVEInfo, 0, len(resp.Results))
-	for _, r := range resp.Results {
-		c := CVEInfo{
-			ID:       r.ID,
-			Severity: canonicalPriorityToSeverity(r.Priority),
-			URL:      "https://ubuntu.com/security/" + r.ID,
-		}
-		if score, sev, err := cachedNVDCVSS(ctx, client, r.ID); err == nil {
-			c.CVSSScore = score
-			if c.Severity == "UNKNOWN" {
-				c.Severity = sev
-			}
-		} else {
-			slog.Debug("updateinfo: NVD lookup failed", "cve", r.ID, "error", err)
-		}
-		cves = append(cves, c)
+	if resp.Results == nil {
+		resp.Results = []canonicalCVEResult{}
 	}
-	return cves, nil
+	return resp.Results, nil
 }
 
 func canonicalPriorityToSeverity(priority string) string {
@@ -560,12 +887,17 @@ func (p *Patcher) listFedoraUpdates(ctx context.Context) ([]PackageUpdate, error
 
 	client := p.httpClient()
 	for i := range pkgs {
+		if ctx.Err() != nil {
+			pkgs[i].CVELookupFailed = true
+			continue
+		}
 		desc, cves, err := p.fedoraPackageInfo(ctx, client, pkgs[i].Name)
 		if err != nil {
 			slog.Warn("updateinfo: fedora package info failed", "pkg", pkgs[i].Name, "error", err)
 		}
 		pkgs[i].Description = desc
 		pkgs[i].CVEs = cves
+		pkgs[i].CVELookupFailed = err != nil
 	}
 	return pkgs, nil
 }
@@ -624,26 +956,34 @@ func (p *Patcher) fedoraPackageInfo(ctx context.Context, client *http.Client, pk
 		}
 	}
 
-	// dnf updateinfo list --cve lists CVEs fixed by updates to this package.
-	updateInfoOut, _ := p.commander.Run(ctx, "dnf", "updateinfo", "list", "--cve", pkg)
+	// dnf updateinfo info prints the advisory text (including "CVEs:" rows) for
+	// advisories that apply to *pending* updates of this package — already
+	// scoped to the delta this run will install, unlike a package-level CVE
+	// history. (The previous `list --cve <pkg>` form misused --cve, which
+	// filters BY a CVE ID, and returned nothing.)
+	updateInfoOut, uiErr := p.commander.Run(ctx, "dnf", "updateinfo", "info", pkg)
+	if uiErr != nil {
+		return desc, nil, fmt.Errorf("dnf updateinfo info %s: %w", pkg, uiErr)
+	}
 	cveIDs := ExtractCVEIDs(updateInfoOut)
 
+	nvdBudget := maxNVDLookupsPerPackage
 	var cves []CVEInfo
 	for _, id := range cveIDs {
 		c := CVEInfo{
-			ID:  id,
-			URL: "https://access.redhat.com/security/cve/" + id,
+			ID:       id,
+			Severity: "UNKNOWN",
+			URL:      "https://access.redhat.com/security/cve/" + id,
 		}
 		if sev, score, err := redhatCVE(ctx, client, id); err == nil {
 			c.Severity = sev
 			c.CVSSScore = score
-		} else {
+		} else if nvdBudget > 0 {
 			slog.Debug("updateinfo: Red Hat CVE API failed, trying NVD", "cve", id, "error", err)
+			nvdBudget--
 			if score, sev, err := cachedNVDCVSS(ctx, client, id); err == nil {
 				c.CVSSScore = score
 				c.Severity = sev
-			} else {
-				c.Severity = "UNKNOWN"
 			}
 		}
 		cves = append(cves, c)
@@ -686,6 +1026,9 @@ func (p *Patcher) listDarwinUpdates(ctx context.Context) ([]PackageUpdate, error
 	client := p.httpClient()
 	if err := enrichDarwinCVEs(ctx, client, pkgs); err != nil {
 		slog.Warn("updateinfo: Apple security CVE lookup failed", "error", err)
+		for i := range pkgs {
+			pkgs[i].CVELookupFailed = true
+		}
 	}
 	return pkgs, nil
 }
@@ -807,6 +1150,9 @@ func appleReleaseCVEs(ctx context.Context, client *http.Client, pageURL string) 
 	}
 
 	cveIDs := ExtractCVEIDs(string(body))
+	// Apple releases can fix hundreds of CVEs; NVD's rate limit makes rating
+	// them all impossible, so spend the bounded budget and leave the rest UNKNOWN.
+	nvdBudget := maxNVDLookupsPerPackage
 	cves := make([]CVEInfo, 0, len(cveIDs))
 	for _, id := range cveIDs {
 		c := CVEInfo{
@@ -814,11 +1160,14 @@ func appleReleaseCVEs(ctx context.Context, client *http.Client, pageURL string) 
 			Severity: "UNKNOWN",
 			URL:      "https://nvd.nist.gov/vuln/detail/" + id,
 		}
-		if score, sev, err := cachedNVDCVSS(ctx, client, id); err == nil {
-			c.CVSSScore = score
-			c.Severity = sev
-		} else {
-			slog.Debug("updateinfo: NVD lookup failed for Apple CVE", "cve", id, "error", err)
+		if nvdBudget > 0 {
+			nvdBudget--
+			if score, sev, err := cachedNVDCVSS(ctx, client, id); err == nil {
+				c.CVSSScore = score
+				c.Severity = sev
+			} else {
+				slog.Debug("updateinfo: NVD lookup failed for Apple CVE", "cve", id, "error", err)
+			}
 		}
 		cves = append(cves, c)
 	}
@@ -872,6 +1221,7 @@ func (p *Patcher) listWindowsUpdates(ctx context.Context) ([]PackageUpdate, erro
 		combined := title + " " + desc + " " + urls
 		cveIDs := ExtractCVEIDs(combined)
 		seen := make(map[string]bool)
+		nvdBudget := maxNVDLookupsPerPackage
 		for _, id := range cveIDs {
 			if seen[id] {
 				continue
@@ -882,11 +1232,14 @@ func (p *Patcher) listWindowsUpdates(ctx context.Context) ([]PackageUpdate, erro
 				Severity: "UNKNOWN",
 				URL:      "https://msrc.microsoft.com/update-guide/en-US/vulnerability/" + id,
 			}
-			if score, sev, err := cachedNVDCVSS(ctx, client, id); err == nil {
-				c.CVSSScore = score
-				c.Severity = sev
-			} else {
-				slog.Debug("updateinfo: NVD lookup failed for Windows CVE", "cve", id, "error", err)
+			if nvdBudget > 0 {
+				nvdBudget--
+				if score, sev, err := cachedNVDCVSS(ctx, client, id); err == nil {
+					c.CVSSScore = score
+					c.Severity = sev
+				} else {
+					slog.Debug("updateinfo: NVD lookup failed for Windows CVE", "cve", id, "error", err)
+				}
 			}
 			pkg.CVEs = append(pkg.CVEs, c)
 		}
@@ -936,9 +1289,19 @@ func cachedNVDCVSS(ctx context.Context, client *http.Client, cveID string) (scor
 
 	score, severity, err = nvdCVSS(ctx, client, cveID)
 
+	// Cache successes for a day and genuine lookup failures briefly, but never
+	// cache context cancellation — that is the caller's deadline expiring, not
+	// a property of the CVE, and caching it would poison every lookup of this
+	// CVE for the TTL (including tomorrow's run, under the old 24 h TTL).
+	ttl := 24 * time.Hour
+	if err != nil {
+		ttl = time.Hour
+	}
 	nvdState.mu.Lock()
 	nvdState.lastCall = time.Now()
-	nvdState.cache[cveID] = nvdEntry{score, severity, err, time.Now().Add(24 * time.Hour)}
+	if !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		nvdState.cache[cveID] = nvdEntry{score, severity, err, time.Now().Add(ttl)}
+	}
 	nvdState.mu.Unlock()
 
 	return score, severity, err

@@ -446,6 +446,223 @@ func TestListUpdates_Debian_WithCanonicalAPI(t *testing.T) {
 	}
 }
 
+// ---- ListUpdates — Debian changelog delta scoping ----------------------------
+
+func TestListUpdates_Debian_ChangelogDelta(t *testing.T) {
+	// The Ubuntu API reports both a current CVE and a stale one fixed long ago.
+	// The changelog delta between installed and candidate versions names only
+	// the current CVE — the approval must not resurrect the stale one.
+	canonicalResp := `{"results":[{"id":"CVE-2025-1111","priority":"medium"},{"id":"CVE-2018-0000","priority":"high"}]}`
+
+	transport := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if !strings.Contains(r.URL.Path, "/security/api/v1/cves") {
+			return nil, fmt.Errorf("unexpected request to %s", r.URL)
+		}
+		return &http.Response{
+			StatusCode: 200,
+			Body:       io.NopCloser(strings.NewReader(canonicalResp)),
+			Header:     make(http.Header),
+		}, nil
+	})
+
+	changelog := `curl (8.5.0-2ubuntu10.6) noble-security; urgency=medium
+
+  * SECURITY UPDATE: cookie handling
+    - CVE-2025-1111
+
+ -- Ubuntu Security <security@ubuntu.com>  Mon, 02 Jun 2025 10:00:00 +0000
+
+curl (8.5.0-2ubuntu10.5) noble; urgency=medium
+
+  * Old entry that once fixed CVE-2018-0000
+
+ -- Ubuntu Developers <devel@ubuntu.com>  Mon, 05 May 2025 10:00:00 +0000
+`
+
+	cmdr := &mockCmdr{
+		stubs: map[string]cmdStub{
+			"apt-get":           {output: "Inst curl [8.5.0-2ubuntu10.5] (8.5.0-2ubuntu10.6 Ubuntu [amd64])\n"},
+			"apt-get changelog": {output: changelog},
+			"apt-cache":         {output: "Description-en: transfer tool\n"},
+		},
+	}
+	p := patching.NewWithCommander(patching.OSDebian, cmdr)
+	p.HTTPClient = &http.Client{Transport: transport}
+
+	defer failOnWarnLogs(t)()
+
+	updates, err := p.ListUpdates(context.Background())
+	if err != nil {
+		t.Fatalf("ListUpdates() error: %v", err)
+	}
+	if len(updates) != 1 {
+		t.Fatalf("expected 1 update, got %d", len(updates))
+	}
+	if updates[0].CVELookupFailed {
+		t.Error("CVELookupFailed should be false")
+	}
+	if len(updates[0].CVEs) != 1 || updates[0].CVEs[0].ID != "CVE-2025-1111" {
+		t.Fatalf("expected only the delta CVE-2025-1111, got %v", updates[0].CVEs)
+	}
+	if updates[0].CVEs[0].Severity != "MEDIUM" {
+		t.Errorf("Severity = %q, want MEDIUM (from Ubuntu priority)", updates[0].CVEs[0].Severity)
+	}
+}
+
+// ---- DebianChangelogCVEsSince -------------------------------------------------
+
+func TestDebianChangelogCVEsSince_Boundary(t *testing.T) {
+	changelog := `pkg (2.0-1) noble; urgency=high
+
+  * SECURITY UPDATE
+    - CVE-2025-1111
+    - CVE-2025-2222
+
+ -- someone  Mon, 02 Jun 2025 10:00:00 +0000
+
+pkg (1.9-1) noble; urgency=medium
+
+  * older fix for CVE-2020-9999
+
+ -- someone  Mon, 05 May 2025 10:00:00 +0000
+`
+	ids, ok := patching.DebianChangelogCVEsSince(changelog, "1.9-1")
+	if !ok {
+		t.Fatal("expected boundary to be found")
+	}
+	if len(ids) != 2 || ids[0] != "CVE-2025-1111" || ids[1] != "CVE-2025-2222" {
+		t.Errorf("ids = %v, want the two delta CVEs only", ids)
+	}
+}
+
+func TestDebianChangelogCVEsSince_NoBoundary(t *testing.T) {
+	changelog := "pkg (2.0-1) noble; urgency=high\n\n  * fixes CVE-2025-1111\n"
+	ids, ok := patching.DebianChangelogCVEsSince(changelog, "1.0-1")
+	if ok {
+		t.Error("boundary should not be found for a version absent from the changelog")
+	}
+	if ids != nil {
+		t.Errorf("ids should be nil when the delta cannot be established, got %v", ids)
+	}
+}
+
+// ---- RiskAssessment -----------------------------------------------------------
+
+func TestRiskAssessment(t *testing.T) {
+	cases := []struct {
+		name     string
+		updates  []patching.PackageUpdate
+		wantRisk string
+		wantIn   string // substring expected in the rationale
+	}{
+		{
+			name: "critical CVE is high risk",
+			updates: []patching.PackageUpdate{
+				{Name: "openssl", CVEs: []patching.CVEInfo{{ID: "CVE-1", Severity: "CRITICAL"}}},
+			},
+			wantRisk: "high",
+			wantIn:   "CRITICAL",
+		},
+		{
+			name: "medium CVEs are medium risk with rationale",
+			updates: []patching.PackageUpdate{
+				{Name: "curl", CVEs: []patching.CVEInfo{{ID: "CVE-1", Severity: "MEDIUM"}, {ID: "CVE-2", Severity: "LOW"}}},
+			},
+			wantRisk: "medium",
+			wantIn:   "none rated CRITICAL",
+		},
+		{
+			name:     "no CVEs is low risk",
+			updates:  []patching.PackageUpdate{{Name: "tzdata"}},
+			wantRisk: "low",
+			wantIn:   "routine",
+		},
+		{
+			name: "mostly failed lookups cannot be low risk",
+			updates: []patching.PackageUpdate{
+				{Name: "a", CVELookupFailed: true},
+				{Name: "b", CVELookupFailed: true},
+				{Name: "c"},
+			},
+			wantRisk: "medium",
+			wantIn:   "unavailable",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			risk, rationale := patching.RiskAssessment(tc.updates)
+			if risk != tc.wantRisk {
+				t.Errorf("risk = %q, want %q", risk, tc.wantRisk)
+			}
+			if !strings.Contains(rationale, tc.wantIn) {
+				t.Errorf("rationale %q missing %q", rationale, tc.wantIn)
+			}
+		})
+	}
+}
+
+// ---- FormatUpdateSummary — new content ----------------------------------------
+
+func TestFormatUpdateSummary_MediumCVEsVisible(t *testing.T) {
+	updates := []patching.PackageUpdate{
+		{
+			Name:       "curl",
+			NewVersion: "8.5.0",
+			CVEs: []patching.CVEInfo{
+				{ID: "CVE-2024-1111", Severity: "MEDIUM"},
+				{ID: "CVE-2024-2222", Severity: "LOW"},
+			},
+		},
+		{Name: "tzdata", NewVersion: "2024a"},
+	}
+	out := patching.FormatUpdateSummary("host01", patching.OSDebian, updates)
+
+	for _, want := range []string{"Risk: MEDIUM", "CVE-2024-1111 (MEDIUM)", "CVE-2024-2222 (LOW)", "curl → 8.5.0"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("FormatUpdateSummary missing %q:\n%s", want, out)
+		}
+	}
+}
+
+func TestFormatUpdateSummary_LookupFailuresCalledOut(t *testing.T) {
+	updates := []patching.PackageUpdate{
+		{Name: "curl", NewVersion: "8.5.0", CVELookupFailed: true},
+		{Name: "tzdata", NewVersion: "2024a"},
+	}
+	out := patching.FormatUpdateSummary("host01", patching.OSDebian, updates)
+
+	if !strings.Contains(out, "CVE data unavailable for 1 package(s): curl") {
+		t.Errorf("summary should call out failed CVE lookups:\n%s", out)
+	}
+	if !strings.Contains(out, "Risk: MEDIUM") {
+		t.Errorf("mostly-failed lookups should not present as low risk:\n%s", out)
+	}
+}
+
+func TestFormatUpdateSummary_RiskHeaderLow(t *testing.T) {
+	updates := []patching.PackageUpdate{{Name: "tzdata", NewVersion: "2024a"}}
+	out := patching.FormatUpdateSummary("host01", patching.OSDebian, updates)
+	if !strings.Contains(out, "Risk: LOW") || !strings.Contains(out, "routine") {
+		t.Errorf("expected a low-risk rationale header:\n%s", out)
+	}
+}
+
+// ---- FormatFallbackSummary ------------------------------------------------------
+
+func TestFormatFallbackSummary(t *testing.T) {
+	raw := "Inst curl [8.5.0] (8.6.0 Ubuntu [amd64])\n1 upgraded, 0 newly installed"
+	out := patching.FormatFallbackSummary(raw, fmt.Errorf("network unreachable"))
+
+	for _, want := range []string{"Risk: MEDIUM", "network unreachable", "Inst curl", "could not be assessed"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("FormatFallbackSummary missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "up to date") {
+		t.Errorf("fallback summary must never claim the system is up to date:\n%s", out)
+	}
+}
+
 // roundTripFunc is an http.RoundTripper backed by a function.
 type roundTripFunc func(*http.Request) (*http.Response, error)
 

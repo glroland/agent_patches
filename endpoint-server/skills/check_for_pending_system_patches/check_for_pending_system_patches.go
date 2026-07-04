@@ -78,10 +78,13 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 			slog.Debug("check_for_pending_system_patches: updates available, gathering details")
 
 			// Fetch per-package CVE details within a bounded timeout so a slow API
-			// does not delay the approval indefinitely.
+			// does not delay the approval indefinitely. The budget covers the
+			// package index refresh, per-package changelog fetches, and vendor
+			// API lookups; packages left unenriched when it expires are flagged
+			// as CVELookupFailed rather than silently reported as CVE-free.
 			updateReport := checkOut
 			var updates []patching.PackageUpdate
-			listCtx, cancel := context.WithTimeout(ctx, 90*time.Second)
+			listCtx, cancel := context.WithTimeout(ctx, 4*time.Minute)
 			defer cancel()
 			updates, err = p.ListUpdates(listCtx)
 			if err != nil {
@@ -93,16 +96,25 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 
 			// --- Phase 2: request operator approval ---
 
-			// Build the approval detail shown in the dashboard — concise summary
-			// with grouped packages and any HIGH/CRITICAL CVEs called out.
-			// The full verbose report (updateReport) is reserved for email notifications.
-			approvalDetail := patching.FormatUpdateSummary(host, p.OS(), updates)
+			// Build the approval detail shown in the dashboard — a risk rationale
+			// plus a concise summary with every CVE severity tier represented.
+			// The full verbose report (updateReport) is reserved for email
+			// notifications. When structured data is unavailable, fall back to
+			// the raw package-manager output at medium risk — never present an
+			// "up to date" summary on an approval that will apply patches.
+			var approvalDetail, risk string
+			if err != nil || len(updates) == 0 {
+				risk = "medium"
+				approvalDetail = patching.FormatFallbackSummary(checkOut, err)
+			} else {
+				risk, _ = patching.RiskAssessment(updates)
+				approvalDetail = patching.FormatUpdateSummary(host, p.OS(), updates)
+			}
 			if distUpgrade != "" {
 				approvalDetail += "\nDistribution upgrade available: " + distUpgrade +
 					" (informational only — not applied automatically)"
 			}
 
-			risk := riskFromUpdates(updates)
 			proposedAction := proposedActionFor(p.OS(), updates)
 
 			slog.Info("check_for_pending_system_patches: requesting operator approval",
@@ -182,24 +194,6 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 			return result, nil
 		},
 	)
-}
-
-// riskFromUpdates returns "high" for critical CVEs, "medium" for any other CVE,
-// and "low" for routine updates that carry no CVEs.
-func riskFromUpdates(updates []patching.PackageUpdate) string {
-	hasCVE := false
-	for _, u := range updates {
-		for _, c := range u.CVEs {
-			if strings.EqualFold(c.Severity, "critical") {
-				return "high"
-			}
-			hasCVE = true
-		}
-	}
-	if hasCVE {
-		return "medium"
-	}
-	return "low"
 }
 
 // proposedActionFor returns a human-readable string describing what will run.
