@@ -1,8 +1,14 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../components/Card';
 import AsyncState from '../components/AsyncState';
 import { useFleetSocket } from '../hooks/useFleetSocket';
+import { refreshIntelligence } from '../api/client';
 import { relativeTime } from '../utils/time';
+
+// If no fresh report arrives over the WS within this window, assume the
+// analysis failed server-side and re-enable the button.
+const REFRESH_FALLBACK_MS = 5 * 60 * 1000;
 
 const PRIORITY_STYLES = {
   high:   { badge: 'bg-rose-100 text-rose-700',  border: 'border-rose-200'  },
@@ -19,6 +25,37 @@ const CATEGORY_LABEL = {
 
 export default function FleetIntelligence() {
   const { intelligence } = useFleetSocket();
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState(null);
+  const generatedAtOnClick = useRef(null);
+
+  // The refreshed report arrives over the WS; a changed generatedAt means
+  // the run we triggered has completed.
+  const generatedAt = intelligence?.generatedAt ?? null;
+  useEffect(() => {
+    if (!refreshing) return;
+    if (generatedAt !== generatedAtOnClick.current) {
+      setRefreshing(false);
+      return;
+    }
+    const fallback = setTimeout(() => {
+      setRefreshing(false);
+      setRefreshError('Analysis did not complete — check the central-backend logs.');
+    }, REFRESH_FALLBACK_MS);
+    return () => clearTimeout(fallback);
+  }, [refreshing, generatedAt]);
+
+  async function handleRefresh() {
+    setRefreshError(null);
+    generatedAtOnClick.current = generatedAt;
+    setRefreshing(true);
+    try {
+      await refreshIntelligence();
+    } catch (err) {
+      setRefreshing(false);
+      setRefreshError(err.message);
+    }
+  }
 
   if (intelligence === undefined) {
     return (
@@ -49,7 +86,7 @@ export default function FleetIntelligence() {
     );
   }
 
-  const { headline, recommendations, resourceOptimization = [], approvalInsights = [], generatedAt, agentCount } = intelligence;
+  const { headline, recommendations, resourceOptimization = [], approvalInsights = [], agentCount } = intelligence;
   const high   = recommendations.filter((r) => r.priority === 'high');
   const medium = recommendations.filter((r) => r.priority === 'medium');
   const low    = recommendations.filter((r) => r.priority === 'low');
@@ -67,9 +104,25 @@ export default function FleetIntelligence() {
           <h1 className="text-2xl font-semibold text-black">Fleet Intelligence</h1>
           <p className="mt-1 text-sm text-navy-500">AI-generated analysis of your fleet's health, patterns, and recommended next actions.</p>
         </div>
-        <div className="shrink-0 text-right">
-          <p className="text-xs text-navy-500">Last analysed {relativeTime(generatedAt)}</p>
-          {agentCount && <p className="mt-0.5 text-xs text-navy-400">{agentCount} agent{agentCount !== 1 ? 's' : ''} included</p>}
+        <div className="flex shrink-0 flex-col items-end gap-2">
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-semibold text-navy-700 hover:border-navy-400 hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {refreshing && (
+              <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+            )}
+            {refreshing ? 'Re-analysing…' : 'Re-analyse now'}
+          </button>
+          <div className="text-right">
+            <p className="text-xs text-navy-500">Last analysed {relativeTime(generatedAt)}</p>
+            {agentCount && <p className="mt-0.5 text-xs text-navy-400">{agentCount} agent{agentCount !== 1 ? 's' : ''} included</p>}
+            {refreshError && <p className="mt-0.5 text-xs text-rose-600">{refreshError}</p>}
+          </div>
         </div>
       </div>
 

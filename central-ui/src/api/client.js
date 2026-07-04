@@ -142,6 +142,12 @@ export function clearAllAgentsMemory() {
   return deleteJSON('/admin/memory');
 }
 
+// Triggers an immediate fleet intelligence analysis on the backend. The
+// refreshed report arrives over the fleet WebSocket when it completes.
+export function refreshIntelligence() {
+  return postJSON('/intelligence/refresh');
+}
+
 // Token usage, queue depth, and per-endpoint stats from the LLM gateway.
 export function fetchGatewayStats() {
   return getJSON('/gateway/stats');

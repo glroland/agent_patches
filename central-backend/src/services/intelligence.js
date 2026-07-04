@@ -14,6 +14,7 @@ import { loadLatest, loadHistory, persist } from './intelligenceStore.js';
 
 let _client = null;
 let _timer = null;
+let _running = false;
 
 // ---------------------------------------------------------------------------
 // Fleet serialisation — compact, LLM-readable summary of fleet state.
@@ -328,6 +329,19 @@ Rules:
 - When a "Prior Fleet Intelligence Analyses" section is present, use it to detect trends across cycles: recurring unactioned recommendations should be escalated in priority; improving or worsening metrics should be noted in the headline; patterns only visible across multiple observations (e.g. steady disk growth, persistent offline agent) should be surfaced explicitly.`;
 
 async function analyse() {
+  if (_running) {
+    logger.info('intelligence: analysis already in progress, skipping');
+    return;
+  }
+  _running = true;
+  try {
+    await doAnalyse();
+  } finally {
+    _running = false;
+  }
+}
+
+async function doAnalyse() {
   const agents = getFleet();
   if (!agents) {
     logger.info('intelligence: fleet data not yet available, skipping');
@@ -415,6 +429,17 @@ async function analyse() {
     `${report.resourceOptimization.length} resource optimization(s), ` +
     `${report.approvalInsights.length} approval insight(s)`
   );
+}
+
+// Kicks off an immediate analysis in the background (operator-triggered).
+// Returns { started: false } when intelligence is disabled, otherwise
+// { started: true, alreadyRunning } — the fresh report is pushed to UI
+// clients over the WS hub when it completes.
+export function refresh() {
+  if (!_client) return { started: false };
+  if (_running) return { started: true, alreadyRunning: true };
+  analyse().catch((err) => logger.error(`intelligence: manual refresh failed: ${err.message}`));
+  return { started: true, alreadyRunning: false };
 }
 
 // ---------------------------------------------------------------------------
