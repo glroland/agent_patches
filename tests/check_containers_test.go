@@ -232,7 +232,7 @@ func TestAutoResponsibility_NoRuntime(t *testing.T) {
 	}
 }
 
-func TestAutoResponsibility_WithRuntime(t *testing.T) {
+func TestAutoResponsibility_NoContainers(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("shell stub approach not used on Windows")
 	}
@@ -243,9 +243,28 @@ func TestAutoResponsibility_WithRuntime(t *testing.T) {
 	}
 	t.Setenv("PATH", dir)
 
+	_, ok := check_containers.AutoResponsibility()
+	if ok {
+		t.Error("AutoResponsibility() = true, want false when runtime reports no containers")
+	}
+}
+
+func TestAutoResponsibility_WithRuntime(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell stub approach not used on Windows")
+	}
+	dir := t.TempDir()
+	stub := filepath.Join(dir, "docker")
+	script := "#!/bin/sh\n" +
+		`echo '{"ID":"abc123","Names":"web","Image":"nginx","State":"running","Status":"Up 2 hours"}'` + "\n"
+	if err := os.WriteFile(stub, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+
 	rs, ok := check_containers.AutoResponsibility()
 	if !ok {
-		t.Fatal("AutoResponsibility() = false, want true when docker stub is on PATH")
+		t.Fatal("AutoResponsibility() = false, want true when docker stub reports a container")
 	}
 	if rs.Name != "container-health-check" {
 		t.Errorf("Name = %q, want container-health-check", rs.Name)

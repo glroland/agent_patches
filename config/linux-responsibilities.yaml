@@ -88,7 +88,7 @@ responsibilities:
     when_to_notify: "on error"
 
   - name: network-utilization-check
-    frequency: "2h"
+    frequency: "6h"
     instruction: |
       Check network utilization on all active interfaces. Report upload and
       download rates. Use compare_to_baseline
@@ -98,7 +98,9 @@ responsibilities:
       shows unusually high or unexpected traffic, use run_diagnostic_command to
       investigate — for example (ss -tunap | head -40) to list active
       connections and the processes behind them. Report findings even when no
-      action is needed. Only use run_approved_command if a specific remediation
+      action is needed, and always state explicitly how current traffic
+      compares to the baseline (e.g. "within normal range" or "2x the 7-day
+      average"). Only use run_approved_command if a specific remediation
       is warranted; do not propose commands unless traffic is clearly
       anomalous. Track persistent anomalies in the incident ledger and resolve
       incidents that have cleared.

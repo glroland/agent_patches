@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
@@ -248,12 +249,25 @@ func AssessContainer(name, state, status string) (skillstate.Health, string) {
 }
 
 // AutoResponsibility returns the built-in container-health-check responsibility
-// and true if docker or podman is found on PATH. Returns false if neither
-// runtime is installed; the caller should skip injecting the responsibility.
+// and true if docker or podman is found on PATH and at least one container
+// (running or stopped) exists. Returns false when neither runtime is installed
+// or both report no containers; callers should skip injection.
 func AutoResponsibility() (config.ResponsibilitySettings, bool) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
 	found := false
 	for _, rt := range []string{"docker", "podman"} {
-		if _, err := exec.LookPath(rt); err == nil {
+		if _, err := exec.LookPath(rt); err != nil {
+			continue
+		}
+		containers, err := listContainers(ctx, rt)
+		if err != nil {
+			slog.Warn("check_containers: failed to list containers for auto-responsibility",
+				"runtime", rt, "error", err)
+			continue
+		}
+		if len(containers) > 0 {
 			found = true
 			break
 		}
