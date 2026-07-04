@@ -138,6 +138,55 @@ responsibilities:
       - manage_incidents
     when_to_notify: "on error"
 
+  - name: agent-runtime-health
+    frequency: "6h"
+    instruction: |
+      Check the health and stability of this agent's own runtime (the
+      agent_patches systemd service). Establish the process lifecycle first
+      with run_diagnostic_command:
+        systemctl show agent_patches -p MainPID,ExecMainStartTimestamp,NRestarts,ActiveState
+      Log the current start time and restart count in your findings. Then
+      capture the running agent's memory footprint
+      (ps -o pid,rss,vsz,etime,cmd -p <MainPID>) and use read_agent_memory
+      with history=true and window="24h" on the timeline domain to correlate
+      restarts and memory with recent responsibility runs (start/exit times,
+      failures). Scan the system logs for abnormal exits:
+        journalctl -u agent_patches --since "-24h" | grep -Ei "exited|killed|signal|failed"
+      surfaces SIGTERM/SIGKILL terminations ("code=killed, signal=TERM" or
+      "signal=KILL"), and (journalctl -k --since "-24h" | grep -i oom) or
+      (dmesg | grep -i "killed process") reveal OOM-killer activity against
+      the agent. Then verify the agent's files and data still carry the
+      ownership and modes the deployer set:
+        stat -c "%a %U:%G %n" /opt/agent_patches /opt/agent_patches/bin \
+          /opt/agent_patches/bin/patches-endpoint-server \
+          /opt/agent_patches/config /opt/agent_patches/data \
+          /opt/agent_patches/logs /opt/agent_patches/config/* \
+          /etc/sudoers.d/agent_patches \
+          /etc/systemd/system/agent_patches.service /home/agent_patches
+      Expected: /opt/agent_patches, bin, and the binary are 750 root:agent_patches;
+      config, data, and logs are 750 agent_patches:agent_patches; files under
+      config/ are 640 root:agent_patches; /etc/sudoers.d/agent_patches is
+      440 root:root; the systemd unit is 644 root:root; /home/agent_patches is
+      700 agent_patches:agent_patches. Also run (id agent_patches) and confirm
+      the service user is NOT in sudo or wheel (adm, docker, and
+      systemd-journal are expected). Report every unexpected termination,
+      restart, abnormal memory trend, or permission deviation via
+      report_findings — treat SIGKILL/OOM events, a service-user-writable
+      binary or sudoers file, group-/world-readable secrets under config/, or
+      sudo/wheel membership as high severity. Track recurring lifecycle
+      anomalies (e.g. the agent repeatedly restarted or OOM-killed) and
+      unexplained permission drift in the incident ledger with a stable
+      fingerprint, and resolve incidents once the runtime has been stable
+      again. Do not propose remediation commands — this responsibility is
+      observation-only; surface anomalies so an operator can act before they
+      cause silent failures. If the runtime is stable, say so briefly.
+    tools:
+      - run_diagnostic_command
+      - read_agent_memory
+      - report_findings
+      - manage_incidents
+    when_to_notify: "on error"
+
   - name: daily-summary
     time: "07:00"
     instruction: |

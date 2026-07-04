@@ -144,6 +144,58 @@ responsibilities:
       - manage_incidents
     when_to_notify: "on error"
 
+  - name: agent-runtime-health
+    frequency: "6h"
+    instruction: |
+      Check the health and stability of this agent's own runtime (the
+      agent_patches Windows service). Establish the process lifecycle first
+      with run_diagnostic_command:
+        Get-CimInstance Win32_Service -Filter "Name='agent_patches'" |
+          Select-Object State, ProcessId, StartMode
+      Then capture the running agent's memory footprint and start time:
+        Get-Process -Id <ProcessId> |
+          Select-Object Name, Id, StartTime, WorkingSet64, PrivateMemorySize64
+      and use read_agent_memory with history=true and window="24h" on the
+      timeline domain to correlate restarts and memory with recent
+      responsibility runs (start/exit times, failures). Scan the System event
+      log for abnormal service exits — unexpected terminations (event 7031/
+      7034) are the Windows equivalent of SIGTERM/SIGKILL:
+        Get-WinEvent -FilterHashtable @{LogName='System';
+          ProviderName='Service Control Manager'; Id=7031,7034,7036;
+          StartTime=(Get-Date).AddHours(-24)} |
+          Where-Object { $_.Message -like "*agent_patches*" } |
+          Select-Object TimeCreated, Id, Message
+      Then verify the agent's files and data still carry the ACLs the deployer
+      set on C:\ProgramData\agent_patches (inheritance removed; full control
+      for SYSTEM and BUILTIN\Administrators only):
+        Get-Acl C:\ProgramData\agent_patches |
+          Select-Object Owner, AreAccessRulesProtected, AccessToString
+        Get-ChildItem C:\ProgramData\agent_patches -Directory |
+          Get-Acl | Select-Object PSPath, AreAccessRulesProtected, AccessToString
+      Flag any access rule granting other users or groups (e.g. Users,
+      Everyone, Authenticated Users) rights on the install dir or the bin,
+      config, data, or logs subdirectories, and any directory where
+      AreAccessRulesProtected is false (inheritance re-enabled). Also confirm
+      the service still runs as the dedicated account:
+        Get-CimInstance Win32_Service -Filter "Name='agent_patches'" |
+          Select-Object StartName
+      should report .\agent_patches. Report every unexpected termination,
+      restart, abnormal memory trend, or ACL deviation via report_findings —
+      treat unexpected terminations (7031/7034), broadened ACLs on config or
+      the binary, or a changed service account as high severity. Track
+      recurring lifecycle anomalies (e.g. the service repeatedly crashing or
+      restarting) and unexplained permission drift in the incident ledger with
+      a stable fingerprint, and resolve incidents once the runtime has been
+      stable again. Do not propose remediation commands — this responsibility
+      is observation-only; surface anomalies so an operator can act before
+      they cause silent failures. If the runtime is stable, say so briefly.
+    tools:
+      - run_diagnostic_command
+      - read_agent_memory
+      - report_findings
+      - manage_incidents
+    when_to_notify: "on error"
+
   - name: daily-summary
     time: "07:00"
     instruction: |
