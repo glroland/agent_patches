@@ -109,6 +109,8 @@ spec:
             {{- if .Values.persistence.enabled }}
             - name: INTELLIGENCE_DATA_DIR
               value: /data
+            - name: CHAT_DATA_DIR
+              value: /data/chats
             {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}

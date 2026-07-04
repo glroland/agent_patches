@@ -1,12 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { ChatIcon, CheckIcon, XIcon } from './icons';
-import { sendCentralChat, fetchAgent, decideApproval } from '../api/client';
-import { useChatHistory } from '../hooks/useChatHistory';
+import { ChatIcon, CheckIcon, XIcon, TrashIcon } from './icons';
+import { fetchAgent, decideApproval } from '../api/client';
+import { useChatHistory, FLEET_CHAT_ID } from '../hooks/useChatHistory';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import Badge from './Badge';
-
-const FLEET_CHAT_ID = '__fleet__';
 
 const SUGGESTIONS = [
   'What needs attention right now?',
@@ -15,31 +13,9 @@ const SUGGESTIONS = [
   'Summarize recent critical events',
 ];
 
-// Build the history array the backend expects from our message list.
-// Combines assistant + adjacent agent replies into a single assistant turn.
-function buildHistory(messages) {
-  const result = [];
-  for (let i = 0; i < messages.length; i++) {
-    const m = messages[i];
-    if (m.role === 'user') {
-      result.push({ role: 'user', text: m.text });
-    } else if (m.role === 'assistant') {
-      let text = m.text;
-      if (messages[i + 1]?.role === 'agent') {
-        text += `\n\n[${messages[i + 1].hostname} replied]: ${messages[i + 1].text}`;
-        i++;
-      }
-      result.push({ role: 'assistant', text });
-    }
-    // skip 'approval' messages — they're visible in fleet state anyway
-  }
-  return result;
-}
-
 export default function DashboardChat() {
-  const { messages, addMessage } = useChatHistory(FLEET_CHAT_ID);
+  const { messages, sending, addMessage, clearChat, sendCentralMessage } = useChatHistory(FLEET_CHAT_ID);
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
   // Track which agent was last routed to so we can watch for its approvals.
   const [routedAgentId, setRoutedAgentId] = useState(null);
   const [approvalDecisions, setApprovalDecisions] = useState({});
@@ -82,24 +58,10 @@ export default function DashboardChat() {
     const value = (text ?? input).trim();
     if (!value || sending) return;
     setInput('');
-    setSending(true);
 
-    addMessage({ role: 'user', text: value });
-    const history = buildHistory(messages);
-
-    try {
-      const { reply, routedTo, agentReply } = await sendCentralChat(value, history);
-      addMessage({ role: 'assistant', text: reply, routedTo });
-      if (agentReply) {
-        addMessage({ role: 'agent', text: agentReply, agentId: routedTo.id, hostname: routedTo.hostname });
-      }
-      if (routedTo) {
-        setRoutedAgentId(routedTo.id);
-      }
-    } catch (err) {
-      addMessage({ role: 'assistant', text: `Error: ${err.message}` });
-    } finally {
-      setSending(false);
+    const routedTo = await sendCentralMessage(value);
+    if (routedTo) {
+      setRoutedAgentId(routedTo.id);
     }
   };
 
@@ -120,6 +82,16 @@ export default function DashboardChat() {
           <p className="text-sm font-semibold text-navy-900">Chat w/Patches</p>
           <p className="text-xs text-navy-500">Ask about the fleet or interact with individual agents</p>
         </div>
+        {messages.length > 0 && (
+          <button
+            onClick={clearChat}
+            disabled={sending}
+            title="Clear chat history"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-2.5 py-1.5 text-xs font-medium text-navy-600 hover:border-navy-400 hover:text-navy-800 disabled:opacity-50 transition-colors"
+          >
+            <TrashIcon className="h-3.5 w-3.5" /> Clear
+          </button>
+        )}
       </div>
 
       <div className="flex h-80 flex-col p-4">

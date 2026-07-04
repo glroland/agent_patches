@@ -1,5 +1,6 @@
 import { notImplemented } from '../utils/notImplemented.js';
 import * as fleet from '../services/fleet.js';
+import * as chatStore from '../services/chatStore.js';
 import { pendingApprovals } from '../services/activity.js';
 import { logger } from '../utils/logger.js';
 
@@ -137,26 +138,38 @@ export async function getAgentCard(req, res, next) {
 }
 
 // POST /api/agents/:id/messages — relay an operator chat message to the
-// agent and return its reply.
+// agent and return its reply. Both sides are recorded in the user's
+// persistent chat history so the exchange survives even if the browser
+// navigates away before the reply arrives.
 export async function sendAgentMessage(req, res, next) {
+  const agentId = req.params.id;
+  const username = req.user.username;
   try {
     const { message } = req.body ?? {};
     if (typeof message !== 'string' || !message.trim()) {
       return res.status(400).json({ error: 'invalid_request', message: '"message" is required' });
     }
 
-    logger.info(`agentsController.sendAgentMessage: relaying message to agent`, { agentId: req.params.id, messageLength: message.length });
+    logger.info(`agentsController.sendAgentMessage: relaying message to agent`, { agentId, messageLength: message.length });
 
-    const reply = await fleet.sendAgentMessage(req.params.id, message);
+    chatStore.appendMessage(username, agentId, { role: 'user', text: message });
+    chatStore.setPending(username, agentId, true);
+
+    const reply = await fleet.sendAgentMessage(agentId, message);
     if (reply === undefined) {
-      logger.warn(`agentsController.sendAgentMessage: agent not found in inventory`, { agentId: req.params.id });
-      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+      logger.warn(`agentsController.sendAgentMessage: agent not found in inventory`, { agentId });
+      chatStore.setPending(username, agentId, false);
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${agentId}"` });
     }
 
-    logger.info(`agentsController.sendAgentMessage: reply received`, { agentId: req.params.id, replyLength: reply.length });
+    logger.info(`agentsController.sendAgentMessage: reply received`, { agentId, replyLength: reply.length });
+    chatStore.appendMessage(username, agentId, { role: 'agent', text: reply || '(no response)' });
+    chatStore.setPending(username, agentId, false);
     res.json({ reply });
   } catch (err) {
-    logger.error(`agentsController.sendAgentMessage: failed`, { agentId: req.params.id, error: err.message });
+    logger.error(`agentsController.sendAgentMessage: failed`, { agentId, error: err.message });
+    chatStore.appendMessage(username, agentId, { role: 'agent', text: `Couldn't reach the agent: ${err.message}` });
+    chatStore.setPending(username, agentId, false);
     res.status(502).json({ error: 'agent_unreachable', message: err.message });
   }
 }

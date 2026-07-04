@@ -60,6 +60,13 @@ export const config = {
     // How many prior reports to inject as historical context into each analysis.
     historySize: Number(process.env.INTELLIGENCE_HISTORY_SIZE) || 5,
   },
+  chat: {
+    // Directory for persistent per-user chat history (PVC mount in
+    // production). Empty = in-memory only, lost on restart.
+    dataDir: process.env.CHAT_DATA_DIR || 'data/chats',
+    // Maximum messages retained per chat thread per user.
+    maxMessages: Number(process.env.CHAT_MAX_MESSAGES) || 200,
+  },
   gateway: {
     // Internal ClusterIP URL of the llm-gateway service.
     // e.g. http://llm-gateway:8080  (leave empty to disable the /api/gateway/stats endpoint)

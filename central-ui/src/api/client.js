@@ -132,6 +132,18 @@ export function sendCentralChat(message, history = []) {
   return postJSON('/chat/central', { message, history });
 }
 
+// Every persisted chat thread for the current user, plus the ids of chats
+// with a reply still in flight on the backend.
+// Returns { chats: { [chatId]: messages[] }, pending: chatId[] }.
+export function fetchChatHistory() {
+  return getJSON('/chat/history');
+}
+
+// Clears one persisted chat thread for the current user.
+export function clearChatHistory(chatId) {
+  return deleteJSON(`/chat/history/${encodeURIComponent(chatId)}`);
+}
+
 // Clears all memory on a single agent.
 export function clearAgentMemory(id) {
   return deleteJSON(`/agents/${id}/memory`);

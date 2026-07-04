@@ -5,7 +5,7 @@ import Card from '../components/Card';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon, TerminalIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, fetchAgentCard, sendAgentMessage, clearAgentMemory, decideApproval } from '../api/client';
+import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, fetchAgentCard, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { useChatHistory } from '../hooks/useChatHistory';
@@ -229,12 +229,16 @@ const SUGGESTIONS = [
 ];
 
 function InteractTab({ agent }) {
-  const { messages, addMessage } = useChatHistory(agent.id);
+  const { messages, sending, hydrated, addMessage, clearChat, sendToAgent } = useChatHistory(agent.id);
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
   // Per-approval decision state: id -> { loading, decision, error }
   const [approvalDecisions, setApprovalDecisions] = useState({});
   const bottomRef = useRef(null);
+
+  const greeting = {
+    role: 'agent',
+    text: `Hi, I'm the agent for ${agent.hostname}. Ask me about what I've seen, what I'm doing, or why I've made a recommendation.`,
+  };
 
   // IDs of approvals that existed when this tab mounted — we only inject
   // approvals that appear after the user sends a message.
@@ -246,15 +250,13 @@ function InteractTab({ agent }) {
   const { agents: wsAgents } = useFleetSocket();
   const wsApprovalCount = wsAgents?.find((a) => a.id === agent.id)?.pendingApprovalCount ?? 0;
 
-  // Greet on first visit only.
+  // Greet on first visit only — wait for the persisted history to hydrate so
+  // a restored conversation isn't prefixed with a duplicate greeting.
   useEffect(() => {
-    if (messages.length === 0) {
-      addMessage({
-        role: 'agent',
-        text: `Hi, I'm the agent for ${agent.hostname}. Ask me about what I've seen, what I'm doing, or why I've made a recommendation.`,
-      });
+    if (hydrated && messages.length === 0) {
+      addMessage(greeting);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [hydrated]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-scroll to latest message.
   useEffect(() => {
@@ -282,20 +284,16 @@ function InteractTab({ agent }) {
       .catch(() => {});
   }, [sending, wsApprovalCount, agent.id, addMessage]);
 
-  const send = async (text) => {
+  const send = (text) => {
     const value = (text ?? input).trim();
     if (!value || sending) return;
-    addMessage({ role: 'user', text: value });
     setInput('');
-    setSending(true);
-    try {
-      const { reply } = await sendAgentMessage(agent.id, value);
-      addMessage({ role: 'agent', text: reply || '(no response)' });
-    } catch (err) {
-      addMessage({ role: 'agent', text: `Couldn't reach the agent: ${err.message}` });
-    } finally {
-      setSending(false);
-    }
+    sendToAgent(agent.id, value);
+  };
+
+  const clear = () => {
+    clearChat();
+    addMessage(greeting);
   };
 
   const resolveApproval = async (entry, decision) => {
@@ -313,7 +311,22 @@ function InteractTab({ agent }) {
   };
 
   return (
-    <Card title={`Talk to the ${agent.hostname} agent`} subtitle="Sends a message via the A2A JSON-RPC API">
+    <Card
+      title={`Talk to the ${agent.hostname} agent`}
+      subtitle="Sends a message via the A2A JSON-RPC API"
+      action={
+        messages.length > 0 && (
+          <button
+            onClick={clear}
+            disabled={sending}
+            title="Clear chat history"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-2.5 py-1.5 text-xs font-medium text-navy-600 hover:border-navy-400 hover:text-navy-800 disabled:opacity-50 transition-colors"
+          >
+            <TrashIcon className="h-3.5 w-3.5" /> Clear
+          </button>
+        )
+      }
+    >
       <div className="flex h-[32rem] flex-col">
         <div className="flex-1 space-y-3 overflow-y-auto pr-1">
           {messages.map((m, i) => {

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import Card from '../components/Card';
-import { ChatIcon } from '../components/icons';
-import { broadcastMessage } from '../api/client';
+import { ChatIcon, TrashIcon } from '../components/icons';
+import { useChatHistory, BROADCAST_CHAT_ID } from '../hooks/useChatHistory';
 
 const SUGGESTIONS = [
   'What are you working on right now?',
@@ -10,27 +10,14 @@ const SUGGESTIONS = [
 ];
 
 export default function FleetChat() {
-  const [rounds, setRounds] = useState([]);
+  const { messages, sending, clearChat, sendBroadcast } = useChatHistory(BROADCAST_CHAT_ID);
   const [input, setInput] = useState('');
-  const [sending, setSending] = useState(false);
 
-  const send = async (text) => {
+  const send = (text) => {
     const value = (text ?? input).trim();
     if (!value || sending) return;
     setInput('');
-    setSending(true);
-
-    const round = { message: value, results: null, error: null };
-    setRounds((prev) => [...prev, round]);
-
-    try {
-      const { results } = await broadcastMessage(value);
-      setRounds((prev) => prev.map((r) => (r === round ? { ...r, results } : r)));
-    } catch (err) {
-      setRounds((prev) => prev.map((r) => (r === round ? { ...r, results: [], error: err.message } : r)));
-    } finally {
-      setSending(false);
-    }
+    sendBroadcast(value);
   };
 
   return (
@@ -42,42 +29,66 @@ export default function FleetChat() {
         </p>
       </div>
 
-      <Card title="Broadcast" subtitle="Sends a message to all agents via the A2A JSON-RPC API">
+      <Card
+        title="Broadcast"
+        subtitle="Sends a message to all agents via the A2A JSON-RPC API"
+        action={
+          messages.length > 0 && (
+            <button
+              onClick={clearChat}
+              disabled={sending}
+              title="Clear chat history"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-2.5 py-1.5 text-xs font-medium text-navy-600 hover:border-navy-400 hover:text-navy-800 disabled:opacity-50 transition-colors"
+            >
+              <TrashIcon className="h-3.5 w-3.5" /> Clear
+            </button>
+          )
+        }
+      >
         <div className="space-y-5">
-          {rounds.length === 0 && (
+          {messages.length === 0 && (
             <p className="text-sm text-navy-500">Ask all agents something to get started.</p>
           )}
 
-          {rounds.map((round, i) => (
-            <div key={i} className="space-y-3">
-              <div className="flex justify-end">
-                <div className="max-w-[80%] rounded-xl bg-navy-700 px-3.5 py-2.5 text-sm text-white whitespace-pre-wrap">
-                  {round.message}
+          {messages.map((m, i) => {
+            if (m.role === 'user') {
+              return (
+                <div key={i} className="flex justify-end">
+                  <div className="max-w-[80%] rounded-xl bg-navy-700 px-3.5 py-2.5 text-sm text-white whitespace-pre-wrap">
+                    {m.text}
+                  </div>
                 </div>
-              </div>
+              );
+            }
 
-              {round.error && (
-                <p className="text-sm text-rose-700">Broadcast failed: {round.error}</p>
-              )}
-
-              {round.results === null && !round.error && (
-                <p className="text-sm text-navy-600">Waiting for replies...</p>
-              )}
-
-              {round.results && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {round.results.map((r) => (
-                    <div key={r.id} className="rounded-lg border border-navy-200 p-3">
-                      <p className="text-xs font-semibold text-navy-700">{r.displayName || r.hostname}</p>
-                      <p className={`mt-1 text-sm whitespace-pre-wrap ${r.error ? 'text-rose-700' : 'text-navy-700'}`}>
-                        {r.error ? `Couldn't reach agent: ${r.error}` : (r.reply || '(no response)')}
-                      </p>
+            if (m.role === 'results') {
+              return (
+                <div key={i} className="space-y-3">
+                  {m.error && (
+                    <p className="text-sm text-rose-700">Broadcast failed: {m.error}</p>
+                  )}
+                  {m.results?.length > 0 && (
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {m.results.map((r) => (
+                        <div key={r.id} className="rounded-lg border border-navy-200 p-3">
+                          <p className="text-xs font-semibold text-navy-700">{r.displayName || r.hostname}</p>
+                          <p className={`mt-1 text-sm whitespace-pre-wrap ${r.error ? 'text-rose-700' : 'text-navy-700'}`}>
+                            {r.error ? `Couldn't reach agent: ${r.error}` : (r.reply || '(no response)')}
+                          </p>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  )}
                 </div>
-              )}
-            </div>
-          ))}
+              );
+            }
+
+            return null;
+          })}
+
+          {sending && (
+            <p className="text-sm text-navy-600">Waiting for replies...</p>
+          )}
         </div>
 
         <div className="mt-5 flex flex-wrap gap-2">
