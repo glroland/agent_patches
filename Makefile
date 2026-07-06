@@ -37,12 +37,13 @@ CENTRAL_BACKEND_DIR := $(CURDIR)/central-backend
 # Inventory and config shared between deploy and central-backend.
 INVENTORY_ROOT := $(CURDIR)/../home-utils/admin/agent_patches
 DEPLOY_SCRIPT  := $(CURDIR)/deploy/linux/deploy.sh
+RESTART_SCRIPT := $(CURDIR)/deploy/linux/restart.sh
 
 # OS-specific default responsibilities and system prompt files (in-repo).
 CONFIG_DIR := $(CURDIR)/config
 
 .PHONY: install build build-server build-cli release release-server release-cli \
-        test run run-cli run-central-ui run-central-backend deploy deploy-all clean fmt vet help
+        test run run-cli run-central-ui run-central-backend deploy deploy-all restart clean fmt vet help
 
 ## install: download and tidy all module dependencies
 install:
@@ -125,6 +126,11 @@ deploy:
 ## deploy-all: deploy to all hosts without per-host confirmation
 deploy-all: DEPLOY_CONFIRM=0
 deploy-all: deploy
+
+## restart: restart the agent_patches daemon on all hosts in inventory.csv (no binary/config changes, no prompts)
+restart:
+	$(RESTART_SCRIPT) \
+		$(INVENTORY_ROOT)/inventory.csv
 
 ## fmt: format all Go source files
 fmt:
