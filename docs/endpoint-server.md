@@ -201,6 +201,13 @@ Two background monitors start alongside the loop:
 - `loginmonitor` — watches auth logs for successful interactive logins. Fires a critical alert if the source address is not in `login_monitor.allowed_sources` (CIDRs or exact IPs).
 - `loginmonitor.FailedMonitor` — tracks consecutive failed login attempts per source IP. Fires a critical alert when the count reaches `login_monitor.failed_login_threshold` (default 3).
 
+`loginmonitor` also compares every new login against this host's own `login_history` — no configuration required. A login is flagged `unusual` (surfaced in `login_history`/`GET /interactive-logins`, `skillstate`/`GET /status`, and the incident ledger) when, in priority order:
+1. **`new_user`** — this username has no prior login in history. Critical if remote, warning if local.
+2. **`new_source`** — the username has history, but this source (IP, falling back to hostname, falling back to "local") has never been seen for that user. Critical if remote, warning if local.
+3. **`unusual_time`** — the username has at least `login_monitor.baseline_min_events` (default 5) prior logins, and the current login's hour-of-day has never occurred in their history. Always warning.
+
+Only critical-tier hits (`new_user`/`new_source` from a remote source) send email; all hits are reported to the incident ledger so recurrences are deduplicated and surfaced to the agent's next responsibility run via `incidents.OpenSummary()`. Set `login_monitor.disable_unusual_login_baseline: true` to turn this off.
+
 Alerts are written via `notifier.Notify` to the `notifications` memory domain.
 
 ## Configuration
@@ -233,6 +240,8 @@ loop:
 login_monitor:
   allowed_sources: ["10.0.0.0/8", "192.168.1.5"]
   failed_login_threshold: 3
+  baseline_min_events: 5
+  disable_unusual_login_baseline: false
 
 responsibilities:
   - name: daily-patch-check
@@ -254,6 +263,7 @@ Defaults applied by `config.Load`:
 - `memory.root` → `./agent_memory`
 - `loop.heartbeat` → `1s`
 - `login_monitor.failed_login_threshold` → `3`
+- `login_monitor.baseline_min_events` → `5`
 - `responsibility_system_prompt` → `<goos>-system-prompt.txt` next to the config file, else a built-in prompt with tool selection rules
 
 ## Startup Sequence

@@ -147,6 +147,15 @@ type LoginMonitorSettings struct {
 	// FailedLoginThreshold is the number of consecutive failed login attempts
 	// from the same source IP that triggers a critical alert. Defaults to 3.
 	FailedLoginThreshold int `yaml:"failed_login_threshold"`
+
+	// DisableUnusualLoginBaseline turns off the self-learned baseline check —
+	// flagging logins whose user, source, or time of day never appeared in
+	// this host's own login history. Enabled by default.
+	DisableUnusualLoginBaseline bool `yaml:"disable_unusual_login_baseline"`
+
+	// BaselineMinEvents is the minimum number of prior login events a user
+	// must have before their off-hours logins are evaluated. Defaults to 5.
+	BaselineMinEvents int `yaml:"baseline_min_events"`
 }
 
 // NetworkMonitorSettings controls the background network connection monitor.
@@ -291,6 +300,9 @@ func Load() (*Settings, error) {
 	}
 	if s.LoginMonitor.FailedLoginThreshold <= 0 {
 		s.LoginMonitor.FailedLoginThreshold = 3
+	}
+	if s.LoginMonitor.BaselineMinEvents <= 0 {
+		s.LoginMonitor.BaselineMinEvents = 5
 	}
 	if s.Status.SummaryTTL == "" {
 		s.Status.SummaryTTL = "5m"

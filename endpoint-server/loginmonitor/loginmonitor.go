@@ -19,6 +19,7 @@ import (
 
 	"github.com/godbus/dbus/v5"
 
+	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/logind"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skillstate"
@@ -56,18 +57,25 @@ type LoginEvent struct {
 	ResolvedHostname string    `json:"resolved_hostname,omitempty"` // PTR lookup or forward hostname
 	TTY              string    `json:"tty,omitempty"`
 	Timestamp        time.Time `json:"timestamp"` // UTC wall time of the event
+
+	// Unusual and UnusualReason are set by checkAgainstBaseline when this
+	// login deviates from the user's prior history (see baseline.go). Reason
+	// is one of "new_user", "new_source", "unusual_time".
+	Unusual       bool   `json:"unusual,omitempty"`
+	UnusualReason string `json:"unusual_reason,omitempty"`
 }
 
 // Monitor watches logind D-Bus signals and records login/logout history.
 type Monitor struct {
-	mem    *memory.Store
-	notify *notifier.Notifier
-	cfg    config.LoginMonitorSettings
+	mem       *memory.Store
+	notify    *notifier.Notifier
+	incidents *incidents.Store
+	cfg       config.LoginMonitorSettings
 }
 
 // New creates a Monitor. Call Start to launch the background goroutine.
-func New(mem *memory.Store, notify *notifier.Notifier, cfg config.LoginMonitorSettings) *Monitor {
-	return &Monitor{mem: mem, notify: notify, cfg: cfg}
+func New(mem *memory.Store, notify *notifier.Notifier, incidentStore *incidents.Store, cfg config.LoginMonitorSettings) *Monitor {
+	return &Monitor{mem: mem, notify: notify, incidents: incidentStore, cfg: cfg}
 }
 
 // Start launches the background goroutine. It returns immediately; the
@@ -205,6 +213,8 @@ func (m *Monitor) handleSignal(conn *dbus.Conn, sig *dbus.Signal) {
 			Timestamp:        time.Now().UTC(),
 		}
 		slog.Info("loginmonitor: session opened", "user", info.Username, "type", info.SessionType, "remote", info.Remote, "source_ip", ip)
+		prior, _ := ReadHistory(m.mem)
+		m.checkAgainstBaseline(&ev, prior)
 		m.appendEvent(ev)
 		m.checkUnusualSource(ev)
 

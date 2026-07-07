@@ -688,6 +688,16 @@ function originLabel(item) {
   return parts.length > 0 ? parts.join(' · ') : 'remote';
 }
 
+const UNUSUAL_REASON_LABELS = {
+  new_user: 'first-ever login for this user',
+  new_source: 'never seen this source for this user before',
+  unusual_time: 'a time of day this user has never logged in at',
+};
+
+function unusualReasonLabel(reason) {
+  return UNUSUAL_REASON_LABELS[reason] || 'deviates from this host\'s login history';
+}
+
 function InteractiveLoginsTab({ agentId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -776,6 +786,11 @@ function InteractiveLoginsTab({ agentId }) {
                   <span className="font-medium text-navy-900">{e.username}</span>
                   <span className="text-navy-500">{e.tty || e.sessionType || ''}</span>
                   <span className="text-navy-400">({originLabel(e)})</span>
+                  {e.unusual && (
+                    <span title={unusualReasonLabel(e.unusualReason)}>
+                      <Badge variant="warning">unusual</Badge>
+                    </span>
+                  )}
                 </div>
               ))}
             </div>
