@@ -77,6 +77,13 @@ export function fetchAgentMemory(id) {
   return getJSON(`/agents/${id}/memory`);
 }
 
+// A single agent's currently active network connections plus recent
+// connection open/close activity, as tracked by the agent's background
+// connection monitor.
+export function fetchAgentNetworkConnections(id) {
+  return getJSON(`/agents/${id}/network-connections`);
+}
+
 // A single agent's enabled responsibilities with schedule, last-run state, and
 // next scheduled run time.
 export function fetchAgentResponsibilities(id) {

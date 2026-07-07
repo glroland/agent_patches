@@ -10,6 +10,7 @@ router.get('/:id/card', agentsController.getAgentCard);
 router.get('/:id/log', agentsController.getAgentLog);
 router.get('/:id/responsibilities', agentsController.getAgentResponsibilities);
 router.get('/:id/memory', agentsController.getAgentMemory);
+router.get('/:id/network-connections', agentsController.getAgentNetworkConnections);
 router.delete('/:id/memory', agentsController.clearAgentMemory);
 router.post('/:id/messages', agentsController.sendAgentMessage);
 

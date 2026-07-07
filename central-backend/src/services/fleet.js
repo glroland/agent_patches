@@ -227,6 +227,20 @@ export async function clearAgentMemory(id) {
   return client.clearMemory();
 }
 
+// Fetches GET /network-connections from a single agent. Returns undefined if
+// not in inventory, null if unreachable, or the connection report on success.
+export async function getAgentNetworkConnections(id) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
+  if (!inventoryAgent) return undefined;
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
+  });
+  return client.getNetworkConnections();
+}
+
 // Fetches /.well-known/agent-card.json from a single agent. Returns undefined
 // if not in inventory, null if unreachable, or the card payload on success.
 export async function getAgentCard(id) {

@@ -2,16 +2,17 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
+import StatCard from '../components/StatCard';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon, TerminalIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, fetchAgentCard, clearAgentMemory, decideApproval } from '../api/client';
+import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, fetchAgentCard, fetchAgentNetworkConnections, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { useChatHistory } from '../hooks/useChatHistory';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Log', 'Agent Card', 'Admin'];
+const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Network', 'Log', 'Agent Card', 'Admin'];
 
 export default function AgentDetail() {
   const { id } = useParams();
@@ -115,6 +116,8 @@ export default function AgentDetail() {
       {tab === 'Interact' && <InteractTab agent={agent} />}
 
       {tab === 'Responsibilities' && <ResponsibilitiesTab agentId={agent.id} />}
+
+      {tab === 'Network' && <NetworkConnectionsTab agentId={agent.id} />}
 
       {tab === 'Log' && <AgentLogTab agentId={agent.id} />}
 
@@ -549,6 +552,122 @@ function ResponsibilitiesTab({ agentId }) {
         ))}
       </div>
     </Card>
+  );
+}
+
+const EVENT_COLORS = {
+  open: 'text-emerald-700',
+  close: 'text-rose-700',
+  existing: 'text-navy-600',
+};
+
+const DIRECTION_BADGE = {
+  inbound: 'info',
+  outbound: 'neutral',
+};
+
+function NetworkConnectionsTab({ agentId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    fetchAgentNetworkConnections(agentId)
+      .then((d) => { setData(d); setLoading(false); })
+      .catch((err) => { setError(err); setLoading(false); });
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => clearInterval(timer);
+  }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading) return <AsyncState loading loadingLabel="Loading network connections..." />;
+  if (error) return <AsyncState error={error} />;
+  if (!data) return null;
+
+  const active = data.active ?? [];
+  const inbound = active.filter((c) => c.direction === 'inbound');
+  const outbound = active.filter((c) => c.direction === 'outbound');
+  const recent = data.recentActivity ?? [];
+
+  return (
+    <div className="space-y-4">
+      <Card
+        title="Active connections"
+        subtitle={
+          data.live
+            ? 'Live snapshot — the background connection monitor has not recorded any history yet'
+            : `Tracked by a background monitor that polls every few seconds · ${data.historyCount} history event${data.historyCount === 1 ? '' : 's'} recorded`
+        }
+      >
+        {data.note && <p className="mb-3 text-xs italic text-navy-500">{data.note}</p>}
+
+        <div className="mb-4 grid grid-cols-3 gap-3">
+          <StatCard label="Active" value={active.length} />
+          <StatCard label="Inbound" value={inbound.length} />
+          <StatCard label="Outbound" value={outbound.length} />
+        </div>
+
+        {active.length === 0 ? (
+          <p className="text-sm text-navy-500">No active connections.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-navy-200">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-navy-200 text-left text-navy-500">
+                  <th className="px-3 py-2 font-medium">Direction</th>
+                  <th className="px-3 py-2 font-medium">Proto</th>
+                  <th className="px-3 py-2 font-medium">Local</th>
+                  <th className="px-3 py-2 font-medium">Remote</th>
+                  <th className="px-3 py-2 font-medium">State</th>
+                  <th className="px-3 py-2 font-medium">Process</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy-100">
+                {active.map((c, i) => (
+                  <tr key={i} className="hover:bg-navy-50">
+                    <td className="px-3 py-2">
+                      <Badge variant={DIRECTION_BADGE[c.direction] ?? 'neutral'}>{c.direction}</Badge>
+                    </td>
+                    <td className="px-3 py-2 uppercase text-navy-600">{c.proto}</td>
+                    <td className="px-3 py-2 font-mono text-navy-700">{c.localAddr}:{c.localPort}</td>
+                    <td className="px-3 py-2 font-mono text-navy-700">{c.remoteAddr}:{c.remotePort}</td>
+                    <td className="px-3 py-2 text-navy-500">{c.state || '—'}</td>
+                    <td className="px-3 py-2 text-navy-500">{c.process || (c.pid ? `pid ${c.pid}` : '—')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {!data.live && (
+        <Card title="Recent activity" subtitle="Connection open/close events, most recent first">
+          {recent.length === 0 ? (
+            <p className="text-sm text-navy-500">No recent activity.</p>
+          ) : (
+            <div className="space-y-1">
+              {recent.map((e, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-navy-50">
+                  <span className="w-32 shrink-0 text-navy-400">{relativeTime(e.timestamp)}</span>
+                  <span className={`w-14 shrink-0 font-medium ${EVENT_COLORS[e.eventType] ?? 'text-navy-600'}`}>{e.eventType}</span>
+                  <span className="w-16 shrink-0 text-navy-500">{e.direction}</span>
+                  <span className="font-mono text-navy-700">
+                    {e.proto?.toUpperCase()} {e.localAddr}:{e.localPort} &rarr; {e.remoteAddr}:{e.remotePort}
+                  </span>
+                  {(e.process || e.pid) && (
+                    <span className="text-navy-400">({e.process || `pid ${e.pid}`})</span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+    </div>
   );
 }
 

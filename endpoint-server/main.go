@@ -30,6 +30,7 @@ import (
 	"agent_patches/endpoint-server/manualrunapi"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/memoryapi"
+	"agent_patches/endpoint-server/networkapi"
 	"agent_patches/endpoint-server/policy"
 	"agent_patches/endpoint-server/policyapi"
 	"agent_patches/endpoint-server/responsibilitiesapi"
@@ -340,6 +341,7 @@ func runServer(ctx context.Context) {
 	responsibilitiesSvc := responsibilitiesapi.New(lp, mem)
 	policySvc := policyapi.New(policyStore)
 	logSvc := logapi.New(cfg.Logging.File)
+	networkSvc := networkapi.New(mem)
 
 	mux := http.NewServeMux()
 	mux.Handle(a2asrv.WellKnownAgentCardPath, a2asrv.NewStaticAgentCardHandler(card))
@@ -350,6 +352,7 @@ func runServer(ctx context.Context) {
 	var responsibilitiesHandler http.Handler = responsibilitiesSvc.Handler()
 	var policyHandler http.Handler = policySvc.Handler()
 	var logHandler http.Handler = logSvc.Handler()
+	var networkHandler http.Handler = networkSvc.Handler()
 	if cfg.Security.Scheme == "bearer" {
 		statusHandler = requireBearer(cfg.Security.Token, statusHandler)
 		memoryHandler = requireBearer(cfg.Security.Token, memoryHandler)
@@ -358,6 +361,7 @@ func runServer(ctx context.Context) {
 		responsibilitiesHandler = requireBearer(cfg.Security.Token, responsibilitiesHandler)
 		policyHandler = requireBearer(cfg.Security.Token, policyHandler)
 		logHandler = requireBearer(cfg.Security.Token, logHandler)
+		networkHandler = requireBearer(cfg.Security.Token, networkHandler)
 	}
 	mux.Handle("/status", statusHandler)
 	mux.Handle("/memory", memoryHandler)
@@ -367,6 +371,7 @@ func runServer(ctx context.Context) {
 	mux.Handle("/policies", policyHandler)
 	mux.Handle("/policies/", policyHandler)
 	mux.Handle("/log", logHandler)
+	mux.Handle("/network-connections", networkHandler)
 	mux.Handle("/", interactivePriorityMiddleware(a2asrv.NewJSONRPCHandler(reqHandler)))
 
 	srv := &http.Server{

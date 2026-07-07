@@ -120,6 +120,24 @@ export async function getAgentResponsibilities(req, res, next) {
   }
 }
 
+// GET /api/agents/:id/network-connections — the Network tab: currently
+// active connections plus recent open/close activity, as reported by the
+// agent's GET /network-connections endpoint.
+export async function getAgentNetworkConnections(req, res, next) {
+  try {
+    const connections = await fleet.getAgentNetworkConnections(req.params.id);
+    if (connections === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+    if (connections === null) {
+      return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to GET /network-connections' });
+    }
+    res.json(connections);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /api/agents/:id/card — the A2A agent card served by the agent at
 // /.well-known/agent-card.json, passed through to the UI.
 export async function getAgentCard(req, res, next) {
