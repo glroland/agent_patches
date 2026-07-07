@@ -241,6 +241,20 @@ export async function getAgentNetworkConnections(id) {
   return client.getNetworkConnections();
 }
 
+// Fetches GET /interactive-logins from a single agent. Returns undefined if
+// not in inventory, null if unreachable, or the login report on success.
+export async function getAgentInteractiveLogins(id) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === id);
+  if (!inventoryAgent) return undefined;
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
+  });
+  return client.getInteractiveLogins();
+}
+
 // Fetches /.well-known/agent-card.json from a single agent. Returns undefined
 // if not in inventory, null if unreachable, or the card payload on success.
 export async function getAgentCard(id) {

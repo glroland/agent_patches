@@ -138,6 +138,26 @@ export class AgentClient {
     }
   }
 
+  // Fetches GET /interactive-logins. Returns null if the agent is
+  // unreachable, responds with a non-2xx status, or returns invalid JSON.
+  async getInteractiveLogins() {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers = {};
+      if (this.authToken) {
+        headers.Authorization = `Bearer ${this.authToken}`;
+      }
+      const res = await fetch(`${this.baseUrl}/interactive-logins`, { headers, signal: controller.signal });
+      if (!res.ok) return null;
+      return await res.json();
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Posts an operator decision for a pending approval.
   // decision must be "approved" or "rejected".
   async resolveApproval(id, decision, reason = '') {

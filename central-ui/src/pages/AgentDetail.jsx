@@ -6,13 +6,13 @@ import StatCard from '../components/StatCard';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { ChatIcon, CheckIcon, XIcon, TrashIcon, ChevronRightIcon, TerminalIcon } from '../components/icons';
-import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, fetchAgentCard, fetchAgentNetworkConnections, clearAgentMemory, decideApproval } from '../api/client';
+import { fetchAgent, fetchAgentMemory, fetchAgentResponsibilities, fetchAgentLog, fetchAgentCard, fetchAgentNetworkConnections, fetchAgentInteractiveLogins, clearAgentMemory, decideApproval } from '../api/client';
 import { useApi } from '../hooks/useApi';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { useChatHistory } from '../hooks/useChatHistory';
 import { relativeTime } from '../utils/time';
 
-const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Network', 'Log', 'Agent Card', 'Admin'];
+const TABS = ['Interact', 'Recommendations & Approvals', 'Activity', 'Responsibilities', 'Network', 'Logins', 'Log', 'Agent Card', 'Admin'];
 
 export default function AgentDetail() {
   const { id } = useParams();
@@ -118,6 +118,8 @@ export default function AgentDetail() {
       {tab === 'Responsibilities' && <ResponsibilitiesTab agentId={agent.id} />}
 
       {tab === 'Network' && <NetworkConnectionsTab agentId={agent.id} />}
+
+      {tab === 'Logins' && <InteractiveLoginsTab agentId={agent.id} />}
 
       {tab === 'Log' && <AgentLogTab agentId={agent.id} />}
 
@@ -667,6 +669,140 @@ function NetworkConnectionsTab({ agentId }) {
           )}
         </Card>
       )}
+    </div>
+  );
+}
+
+const LOGIN_EVENT_COLORS = {
+  login: 'text-emerald-700',
+  logout: 'text-rose-700',
+  existing: 'text-navy-600',
+};
+
+function originLabel(item) {
+  if (!item.remote) return 'local console';
+  const parts = [item.sourceIp || item.remoteHost].filter(Boolean);
+  if (item.resolvedHostname && item.resolvedHostname !== item.remoteHost && item.resolvedHostname !== item.sourceIp) {
+    parts.push(item.resolvedHostname);
+  }
+  return parts.length > 0 ? parts.join(' · ') : 'remote';
+}
+
+function InteractiveLoginsTab({ agentId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const load = () => {
+    fetchAgentInteractiveLogins(agentId)
+      .then((d) => { setData(d); setLoading(false); })
+      .catch((err) => { setError(err); setLoading(false); });
+  };
+
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, 15_000);
+    return () => clearInterval(timer);
+  }, [agentId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (loading) return <AsyncState loading loadingLabel="Loading interactive logins..." />;
+  if (error) return <AsyncState error={error} />;
+  if (!data) return null;
+
+  const active = data.active ?? [];
+  const recent = data.recentActivity ?? [];
+  const failed = data.recentFailedAttempts ?? [];
+
+  return (
+    <div className="space-y-4">
+      <Card
+        title="Active sessions"
+        subtitle={
+          data.live
+            ? 'Live snapshot — the background login monitor has not recorded any history yet'
+            : `Tracked by background login monitors · ${data.historyCount} history event${data.historyCount === 1 ? '' : 's'} recorded`
+        }
+      >
+        {data.note && <p className="mb-3 text-xs italic text-navy-500">{data.note}</p>}
+
+        <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <StatCard label="Active sessions" value={active.length} />
+          <StatCard label="History events" value={data.historyCount} />
+          <StatCard label="Failed attempts" value={data.failedCount} tone={data.failedCount > 0 ? 'warning' : 'default'} />
+        </div>
+
+        {active.length === 0 ? (
+          <p className="text-sm text-navy-500">No active login sessions.</p>
+        ) : (
+          <div className="overflow-x-auto rounded-lg border border-navy-200">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-navy-200 text-left text-navy-500">
+                  <th className="px-3 py-2 font-medium">User</th>
+                  <th className="px-3 py-2 font-medium">Class</th>
+                  <th className="px-3 py-2 font-medium">Type / TTY</th>
+                  <th className="px-3 py-2 font-medium">Origin</th>
+                  <th className="px-3 py-2 font-medium">Since</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-navy-100">
+                {active.map((s) => (
+                  <tr key={s.sessionId} className="hover:bg-navy-50">
+                    <td className="px-3 py-2 font-medium text-navy-900">{s.username}</td>
+                    <td className="px-3 py-2 text-navy-500">{s.class || '—'}</td>
+                    <td className="px-3 py-2 text-navy-500">{s.tty || s.sessionType || '—'}</td>
+                    <td className="px-3 py-2">
+                      <Badge variant={s.remote ? 'info' : 'neutral'}>{originLabel(s)}</Badge>
+                    </td>
+                    <td className="px-3 py-2 text-navy-500">{relativeTime(s.timestamp)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+
+      {!data.live && (
+        <Card title="Recent activity" subtitle="Login/logout events, most recent first">
+          {recent.length === 0 ? (
+            <p className="text-sm text-navy-500">No recent activity.</p>
+          ) : (
+            <div className="space-y-1">
+              {recent.map((e, i) => (
+                <div key={i} className="flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-navy-50">
+                  <span className="w-32 shrink-0 text-navy-400">{relativeTime(e.timestamp)}</span>
+                  <span className={`w-14 shrink-0 font-medium ${LOGIN_EVENT_COLORS[e.eventType] ?? 'text-navy-600'}`}>{e.eventType}</span>
+                  <span className="font-medium text-navy-900">{e.username}</span>
+                  <span className="text-navy-500">{e.tty || e.sessionType || ''}</span>
+                  <span className="text-navy-400">({originLabel(e)})</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      )}
+
+      <Card title="Recent failed login attempts" subtitle="Most recent first">
+        {failed.length === 0 ? (
+          <p className="text-sm text-navy-500">No failed login attempts recorded.</p>
+        ) : (
+          <div className="space-y-1">
+            {failed.map((f, i) => (
+              <div key={i} className="flex flex-wrap items-center gap-2 rounded-md px-2 py-1.5 text-xs hover:bg-rose-50">
+                <span className="w-32 shrink-0 text-navy-400">{relativeTime(f.timestamp)}</span>
+                <span className="font-medium text-navy-900">{f.username}</span>
+                <span className="font-mono text-navy-600">{f.sourceIp || f.remoteHost || 'unknown source'}</span>
+                {f.resolvedHostname && f.resolvedHostname !== f.remoteHost && f.resolvedHostname !== f.sourceIp && (
+                  <span className="text-navy-400">({f.resolvedHostname})</span>
+                )}
+                <span className="text-rose-700">{f.reason}</span>
+                {f.service && <span className="text-navy-400">via {f.service}</span>}
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }

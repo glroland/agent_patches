@@ -138,6 +138,24 @@ export async function getAgentNetworkConnections(req, res, next) {
   }
 }
 
+// GET /api/agents/:id/interactive-logins — the Logins tab: currently active
+// login sessions, recent login/logout activity, and recent failed login
+// attempts, as reported by the agent's GET /interactive-logins endpoint.
+export async function getAgentInteractiveLogins(req, res, next) {
+  try {
+    const logins = await fleet.getAgentInteractiveLogins(req.params.id);
+    if (logins === undefined) {
+      return res.status(404).json({ error: 'not_found', message: `No agent with id "${req.params.id}"` });
+    }
+    if (logins === null) {
+      return res.status(502).json({ error: 'agent_unreachable', message: 'agent did not respond to GET /interactive-logins' });
+    }
+    res.json(logins);
+  } catch (err) {
+    next(err);
+  }
+}
+
 // GET /api/agents/:id/card — the A2A agent card served by the agent at
 // /.well-known/agent-card.json, passed through to the UI.
 export async function getAgentCard(req, res, next) {

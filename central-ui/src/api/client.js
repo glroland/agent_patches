@@ -84,6 +84,13 @@ export function fetchAgentNetworkConnections(id) {
   return getJSON(`/agents/${id}/network-connections`);
 }
 
+// A single agent's currently active login sessions, recent login/logout
+// activity, and recent failed login attempts, as tracked by the agent's
+// background login monitors.
+export function fetchAgentInteractiveLogins(id) {
+  return getJSON(`/agents/${id}/interactive-logins`);
+}
+
 // A single agent's enabled responsibilities with schedule, last-run state, and
 // next scheduled run time.
 export function fetchAgentResponsibilities(id) {
