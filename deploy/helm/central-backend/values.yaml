@@ -60,10 +60,13 @@ persistence:
   storageClassName: ""
   size: 1Gi
 
-# HAProxy route timeout — must be >= AGENT_MESSAGE_TIMEOUT_MS.
-# Covers the full agent tool-use loop including waiting for operator approval.
+# HAProxy route timeout. Fleet chat (POST /api/chat/central) can call the
+# intelligence endpoint (INTELLIGENCE_TIMEOUT_MS) and then forward to an
+# agent (AGENT_MESSAGE_TIMEOUT_MS) within the same request, so this must
+# cover their worst-case sum with headroom, not just AGENT_MESSAGE_TIMEOUT_MS
+# alone.
 route:
-  timeout: "300s"
+  timeout: "25m"
 
 # OTel resource service.name for this component. The collector endpoint and
 # other OTel export settings are centralized at the root chart's
@@ -90,10 +93,11 @@ env:
   AGENT_MESSAGE_TIMEOUT_MS: "180000"
   LOG_LEVEL: "info"
   # Timeout (ms) for calls to the intelligence endpoint (fleet chat, daily
-  # briefing, periodic analysis). Default 90000 — keep it well under
-  # route.timeout above, even after AGENT_MESSAGE_TIMEOUT_MS in the worst
-  # case (chat routes to an agent after the intelligence call).
-  # INTELLIGENCE_TIMEOUT_MS: "90000"
+  # briefing, periodic analysis). Default 1200000 (20m), matching the
+  # llm-gateway request timeout these calls flow through — keep route.timeout
+  # well above this plus AGENT_MESSAGE_TIMEOUT_MS in the worst case
+  # (chat routes to an agent after the intelligence call).
+  # INTELLIGENCE_TIMEOUT_MS: "1200000"
 
 # OpenShift OAuth integration.
 # The OAuthClient resource must be created separately (it is cluster-scoped).

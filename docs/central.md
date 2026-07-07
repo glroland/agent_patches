@@ -31,7 +31,7 @@ All configuration is via environment variables. There is no config file.
 | `INTELLIGENCE_API_KEY` | `none` | API key for the intelligence endpoint |
 | `INTELLIGENCE_MODEL` | `gpt-4o` | Model name |
 | `INTELLIGENCE_INTERVAL_MINUTES` | `30` | Re-analysis interval. `0` = run once on startup only. |
-| `INTELLIGENCE_TIMEOUT_MS` | `90000` | Timeout for intelligence API calls |
+| `INTELLIGENCE_TIMEOUT_MS` | `1200000` (20m) | Timeout for intelligence API calls |
 | `LOG_LEVEL` | `info` | Logging verbosity |
 
 ### Inventory

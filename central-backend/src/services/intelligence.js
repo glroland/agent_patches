@@ -15,6 +15,10 @@ import { loadLatest, loadHistory, persist } from './intelligenceStore.js';
 let _client = null;
 let _timer = null;
 let _running = false;
+// Tracks whether we've ever produced a report (this run or restored from
+// disk). Drives the initial-load retry loop below — once a report exists,
+// a failed scheduled run just waits for the next interval tick instead.
+let _hasReport = false;
 
 // ---------------------------------------------------------------------------
 // Fleet serialisation — compact, LLM-readable summary of fleet state.
@@ -328,14 +332,16 @@ Rules:
 - For approvalInsights: cite specific counts, risk levels, and operator reason text where available. Do not fabricate patterns.
 - When a "Prior Fleet Intelligence Analyses" section is present, use it to detect trends across cycles: recurring unactioned recommendations should be escalated in priority; improving or worsening metrics should be noted in the headline; patterns only visible across multiple observations (e.g. steady disk growth, persistent offline agent) should be surfaced explicitly.`;
 
+// Returns true if a fresh report was produced, false otherwise (already
+// running, fleet data unavailable, or the LLM call/parse failed).
 async function analyse() {
   if (_running) {
     logger.info('intelligence: analysis already in progress, skipping');
-    return;
+    return false;
   }
   _running = true;
   try {
-    await doAnalyse();
+    return await doAnalyse();
   } finally {
     _running = false;
   }
@@ -345,7 +351,7 @@ async function doAnalyse() {
   const agents = getFleet();
   if (!agents) {
     logger.info('intelligence: fleet data not yet available, skipping');
-    return;
+    return false;
   }
 
   logger.info(`intelligence: analysing fleet (${agents.length} agents)`);
@@ -391,17 +397,17 @@ async function doAnalyse() {
 
     if (response?.error) {
       logger.error(`intelligence: LLM error body`, { error: response.error });
-      return;
+      return false;
     }
 
     raw = response?.choices?.[0]?.message?.content?.trim() ?? '';
     if (!raw) {
       logger.error(`intelligence: empty LLM response`);
-      return;
+      return false;
     }
   } catch (err) {
     logger.error(`intelligence: API call failed: ${err.message}`);
-    return;
+    return false;
   }
 
   let parsed;
@@ -410,7 +416,7 @@ async function doAnalyse() {
     parsed = JSON.parse(cleaned);
   } catch (err) {
     logger.error(`intelligence: failed to parse response: ${err.message}\n${raw}`);
-    return;
+    return false;
   }
 
   const report = {
@@ -424,11 +430,13 @@ async function doAnalyse() {
 
   setReport(report);
   persist(report);
+  _hasReport = true;
   logger.info(
     `intelligence: report ready — ${report.recommendations.length} recommendation(s), ` +
     `${report.resourceOptimization.length} resource optimization(s), ` +
     `${report.approvalInsights.length} approval insight(s)`
   );
+  return true;
 }
 
 // Kicks off an immediate analysis in the background (operator-triggered).
@@ -445,6 +453,26 @@ export function refresh() {
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
+
+// Initial run and retry backoff. A failed *first* analysis (e.g. the
+// upstream model timed out) must not leave the UI stuck on "Analysing your
+// fleet…" until the next full interval tick (which, with intervalMinutes=0,
+// may never come) — so we keep retrying on a short, capped backoff until a
+// report exists, independent of the main setInterval loop below.
+const INITIAL_RUN_DELAY_MS = 5 * 60 * 1000;
+const INITIAL_RETRY_DELAY_MS = 60 * 1000;
+const MAX_INITIAL_RETRY_DELAY_MS = 5 * 60 * 1000;
+let _initialRetryTimer = null;
+
+function scheduleInitialRun(delayMs, nextRetryMs) {
+  _initialRetryTimer = setTimeout(async () => {
+    const ok = await analyse();
+    if (!ok && !_hasReport) {
+      logger.warn(`intelligence: initial analysis failed, retrying in ${Math.round(nextRetryMs / 1000)}s`);
+      scheduleInitialRun(nextRetryMs, Math.min(nextRetryMs * 2, MAX_INITIAL_RETRY_DELAY_MS));
+    }
+  }, delayMs);
+}
 
 export function start() {
   if (!config.intelligence.baseUrl) {
@@ -463,11 +491,13 @@ export function start() {
   const saved = loadLatest();
   if (saved) {
     setReport(saved);
+    _hasReport = true;
     logger.info(`intelligence: restored latest report from disk (generated ${saved.generatedAt})`);
   }
 
   // First run deferred 5 min so the initial poll cycle and gateway can settle.
-  setTimeout(analyse, 5 * 60 * 1000);
+  // Retries on failure (see scheduleInitialRun) until a report exists.
+  scheduleInitialRun(INITIAL_RUN_DELAY_MS, INITIAL_RETRY_DELAY_MS);
 
   const intervalMs = config.intelligence.intervalMinutes * 60 * 1000;
   if (intervalMs > 0) {
@@ -476,7 +506,7 @@ export function start() {
       `intelligence: started — first run in 5m, then every ${config.intelligence.intervalMinutes}m (model: ${config.intelligence.model})`
     );
   } else {
-    logger.info(`intelligence: started — single run in 5m (model: ${config.intelligence.model})`);
+    logger.info(`intelligence: started — single run in 5m, retrying on failure until it succeeds (model: ${config.intelligence.model})`);
   }
 }
 
@@ -484,5 +514,9 @@ export function stop() {
   if (_timer) {
     clearInterval(_timer);
     _timer = null;
+  }
+  if (_initialRetryTimer) {
+    clearTimeout(_initialRetryTimer);
+    _initialRetryTimer = null;
   }
 }

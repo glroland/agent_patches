@@ -53,8 +53,10 @@ export const config = {
     // Timeout (ms) for calls to the intelligence endpoint. Without this, a
     // slow/unresponsive local model can hang a request until an upstream
     // proxy kills it (e.g. the dashboard chat returning a bare 504) instead
-    // of central-backend failing fast with a clear message.
-    timeoutMs: Number(process.env.INTELLIGENCE_TIMEOUT_MS) || 90000,
+    // of central-backend failing fast with a clear message. 20 minutes to
+    // match the llm-gateway request timeout (GATEWAY_REQUEST_TIMEOUT) these
+    // calls typically flow through.
+    timeoutMs: Number(process.env.INTELLIGENCE_TIMEOUT_MS) || 20 * 60 * 1000,
     // Directory for persistent intelligence storage (PVC mount). Empty = disabled.
     dataDir: process.env.INTELLIGENCE_DATA_DIR || '',
     // How many prior reports to inject as historical context into each analysis.

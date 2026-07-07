@@ -7,8 +7,10 @@ import { refreshIntelligence } from '../api/client';
 import { relativeTime } from '../utils/time';
 
 // If no fresh report arrives over the WS within this window, assume the
-// analysis failed server-side and re-enable the button.
-const REFRESH_FALLBACK_MS = 5 * 60 * 1000;
+// analysis failed server-side and re-enable the button. Kept just above the
+// backend's INTELLIGENCE_TIMEOUT_MS (20 minutes) so a legitimately slow model
+// isn't reported as failed while it's still within its own timeout budget.
+const REFRESH_FALLBACK_MS = 21 * 60 * 1000;
 
 const PRIORITY_STYLES = {
   high:   { badge: 'bg-rose-100 text-rose-700',  border: 'border-rose-200'  },
@@ -22,6 +24,24 @@ const CATEGORY_LABEL = {
   feature:       'New Feature',
   configuration: 'Config',
 };
+
+function RefreshButton({ refreshing, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={refreshing}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-semibold text-navy-700 hover:border-navy-400 hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {refreshing && (
+        <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+        </svg>
+      )}
+      {refreshing ? 'Re-analysing…' : 'Re-analyse now'}
+    </button>
+  );
+}
 
 export default function FleetIntelligence() {
   const { intelligence } = useFleetSocket();
@@ -77,9 +97,15 @@ export default function FleetIntelligence() {
   if (intelligence === null) {
     return (
       <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold text-black">Fleet Intelligence</h1>
-          <p className="mt-1 text-sm text-navy-500">AI-generated analysis of your fleet's health, patterns, and recommended next actions.</p>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-semibold text-black">Fleet Intelligence</h1>
+            <p className="mt-1 text-sm text-navy-500">AI-generated analysis of your fleet's health, patterns, and recommended next actions.</p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <RefreshButton refreshing={refreshing} onClick={handleRefresh} />
+            {refreshError && <p className="text-xs text-rose-600">{refreshError}</p>}
+          </div>
         </div>
         <AsyncState loading loadingLabel="Analysing your fleet…" />
       </div>
@@ -105,19 +131,7 @@ export default function FleetIntelligence() {
           <p className="mt-1 text-sm text-navy-500">AI-generated analysis of your fleet's health, patterns, and recommended next actions.</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-2">
-          <button
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-semibold text-navy-700 hover:border-navy-400 hover:text-navy-900 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {refreshing && (
-              <svg className="h-3.5 w-3.5 animate-spin" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
-              </svg>
-            )}
-            {refreshing ? 'Re-analysing…' : 'Re-analyse now'}
-          </button>
+          <RefreshButton refreshing={refreshing} onClick={handleRefresh} />
           <div className="text-right">
             <p className="text-xs text-navy-500">Last analysed {relativeTime(generatedAt)}</p>
             {agentCount && <p className="mt-0.5 text-xs text-navy-400">{agentCount} agent{agentCount !== 1 ? 's' : ''} included</p>}
