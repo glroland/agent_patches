@@ -35,3 +35,21 @@ export async function getPending() {
   }
   return resp.json();
 }
+
+// Resets the gateway's in-memory token/request stats to zero and flushes that
+// empty state to its persisted data file. Returns null when the gateway
+// isn't configured (stats URL unset) so callers can treat that as a no-op.
+export async function resetStats() {
+  if (!config.gateway.statsUrl) {
+    return null;
+  }
+  const resp = await fetch(`${config.gateway.statsUrl}/stats`, {
+    method: 'DELETE',
+    headers: gatewayHeaders(),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!resp.ok) {
+    throw new Error(`gateway reset responded ${resp.status}`);
+  }
+  return resp.json();
+}

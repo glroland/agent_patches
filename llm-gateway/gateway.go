@@ -175,6 +175,11 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if r.Method == http.MethodDelete && r.URL.Path == "/stats" {
+		g.resetStats(w)
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "gateway: read request body: "+err.Error(), http.StatusBadRequest)
@@ -438,6 +443,23 @@ func (g *Gateway) forward(p *pending) {
 		"body_bytes", capBuf.Len(),
 		"body", truncateForLog(capBuf.Bytes(), 4096),
 	)
+}
+
+// resetStats zeroes the tracker's in-memory statistics and, when persistence
+// is enabled, immediately overwrites the on-disk data file with the now-empty
+// state so a subsequent restart does not reload the cleared counters.
+func (g *Gateway) resetStats(w http.ResponseWriter) {
+	g.tracker.Reset()
+	if g.dataFile != "" {
+		if err := g.tracker.Save(g.dataFile); err != nil {
+			slog.Error("gateway: failed to persist stats reset", "error", err, "path", g.dataFile)
+			http.Error(w, "gateway: failed to persist reset: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	slog.Info("gateway: stats reset to zero")
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{"status": "reset"})
 }
 
 func (g *Gateway) health(w http.ResponseWriter) {

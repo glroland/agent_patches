@@ -394,6 +394,41 @@ func (t *Tracker) statsHandler(g *Gateway) http.HandlerFunc {
 	}
 }
 
+// Reset zeroes out all accumulated token/request statistics for every known
+// endpoint and responsibility. Existing map entries (and their live `pending`
+// counters) are left in place rather than deleted, so requests already queued
+// or in flight when Reset is called are still decremented correctly by
+// DecrPending afterwards.
+func (t *Tracker) Reset() {
+	t.mu.RLock()
+	hosts := make([]string, 0, len(t.endpoints))
+	for h := range t.endpoints {
+		hosts = append(hosts, h)
+	}
+	respNames := make([]string, 0, len(t.responsibilities))
+	for n := range t.responsibilities {
+		respNames = append(respNames, n)
+	}
+	t.mu.RUnlock()
+
+	for _, h := range hosts {
+		es := t.endpoints[h] // safe: entries are never deleted
+		es.mu.Lock()
+		es.events = nil
+		es.total = totalCounters{}
+		es.lastSeen = time.Time{}
+		es.mu.Unlock()
+	}
+	for _, n := range respNames {
+		rs := t.responsibilities[n] // safe: entries are never deleted
+		rs.mu.Lock()
+		rs.events = nil
+		rs.total = totalCounters{}
+		rs.lastSeen = time.Time{}
+		rs.mu.Unlock()
+	}
+}
+
 // extractTokens parses usage counters from a buffered response body.
 // It handles both OpenAI-style JSON and text/event-stream (SSE) formats,
 // including Ollama's native streaming format.

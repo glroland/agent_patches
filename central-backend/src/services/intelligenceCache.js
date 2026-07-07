@@ -19,3 +19,10 @@ export function subscribe(fn) {
   _listeners.add(fn);
   return () => _listeners.delete(fn);
 }
+
+export function clear() {
+  _report = null;
+  for (const fn of _listeners) {
+    fn(null);
+  }
+}

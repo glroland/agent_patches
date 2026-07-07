@@ -2,7 +2,7 @@
 // Writes to INTELLIGENCE_DATA_DIR (a PVC mount in production).
 // When dataDir is unset the module is a no-op — in-memory only behaviour is preserved.
 
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
@@ -37,6 +37,17 @@ export function persist(report) {
     appendFileSync(historyPath(), JSON.stringify(report) + '\n', 'utf8');
   } catch (err) {
     logger.warn(`intelligenceStore: failed to persist report: ${err.message}`);
+  }
+}
+
+// Deletes latest.json and history.jsonl so no persisted report survives.
+export function clearAll() {
+  if (!config.intelligence.dataDir) return;
+  try {
+    rmSync(latestPath(), { force: true });
+    rmSync(historyPath(), { force: true });
+  } catch (err) {
+    logger.warn(`intelligenceStore: failed to clear persisted reports: ${err.message}`);
   }
 }
 

@@ -29,3 +29,9 @@ export function subscribe(fn) {
   _listeners.add(fn);
   return () => _listeners.delete(fn);
 }
+
+export function clear() {
+  _briefing = null;
+  _generatedAt = 0;
+  for (const fn of _listeners) fn(null);
+}

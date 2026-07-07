@@ -73,13 +73,16 @@ function MemoryTab() {
 
       <Card
         title="Fleet-wide memory"
-        subtitle="Clear cached timeline, skill state, and attrs on every enrolled agent at once"
+        subtitle="Clear cached timeline, skill state, and attrs on every enrolled agent, then reset the llm gateway and central's agent-derived caches"
       >
         <div className="flex items-center justify-between rounded-lg border border-navy-200 p-4">
           <div>
             <p className="text-sm font-medium text-navy-900">Clear all agent memory</p>
             <p className="mt-0.5 text-xs text-navy-500">
-              Removes timeline snapshots, skill state, and attrs on every agent. Useful after a code update that changes output formats.
+              Removes timeline snapshots, skill state, and attrs on every agent; resets the llm gateway's token/request
+              stats (in-memory and its persisted data file) back to zero; and clears central's fleet intelligence
+              reports and operator briefing cache. Chat history is not affected. Useful after a code update that
+              changes output formats.
             </p>
           </div>
           <ConfirmButton label="Clear all" onConfirm={clearAllAgentsMemory} />
