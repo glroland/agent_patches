@@ -95,16 +95,17 @@ const defaultResponsibilitySystemPrompt = `You are agent_patches, an AI system a
 
 // Settings is the top-level configuration object loaded from the YAML file.
 type Settings struct {
-	Agent        AgentSettings        `yaml:"agent"`
-	Logging      LoggingSettings      `yaml:"logging"`
-	Tasks        TasksSettings        `yaml:"tasks"`
-	Storage      StorageSettings      `yaml:"storage"`
-	Server       ServerSettings       `yaml:"server"`
-	Security     SecuritySettings     `yaml:"security"`
-	Memory       MemorySettings       `yaml:"memory"`
-	Loop         LoopSettings         `yaml:"loop"`
-	LoginMonitor LoginMonitorSettings `yaml:"login_monitor"`
-	Status       StatusSettings       `yaml:"status"`
+	Agent          AgentSettings          `yaml:"agent"`
+	Logging        LoggingSettings        `yaml:"logging"`
+	Tasks          TasksSettings          `yaml:"tasks"`
+	Storage        StorageSettings        `yaml:"storage"`
+	Server         ServerSettings         `yaml:"server"`
+	Security       SecuritySettings       `yaml:"security"`
+	Memory         MemorySettings         `yaml:"memory"`
+	Loop           LoopSettings           `yaml:"loop"`
+	LoginMonitor   LoginMonitorSettings   `yaml:"login_monitor"`
+	NetworkMonitor NetworkMonitorSettings `yaml:"network_monitor"`
+	Status         StatusSettings         `yaml:"status"`
 
 	// Responsibilities is a dynamic list of recurring duties the agent should
 	// carry out, each on its own schedule.
@@ -146,6 +147,17 @@ type LoginMonitorSettings struct {
 	// FailedLoginThreshold is the number of consecutive failed login attempts
 	// from the same source IP that triggers a critical alert. Defaults to 3.
 	FailedLoginThreshold int `yaml:"failed_login_threshold"`
+}
+
+// NetworkMonitorSettings controls the background network connection monitor.
+type NetworkMonitorSettings struct {
+	// PollInterval is a Go duration string (e.g. "10s") for how often active
+	// connections are sampled. Defaults to "10s" when unset.
+	PollInterval string `yaml:"poll_interval"`
+
+	// HistoryLimit caps the number of connection open/close/existing events
+	// retained in history. Defaults to 2000 when unset or non-positive.
+	HistoryLimit int `yaml:"history_limit"`
 }
 
 // LoopSettings controls the generic background wake-up loop.

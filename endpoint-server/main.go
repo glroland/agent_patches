@@ -22,6 +22,7 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/approvalapi"
 	"agent_patches/endpoint-server/buildinfo"
+	"agent_patches/endpoint-server/connmonitor"
 	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/logapi"
 	"agent_patches/endpoint-server/loginmonitor"
@@ -40,6 +41,7 @@ import (
 	"agent_patches/endpoint-server/skills/check_drives"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches"
 	"agent_patches/endpoint-server/skills/check_interactive_logins"
+	"agent_patches/endpoint-server/skills/check_network_connections"
 	"agent_patches/endpoint-server/skills/check_nfs"
 	"agent_patches/endpoint-server/skills/check_reboot_required"
 	"agent_patches/endpoint-server/skills/check_security_posture"
@@ -189,6 +191,13 @@ func runServer(ctx context.Context) {
 	}
 	registry.Register(loginSessionsTool)
 
+	networkConnectionsTool, err := check_network_connections.NewCheckNetworkConnectionsTool(mem)
+	if err != nil {
+		slog.Error("failed to create check_network_connections tool", "error", err)
+		return
+	}
+	registry.Register(networkConnectionsTool)
+
 	readMemoryTool, err := read_agent_memory.NewReadMemoryTool(mem)
 	if err != nil {
 		slog.Error("failed to create read_agent_memory tool", "error", err)
@@ -321,6 +330,7 @@ func runServer(ctx context.Context) {
 
 	loginMon := loginmonitor.New(mem, notify, cfg.LoginMonitor)
 	failedLoginMon := loginmonitor.NewFailedMonitor(mem, notify, cfg.LoginMonitor)
+	connMon := connmonitor.New(mem, cfg.NetworkMonitor)
 
 	lp := loop.New(cfg, registry, notify, mem, incidentStore)
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
@@ -376,6 +386,7 @@ func runServer(ctx context.Context) {
 
 	loginMon.Start(ctx)
 	failedLoginMon.Start(ctx)
+	connMon.Start(ctx)
 	request_approval.StartExpirySweeper(ctx, mem, notify)
 	lp.Start(ctx)
 
