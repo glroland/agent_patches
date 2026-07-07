@@ -20,8 +20,10 @@ import (
 	"strings"
 	"time"
 
+	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 const (
@@ -100,6 +102,13 @@ type ConnEvent struct {
 	PID        string    `json:"pid,omitempty"`
 	Process    string    `json:"process,omitempty"`
 	Timestamp  time.Time `json:"timestamp"`
+
+	// Unusual and UnusualReason are set by checkAgainstBaseline when this
+	// connection deviates from the host's prior connection history (see
+	// baseline.go). Reason is one of "new_inbound_port", "new_process",
+	// "new_remote_host".
+	Unusual       bool   `json:"unusual,omitempty"`
+	UnusualReason string `json:"unusual_reason,omitempty"`
 }
 
 // connEventKey rebuilds the same identity used by Conn.key() from a history
@@ -128,24 +137,27 @@ func newEvent(c Conn, t EventType, now time.Time) ConnEvent {
 // history. Call Start to launch the background goroutine, or PollOnce to
 // drive it deterministically (e.g. from a test).
 type Monitor struct {
-	mem    *memory.Store
-	gather func(ctx context.Context) ([]Conn, error)
+	mem       *memory.Store
+	notify    *notifier.Notifier
+	incidents *incidents.Store
+	gather    func(ctx context.Context) ([]Conn, error)
 
 	pollInterval time.Duration
 	historyLimit int
+	cfg          config.NetworkMonitorSettings
 
 	prev         map[string]Conn
 	bootstrapped bool
 }
 
 // New creates a Monitor using the platform-specific gatherer.
-func New(mem *memory.Store, cfg config.NetworkMonitorSettings) *Monitor {
-	return NewWithGatherer(mem, cfg, snapshot)
+func New(mem *memory.Store, notify *notifier.Notifier, incidentStore *incidents.Store, cfg config.NetworkMonitorSettings) *Monitor {
+	return NewWithGatherer(mem, notify, incidentStore, cfg, snapshot)
 }
 
 // NewWithGatherer creates a Monitor with an injected gather function.
 // Exported for tests.
-func NewWithGatherer(mem *memory.Store, cfg config.NetworkMonitorSettings, gather func(ctx context.Context) ([]Conn, error)) *Monitor {
+func NewWithGatherer(mem *memory.Store, notify *notifier.Notifier, incidentStore *incidents.Store, cfg config.NetworkMonitorSettings, gather func(ctx context.Context) ([]Conn, error)) *Monitor {
 	pollInterval := defaultPollInterval
 	if d, err := time.ParseDuration(cfg.PollInterval); err == nil && d > 0 {
 		pollInterval = d
@@ -155,7 +167,8 @@ func NewWithGatherer(mem *memory.Store, cfg config.NetworkMonitorSettings, gathe
 		historyLimit = defaultHistoryLimit
 	}
 	return &Monitor{
-		mem: mem, gather: gather, pollInterval: pollInterval, historyLimit: historyLimit,
+		mem: mem, notify: notify, incidents: incidentStore, gather: gather,
+		pollInterval: pollInterval, historyLimit: historyLimit, cfg: cfg,
 		prev: make(map[string]Conn),
 	}
 }
@@ -239,6 +252,12 @@ func (m *Monitor) PollOnce(ctx context.Context) ([]ConnEvent, error) {
 		m.bootstrapped = true
 	} else {
 		opened, closed := Diff(m.prev, cur, now)
+		if len(opened) > 0 {
+			prior, _ := ReadHistory(m.mem)
+			for i := range opened {
+				m.checkAgainstBaseline(&opened[i], prior)
+			}
+		}
 		events = append(opened, closed...)
 	}
 

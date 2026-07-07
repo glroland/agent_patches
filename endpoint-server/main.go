@@ -332,7 +332,7 @@ func runServer(ctx context.Context) {
 
 	loginMon := loginmonitor.New(mem, notify, incidentStore, cfg.LoginMonitor)
 	failedLoginMon := loginmonitor.NewFailedMonitor(mem, notify, cfg.LoginMonitor)
-	connMon := connmonitor.New(mem, cfg.NetworkMonitor)
+	connMon := connmonitor.New(mem, notify, incidentStore, cfg.NetworkMonitor)
 
 	lp := loop.New(cfg, registry, notify, mem, incidentStore)
 	statusSvc := status.New(hostInfo, mem, lp, cfg)

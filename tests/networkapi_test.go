@@ -8,9 +8,11 @@ import (
 	"testing"
 
 	"agent_patches/endpoint-server/connmonitor"
+	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/networkapi"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 func TestNetworkAPI_Handler_ReturnsActiveAndHistory(t *testing.T) {
@@ -21,7 +23,7 @@ func TestNetworkAPI_Handler_ReturnsActiveAndHistory(t *testing.T) {
 			{Proto: "tcp", LocalAddr: "192.168.1.5", LocalPort: 22, RemoteAddr: "192.168.1.10", RemotePort: 54321, State: "ESTABLISHED", Process: "sshd"},
 		}, nil
 	}
-	mon := connmonitor.NewWithGatherer(mem, config.NetworkMonitorSettings{}, gather)
+	mon := connmonitor.NewWithGatherer(mem, notifier.New(mem), incidents.New(mem), config.NetworkMonitorSettings{}, gather)
 	if _, err := mon.PollOnce(context.Background()); err != nil {
 		t.Fatalf("seed PollOnce: %v", err)
 	}

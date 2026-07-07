@@ -568,6 +568,16 @@ const DIRECTION_BADGE = {
   outbound: 'neutral',
 };
 
+const UNUSUAL_CONN_REASON_LABELS = {
+  new_inbound_port: 'this local port has never accepted inbound traffic before',
+  new_process: 'this process has never made a network connection before',
+  new_remote_host: 'this remote host has never been seen before',
+};
+
+function unusualConnReasonLabel(reason) {
+  return UNUSUAL_CONN_REASON_LABELS[reason] || "deviates from this host's connection history";
+}
+
 function NetworkConnectionsTab({ agentId }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -662,6 +672,11 @@ function NetworkConnectionsTab({ agentId }) {
                   </span>
                   {(e.process || e.pid) && (
                     <span className="text-navy-400">({e.process || `pid ${e.pid}`})</span>
+                  )}
+                  {e.unusual && (
+                    <span title={unusualConnReasonLabel(e.unusualReason)}>
+                      <Badge variant="warning">unusual</Badge>
+                    </span>
                   )}
                 </div>
               ))}

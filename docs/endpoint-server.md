@@ -208,6 +208,15 @@ Two background monitors start alongside the loop:
 
 Only critical-tier hits (`new_user`/`new_source` from a remote source) send email; all hits are reported to the incident ledger so recurrences are deduplicated and surfaced to the agent's next responsibility run via `incidents.OpenSummary()`. Set `login_monitor.disable_unusual_login_baseline: true` to turn this off.
 
+## Network Connection Monitoring
+
+`connmonitor` polls active TCP/UDP connections (default every `network_monitor.poll_interval`, 10s) and records open/close history, the same pattern `loginmonitor` uses for logins. It also compares every newly-opened connection against this host's own `connection_history` — no configuration required. A connection is flagged `unusual` (surfaced in `connection_history`/`GET /network-connections`, `skillstate`/`GET /status`, and the incident ledger) when, in priority order:
+1. **`new_inbound_port`** — this (protocol, local port) has never before accepted inbound traffic on this host. Critical.
+2. **`new_process`** — the owning process (when resolvable) has never before made a network connection in recorded history. Critical.
+3. **`new_remote_host`** — an outbound connection to a remote address never before seen in this host's history. Warning (IP churn from CDNs/load balancers makes this a noisier signal than the identity-based checks above).
+
+Only critical-tier hits (`new_inbound_port`/`new_process`) send email; all hits are reported to the incident ledger. Set `network_monitor.disable_unusual_connection_baseline: true` to turn this off.
+
 Alerts are written via `notifier.Notify` to the `notifications` memory domain.
 
 ## Configuration
@@ -242,6 +251,11 @@ login_monitor:
   failed_login_threshold: 3
   baseline_min_events: 5
   disable_unusual_login_baseline: false
+
+network_monitor:
+  poll_interval: "10s"
+  history_limit: 2000
+  disable_unusual_connection_baseline: false
 
 responsibilities:
   - name: daily-patch-check

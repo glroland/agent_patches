@@ -167,6 +167,11 @@ type NetworkMonitorSettings struct {
 	// HistoryLimit caps the number of connection open/close/existing events
 	// retained in history. Defaults to 2000 when unset or non-positive.
 	HistoryLimit int `yaml:"history_limit"`
+
+	// DisableUnusualConnectionBaseline turns off the history-based anomaly
+	// check (new inbound port / new process / new remote host detection).
+	// Enabled by default.
+	DisableUnusualConnectionBaseline bool `yaml:"disable_unusual_connection_baseline"`
 }
 
 // LoopSettings controls the generic background wake-up loop.

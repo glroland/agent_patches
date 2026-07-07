@@ -6,8 +6,10 @@ import (
 	"time"
 
 	"agent_patches/endpoint-server/connmonitor"
+	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 func inboundConn() connmonitor.Conn {
@@ -126,7 +128,7 @@ func TestMonitor_PollOnce_BootstrapsThenDiffs(t *testing.T) {
 		return conns, nil
 	}
 
-	mon := connmonitor.NewWithGatherer(mem, config.NetworkMonitorSettings{}, gather)
+	mon := connmonitor.NewWithGatherer(mem, notifier.New(mem), incidents.New(mem), config.NetworkMonitorSettings{}, gather)
 	ctx := context.Background()
 
 	events, err := mon.PollOnce(ctx)
@@ -184,7 +186,7 @@ func TestMonitor_HistoryLimit_Caps(t *testing.T) {
 		return []connmonitor.Conn{c}, nil
 	}
 
-	mon := connmonitor.NewWithGatherer(mem, config.NetworkMonitorSettings{HistoryLimit: 3}, gather)
+	mon := connmonitor.NewWithGatherer(mem, notifier.New(mem), incidents.New(mem), config.NetworkMonitorSettings{HistoryLimit: 3}, gather)
 	ctx := context.Background()
 	for i := 0; i < 10; i++ {
 		if _, err := mon.PollOnce(ctx); err != nil {

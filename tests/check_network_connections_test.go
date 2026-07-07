@@ -7,9 +7,11 @@ import (
 	"testing"
 
 	"agent_patches/endpoint-server/connmonitor"
+	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/check_network_connections"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 func TestCheckNetworkConnections_ReportsActiveAndHistory(t *testing.T) {
@@ -21,7 +23,7 @@ func TestCheckNetworkConnections_ReportsActiveAndHistory(t *testing.T) {
 			{Proto: "tcp", LocalAddr: "192.168.1.5", LocalPort: 51000, RemoteAddr: "93.184.216.34", RemotePort: 443, State: "ESTABLISHED", Process: "curl"},
 		}, nil
 	}
-	mon := connmonitor.NewWithGatherer(mem, config.NetworkMonitorSettings{}, gather)
+	mon := connmonitor.NewWithGatherer(mem, notifier.New(mem), incidents.New(mem), config.NetworkMonitorSettings{}, gather)
 	if _, err := mon.PollOnce(context.Background()); err != nil {
 		t.Fatalf("seed PollOnce: %v", err)
 	}
@@ -56,7 +58,7 @@ func TestCheckNetworkConnections_ReportsRecentCloseEvent(t *testing.T) {
 		call++
 		return c, nil
 	}
-	mon := connmonitor.NewWithGatherer(mem, config.NetworkMonitorSettings{}, gather)
+	mon := connmonitor.NewWithGatherer(mem, notifier.New(mem), incidents.New(mem), config.NetworkMonitorSettings{}, gather)
 	ctx := context.Background()
 	if _, err := mon.PollOnce(ctx); err != nil {
 		t.Fatalf("PollOnce 1: %v", err)
