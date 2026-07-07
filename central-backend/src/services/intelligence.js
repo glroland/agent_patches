@@ -485,6 +485,10 @@ export function start() {
     baseURL: config.intelligence.baseUrl,
     timeout: config.intelligence.timeoutMs,
     maxRetries: 0,
+    // Jump the llm-gateway priority queue (see gateway.go's X-Priority
+    // handling) so both scheduled and operator-triggered fleet analysis
+    // don't wait behind other background responsibility runs.
+    defaultHeaders: { 'X-Priority': 'interactive' },
   });
 
   // Restore the last persisted report so the UI has data immediately on restart.
