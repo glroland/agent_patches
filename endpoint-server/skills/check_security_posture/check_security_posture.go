@@ -271,5 +271,40 @@ func stateSummary(s Snapshot, d Diff, hasPrev bool) string {
 	if d.SudoersChanged {
 		changes++
 	}
-	return fmt.Sprintf("%s; %d posture change(s) since last check", base, changes)
+	return fmt.Sprintf("%s; %d posture change(s) since last check: %s", base, changes, summarizeChanges(d))
+}
+
+// maxSummaryItems caps how many items per change category are named in the
+// one-line skillstate summary before falling back to "+N more".
+const maxSummaryItems = 10
+
+// summarizeChanges renders a compact, single-line description of every
+// change category present in d, for use in the skillstate summary.
+func summarizeChanges(d Diff) string {
+	var parts []string
+	addPart := func(label string, items []string) {
+		if len(items) == 0 {
+			return
+		}
+		display := items
+		suffix := ""
+		if len(items) > maxSummaryItems {
+			display = items[:maxSummaryItems]
+			suffix = fmt.Sprintf(", +%d more", len(items)-maxSummaryItems)
+		}
+		parts = append(parts, fmt.Sprintf("%s: %s%s", label, strings.Join(display, ", "), suffix))
+	}
+	addPart("new ports", d.AddedPorts)
+	addPart("removed ports", d.RemovedPorts)
+	addPart("new users", d.AddedUsers)
+	addPart("removed users", d.RemovedUsers)
+	addPart("new admins", d.AddedAdmins)
+	addPart("removed admins", d.RemovedAdmins)
+	if d.SudoersChanged {
+		parts = append(parts, "sudoers changed")
+	}
+	addPart("authorized_keys changed for", d.ChangedAuthorizedKeys)
+	addPart("new setuid", d.AddedSetuid)
+	addPart("removed setuid", d.RemovedSetuid)
+	return strings.Join(parts, "; ")
 }
