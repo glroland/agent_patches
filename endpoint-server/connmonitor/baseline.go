@@ -49,6 +49,14 @@ func (m *Monitor) checkAgainstBaseline(ev *ConnEvent, prior []ConnEvent) {
 	var reason, fingerprint, title, detail string
 	var severity skillstate.Health
 	switch {
+	case ev.Direction == DirectionInbound && ev.LocalPort == m.cfg.OwnPort:
+		// The agent's own configured listening port. It never appears in
+		// history as an established connection until the first request
+		// arrives (listening sockets aren't recorded, see snapshot()), so
+		// without this exclusion the first ever inbound request would
+		// always look like a brand-new port.
+		return
+
 	case ev.Direction == DirectionInbound && !knownInboundPorts[fmt.Sprintf("%s:%d", ev.Proto, ev.LocalPort)]:
 		reason = "new_inbound_port"
 		fingerprint = fmt.Sprintf("unusual-conn-newport-%s-%d", ev.Proto, ev.LocalPort)

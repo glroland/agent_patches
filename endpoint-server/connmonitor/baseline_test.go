@@ -118,6 +118,20 @@ func TestCheckAgainstBaseline(t *testing.T) {
 	}
 }
 
+func TestCheckAgainstBaselineOwnPortExempt(t *testing.T) {
+	m := newTestMonitor(t, config.NetworkMonitorSettings{OwnPort: 9976})
+	ev := inbound("tcp", 9976, "192.168.1.184", "patches-endpoint-server")
+	m.checkAgainstBaseline(&ev, nil)
+
+	if ev.Unusual {
+		t.Fatalf("expected no anomaly for the agent's own listening port, got reason %q", ev.UnusualReason)
+	}
+	incs, _ := m.incidents.All()
+	if len(incs) != 0 {
+		t.Fatalf("expected no incidents for own-port traffic, got %+v", incs)
+	}
+}
+
 func TestCheckAgainstBaselineDisabled(t *testing.T) {
 	m := newTestMonitor(t, config.NetworkMonitorSettings{DisableUnusualConnectionBaseline: true})
 	ev := inbound("tcp", 22, "192.168.1.10", "sshd")

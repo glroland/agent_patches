@@ -182,6 +182,14 @@ type NetworkMonitorSettings struct {
 	// check (new inbound port / new process / new remote host detection).
 	// Enabled by default.
 	DisableUnusualConnectionBaseline bool `yaml:"disable_unusual_connection_baseline"`
+
+	// OwnPort is the port this agent's own HTTP server listens on (copied
+	// from Server.Port by Load). Inbound traffic to it is expected by
+	// definition — the listener never appears in connection history as an
+	// established connection until the first request arrives, so without
+	// this exclusion the agent's very first inbound request always fires a
+	// new_inbound_port false positive against itself.
+	OwnPort int `yaml:"-"`
 }
 
 // LoopSettings controls the generic background wake-up loop.
@@ -287,6 +295,7 @@ func Load() (*Settings, error) {
 	if s.Server.Port == 0 {
 		s.Server.Port = 8080
 	}
+	s.NetworkMonitor.OwnPort = s.Server.Port
 	if s.Security.Scheme == "" {
 		s.Security.Scheme = "none"
 	}
