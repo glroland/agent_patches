@@ -49,6 +49,7 @@ function serializeFleet(agents) {
   for (const agent of agents) {
     lines.push('', `### ${agent.hostname} (${agent.role || 'endpoint agent'})`);
     lines.push(`- OS: ${agent.os || agent.osType || 'unknown'}`);
+    if (agent.purpose) lines.push(`- Purpose: ${agent.purpose}`);
     lines.push(`- Status: ${agent.statusLabel}`);
     if (agent.currentTask) lines.push(`- Currently: ${agent.currentTask}`);
     if (agent.lastPoll) {
@@ -275,7 +276,7 @@ const SYSTEM_PROMPT = `You are the central intelligence layer for a fleet of AI 
 
 Your job is to analyse the current fleet state, token consumption, responsibility scheduling data, and the complete approval/rejection history, then produce actionable recommendations. Think like a senior sysadmin and an AI engineer simultaneously:
 
-1. Flag genuine health issues (offline agents, repeated failures, pending patches, resource concerns).
+1. Flag genuine health issues (offline agents, repeated failures, pending patches, resource concerns). Each agent entry may list a "Purpose" — weigh it before flagging: resource usage, running services, or connections that serve a host's stated purpose are not health issues on their own, and a resourceOptimization or recommendation must never propose stopping, disabling, or pruning something that is core to that purpose.
 2. Spot patterns across the fleet (e.g. multiple hosts need patching, several high-risk approvals sitting idle).
 3. Recommend new agent capabilities that would improve visibility or automation — be specific and concrete. For example: "Add a skill that monitors TLS certificate expiry" or "Agents should alert on failed systemd units."
 4. Suggest configuration or architectural improvements when you see evidence for them.

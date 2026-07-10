@@ -1,8 +1,8 @@
-display_name,fqdn,port,os_type,role,tags
-web01,web01.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
-web02,web02.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
-db01,db01.prod.internal,8080,ubuntu,Primary database,"production,database"
-db02-replica,db02-replica.prod.internal,8080,ubuntu,Database replica,"production,database"
-WIN-DC01,win-dc01.prod.internal,8080,windows,Domain controller,"production,infrastructure"
-edge-mac-mini,edge-mac-mini.lab.internal,8080,macos,Edge build agent,"lab,build"
-build01,build01.ci.internal,8080,fedora,CI build server,"ci,build"
+display_name,fqdn,port,os_type,role,tags,purpose
+web01,web01.prod.internal,8080,ubuntu,Frontend web server,"production,frontend","Serves customer-facing web traffic; expect sustained CPU/network load during business hours"
+web02,web02.prod.internal,8080,ubuntu,Frontend web server,"production,frontend",
+db01,db01.prod.internal,8080,ubuntu,Primary database,"production,database","Primary database for internal apps; do not recommend stopping mysqld/postgres to free memory"
+db02-replica,db02-replica.prod.internal,8080,ubuntu,Database replica,"production,database",
+WIN-DC01,win-dc01.prod.internal,8080,windows,Domain controller,"production,infrastructure",
+edge-mac-mini,edge-mac-mini.lab.internal,8080,macos,Edge build agent,"lab,build",
+build01,build01.ci.internal,8080,fedora,CI build server,"ci,build",

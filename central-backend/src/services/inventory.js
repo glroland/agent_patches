@@ -3,6 +3,13 @@
 // with columns: display_name, fqdn, port, os_type. The optional columns
 // "role" and "tags" (a comma-separated list within the cell) carry
 // operator-assigned metadata about each host.
+//
+// The CSV may also carry an optional trailing "purpose" column, but it is
+// deliberately not parsed here: purpose.txt is deployed straight to each
+// endpoint (see deploy/linux/deploy.sh) and reported back live via that
+// agent's GET /status response (see ./fleet.js), so the fleet view always
+// reflects what's actually running on the host rather than a second,
+// possibly stale copy of this file.
 
 import fs from 'node:fs';
 import path from 'node:path';

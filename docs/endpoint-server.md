@@ -22,7 +22,7 @@ The endpoint-server is a Go binary that runs on each managed host. It exposes an
 
 ```json
 {
-  "agent": { "hostname": "...", "platform": "linux", "os": "Ubuntu 24.04", "buildTime": "..." },
+  "agent": { "hostname": "...", "platform": "linux", "os": "Ubuntu 24.04", "buildTime": "...", "purpose": "<optional, from config/purpose.txt>" },
   "status": {
     "state": "idle | active | attention",
     "lastPoll": "<RFC3339>",
@@ -193,6 +193,10 @@ On startup, `config.Load` looks for `<goos>-responsibilities.yaml` in the same d
 ### OS-specific responsibility system prompt
 
 The system prompt used for every responsibility run is loaded the same way: `config.Load` looks for `<goos>-system-prompt.txt` (e.g. `linux-system-prompt.txt`) in the same directory as the main config file. The canonical prompts are versioned in-repo at `config/linux-system-prompt.txt` and `config/windows-system-prompt.txt` and installed by `deploy/linux/deploy.sh` alongside the responsibilities file. Precedence: a `responsibility_system_prompt` value in `config.yaml` (host-specific override) > the OS prompt file > a built-in default compiled into the binary.
+
+### System purpose
+
+`config.Load` also looks for an optional `purpose.txt` next to the main config file — a short operator-authored description of what the host is for (e.g. "Primary database for internal apps"), seeded from the inventory CSV's `purpose` column and installed by `deploy/linux/deploy.sh`. When present, it is appended as an instruction block to **both** `Agent.SystemPrompt` (the interactive chat agent) and `ResponsibilitySystemPrompt` (every scheduled responsibility run) — the two prompts every tool call runs under — telling the model to weigh the stated purpose before flagging normal purpose-serving activity as a problem or recommending a core service be stopped. It is also reported back over `GET /status` (`agent.purpose`) so central-backend's fleet view and fleet intelligence analysis reflect it live, without keeping a separate copy.
 
 ## Login Monitoring
 

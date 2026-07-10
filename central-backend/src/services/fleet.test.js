@@ -49,7 +49,12 @@ describe('fleet.listFleet', () => {
     AgentClient.prototype.getStatus = async function () {
       if (this.baseUrl === 'http://web01.prod.internal:8080') {
         return {
-          agent: { hostname: 'web01.prod.internal', platform: 'linux', os: 'Ubuntu 24.04' },
+          agent: {
+            hostname: 'web01.prod.internal',
+            platform: 'linux',
+            os: 'Ubuntu 24.04',
+            purpose: 'Customer-facing web traffic',
+          },
           status: { state: 'active', lastPoll: '2026-06-14T08:00:00Z', currentTask: 'patching' },
           timeline: [{ id: '1', time: '2026-06-14T08:00:00Z', type: 'observation', title: 'ok', detail: 'ok' }],
         };
@@ -67,6 +72,7 @@ describe('fleet.listFleet', () => {
     assert.deepEqual(web01.tags, ['production', 'frontend']);
     assert.equal(web01.currentTask, 'patching');
     assert.equal(web01.timeline.length, 1);
+    assert.equal(web01.purpose, 'Customer-facing web traffic');
   });
 
   test('falls back to offline when the agent is unreachable', async (t) => {

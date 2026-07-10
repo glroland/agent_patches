@@ -117,6 +117,16 @@ type Settings struct {
 	// in the config file's directory, falling back to
 	// defaultResponsibilitySystemPrompt if that file is absent.
 	ResponsibilitySystemPrompt string `yaml:"responsibility_system_prompt"`
+
+	// SystemPurpose is a short operator-authored description of what this
+	// host is for (e.g. "Primary database for internal apps"). It has no
+	// YAML tag: the single source of truth is "purpose.txt" next to the
+	// config file, deployed from the inventory CSV's optional "purpose"
+	// column (see deploy/linux/deploy.sh). When non-empty it is folded into
+	// both Agent.SystemPrompt and ResponsibilitySystemPrompt so every
+	// interactive query and scheduled responsibility weighs it before
+	// flagging normal purpose-serving activity as a problem.
+	SystemPurpose string `yaml:"-"`
 }
 
 // ResponsibilitySettings describes one recurring duty assigned to the agent.
@@ -303,6 +313,19 @@ func Load() (*Settings, error) {
 		}
 		s.ResponsibilitySystemPrompt = prompt
 	}
+	purpose, err := loadPurpose(path)
+	if err != nil {
+		slog.Warn("config: could not load purpose file, continuing without a system purpose",
+			"file", PurposePath(path), "error", err)
+	}
+	if purpose != "" {
+		s.SystemPurpose = purpose
+		block := purposePromptBlock(purpose)
+		s.Agent.SystemPrompt = s.Agent.SystemPrompt + block
+		s.ResponsibilitySystemPrompt = s.ResponsibilitySystemPrompt + block
+		slog.Info("config: loaded system purpose, folded into agent and responsibility system prompts",
+			"file", PurposePath(path), "purpose", purpose)
+	}
 	if s.LoginMonitor.FailedLoginThreshold <= 0 {
 		s.LoginMonitor.FailedLoginThreshold = 3
 	}
@@ -341,6 +364,44 @@ func OSResponsibilitiesPath(configPath string) string {
 // same directory.
 func OSSystemPromptPath(configPath string) string {
 	return filepath.Join(filepath.Dir(configPath), runtime.GOOS+"-system-prompt.txt")
+}
+
+// PurposePath returns the path of the optional system purpose file that is
+// loaded alongside the given config file path. Unlike the OS-specific prompt
+// and responsibilities files, this file is named "purpose.txt" — a host's
+// purpose is business context, not an OS-dependent instruction set.
+func PurposePath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "purpose.txt")
+}
+
+// loadPurpose reads the optional system purpose file. Returns "", nil when
+// the file does not exist or is empty — the file is entirely optional and
+// there is no fallback default (there is nothing sensible to default a
+// host's purpose to).
+func loadPurpose(configPath string) (string, error) {
+	path := PurposePath(configPath)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", fmt.Errorf("reading %s: %w", path, err)
+	}
+	return strings.TrimSpace(string(data)), nil
+}
+
+// purposePromptBlock renders the system purpose as a system-prompt fragment
+// instructing the agent to weigh it before judging severity or recommending
+// remediation. Appended to both Agent.SystemPrompt and
+// ResponsibilitySystemPrompt so it reaches every skill and every scheduled
+// responsibility.
+func purposePromptBlock(purpose string) string {
+	return "\n\nSystem purpose: " + purpose + "\n" +
+		`Weigh this stated purpose when judging severity and remediation: normal ` +
+		`resource usage, running processes, or open connections that serve this ` +
+		`purpose are not incidents on their own. Do not recommend stopping, ` +
+		`disabling, or removing a service that is core to this system's purpose ` +
+		`in order to free resources — flag it only if it is genuinely malfunctioning.`
 }
 
 // loadOSSystemPrompt reads the OS-specific responsibility system prompt file.

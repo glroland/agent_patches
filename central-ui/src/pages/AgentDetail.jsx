@@ -61,6 +61,9 @@ export default function AgentDetail() {
               {agent.buildTime && <> &middot; built {agent.buildTime}</>}
               {' '}&middot; last polled {relativeTime(agent.lastPoll)}
             </p>
+            {agent.purpose && (
+              <p className="mt-1 text-sm italic text-navy-500">Purpose: {agent.purpose}</p>
+            )}
           </div>
           <div className="flex gap-2">
             {agent.tags.map((t) => (

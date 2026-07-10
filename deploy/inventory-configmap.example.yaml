@@ -10,9 +10,13 @@
 # To create from this example directly (after editing the data below):
 #   kubectl -n agent-patches apply -f deploy/inventory-configmap.example.yaml
 #
-# CSV columns: display_name, fqdn, port, os_type, role, tags
+# CSV columns: display_name, fqdn, port, os_type, role, tags, purpose
 #   os_type values: ubuntu, fedora, windows, macos
 #   tags: comma-separated list, quoted if they contain commas
+#   purpose: optional free-text description of what this host is for. Used by
+#     deploy/linux/deploy.sh to seed each agent's config/purpose.txt (not read
+#     from this CSV by central-backend — the fleet view pulls it live from
+#     each agent's GET /status response instead).
 
 apiVersion: v1
 kind: ConfigMap
@@ -21,7 +25,7 @@ metadata:
   namespace: agent-patches
 data:
   inventory.csv: |
-    display_name,fqdn,port,os_type,role,tags
-    web01,web01.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
-    web02,web02.prod.internal,8080,ubuntu,Frontend web server,"production,frontend"
-    db01,db01.prod.internal,8080,ubuntu,Primary database,"production,database"
+    display_name,fqdn,port,os_type,role,tags,purpose
+    web01,web01.prod.internal,8080,ubuntu,Frontend web server,"production,frontend","Customer-facing web traffic"
+    web02,web02.prod.internal,8080,ubuntu,Frontend web server,"production,frontend",
+    db01,db01.prod.internal,8080,ubuntu,Primary database,"production,database","Primary database for internal apps"

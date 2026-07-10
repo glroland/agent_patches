@@ -30,6 +30,7 @@ type Service struct {
 	loop       currentTasker
 	summarizer *summarizer
 	patcher    *patching.Patcher
+	purpose    string
 }
 
 // New creates a status Service. info is captured once at startup via
@@ -39,7 +40,7 @@ func New(info capture_system_info.Info, mem *memory.Store, l currentTasker, cfg 
 	if err != nil {
 		slog.Warn("status: OS detection failed — last-updated fallback disabled", "error", err)
 	}
-	return &Service{info: info, mem: mem, loop: l, summarizer: newSummarizer(cfg), patcher: p}
+	return &Service{info: info, mem: mem, loop: l, summarizer: newSummarizer(cfg), patcher: p, purpose: cfg.SystemPurpose}
 }
 
 // Handler returns the http.HandlerFunc for GET /status.
@@ -121,6 +122,7 @@ func (s *Service) build() Response {
 			Platform:  s.info.OS,
 			OS:        osLabel(s.info),
 			BuildTime: buildinfo.BuildTime,
+			Purpose:   s.purpose,
 		},
 		Status: StatusBlock{
 			State:        state,

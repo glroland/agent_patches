@@ -7,11 +7,15 @@ import "encoding/json"
 
 // AgentInfo describes the identity of this agent's host. Operator-assigned
 // metadata (role, tags) lives in central-backend's inventory, not here.
+// Purpose is the exception: it is deployed straight to this host (see
+// config.SystemPurpose) so central-backend can read it live here rather than
+// keep a second, possibly stale copy in its own inventory CSV.
 type AgentInfo struct {
 	Hostname  string `json:"hostname"`
 	Platform  string `json:"platform"`
 	OS        string `json:"os"`
 	BuildTime string `json:"buildTime,omitempty"`
+	Purpose   string `json:"purpose,omitempty"`
 }
 
 // StatusBlock describes the agent's current activity state.

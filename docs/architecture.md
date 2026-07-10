@@ -159,7 +159,7 @@ All endpoints except `/.well-known/agent.json` and `/` require `Authorization: B
 
 ### endpoint-server (Linux)
 
-Deployed via `deploy/linux/deploy.sh` (Ansible-driven). The binary is cross-compiled for each target platform and installed to `/opt/agent_patches/bin/`; the OS responsibilities file (`linux-responsibilities.yaml`) and responsibility system prompt (`linux-system-prompt.txt`, both from `config/` in the repo) are installed next to `config.yaml` under `/opt/agent_patches/config/`. Runs as a systemd service (`deploy/linux/agent_patches.service`) under the `agent_patches` system user. See [security.md](security.md) for the full privilege model.
+Deployed via `deploy/linux/deploy.sh` (Ansible-driven). The binary is cross-compiled for each target platform and installed to `/opt/agent_patches/bin/`; the OS responsibilities file (`linux-responsibilities.yaml`) and responsibility system prompt (`linux-system-prompt.txt`, both from `config/` in the repo) are installed next to `config.yaml` under `/opt/agent_patches/config/`. If the host's row in `inventory.csv` has a non-empty `purpose` column, it's also written to `/opt/agent_patches/config/purpose.txt` (see [endpoint-server.md](endpoint-server.md#system-purpose)). Runs as a systemd service (`deploy/linux/agent_patches.service`) under the `agent_patches` system user. See [security.md](security.md) for the full privilege model.
 
 ### endpoint-server (Windows)
 

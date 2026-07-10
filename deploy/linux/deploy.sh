@@ -70,7 +70,8 @@ fi
 HOSTS=()
 HOST_USERS=()
 HOST_OSTYPES=()
-while IFS='|' read -r host os_type; do
+HOST_PURPOSES=()
+while IFS=$'\x1f' read -r host os_type purpose; do
     [[ -n "$host" ]] || continue
     case "$os_type" in
         rhel)    user="root" ;;
@@ -81,10 +82,34 @@ while IFS='|' read -r host os_type; do
     HOSTS+=("$host")
     HOST_USERS+=("$user")
     HOST_OSTYPES+=("$os_type")
-done < <(awk -F',' 'NR>1 {
-    gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", $2)
-    gsub(/^[[:space:]"]+|[[:space:]"]+$/, "", $4)
-    if ($2 != "") print $2 "|" $4
+    HOST_PURPOSES+=("$purpose")
+done < <(awk -v OFS=$'\x1f' '
+# Quote-aware CSV split — the "tags" column may itself contain a comma inside
+# quotes (e.g. "cicd, build"), which a naive comma split would misalign, so
+# the optional trailing "purpose" column can only be found reliably by
+# tracking quote state rather than indexing a fixed field number.
+function parse_csv(line,    n, i, c, field, inquotes) {
+    n = 0
+    field = ""
+    inquotes = 0
+    for (i = 1; i <= length(line); i++) {
+        c = substr(line, i, 1)
+        if (c == "\"") { inquotes = !inquotes; continue }
+        if (c == "," && !inquotes) { n++; f[n] = field; field = ""; continue }
+        field = field c
+    }
+    n++
+    f[n] = field
+    return n
+}
+function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+NR>1 {
+    delete f
+    n = parse_csv($0)
+    host = trim(f[2])
+    ostype = trim(f[4])
+    purpose = (n >= 7) ? trim(f[7]) : ""
+    if (host != "") print host, ostype, purpose
 }' "$INVENTORY_CSV")
 
 if [[ ${#HOSTS[@]} -eq 0 ]]; then
@@ -320,6 +345,16 @@ else
     warn "no linux-system-prompt.txt found in /tmp — skipping (existing file preserved)"
 fi
 
+# ── System purpose ────────────────────────────────────────────────────────────
+step "Deploying system purpose..."
+if [[ -f /tmp/agent_patches_purpose.txt ]]; then
+    install -o root -g "$SERVICE_USER" -m 640 \
+        /tmp/agent_patches_purpose.txt "$INSTALL_ROOT/config/purpose.txt"
+    ok "purpose written to $INSTALL_ROOT/config/purpose.txt"
+else
+    warn "no system purpose supplied — existing file preserved"
+fi
+
 # ── Start service ─────────────────────────────────────────────────────────────
 step "Enabling and starting agent_patches service..."
 systemctl enable --now agent_patches
@@ -333,6 +368,7 @@ rm -f /tmp/patches-endpoint-server \
       /tmp/endpoint-server-config.yaml \
       /tmp/linux-responsibilities.yaml \
       /tmp/linux-system-prompt.txt \
+      /tmp/agent_patches_purpose.txt \
       /tmp/agent_patches_sudoers \
       /tmp/agent_patches_setup.*.sh
 ok "done"
@@ -344,7 +380,8 @@ cat > "$WIN_SETUP_SCRIPT" << 'WIN_REMOTE_SCRIPT'
 param(
     [string]$ConfigFile = "",
     [string]$ResponsibilitiesFile = "",
-    [string]$SystemPromptFile = ""
+    [string]$SystemPromptFile = "",
+    [string]$PurposeFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -483,6 +520,14 @@ if ($SystemPromptFile -ne "" -and (Test-Path "$Tmp\$SystemPromptFile")) {
     Warn "no system prompt file supplied - existing file preserved"
 }
 
+Step "Installing system purpose..."
+if ($PurposeFile -ne "" -and (Test-Path "$Tmp\$PurposeFile")) {
+    Copy-Item -Path "$Tmp\$PurposeFile" -Destination "$ConfigDir\purpose.txt" -Force
+    OK "purpose written to $ConfigDir\purpose.txt"
+} else {
+    Warn "no system purpose supplied - existing file preserved"
+}
+
 Step "Configuring Windows service..."
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
@@ -546,6 +591,9 @@ if ($ResponsibilitiesFile -ne "") {
 if ($SystemPromptFile -ne "") {
     Remove-Item -Path "$Tmp\$SystemPromptFile" -Force -ErrorAction SilentlyContinue
 }
+if ($PurposeFile -ne "") {
+    Remove-Item -Path "$Tmp\$PurposeFile" -Force -ErrorAction SilentlyContinue
+}
 OK "done"
 WIN_REMOTE_SCRIPT
 
@@ -555,6 +603,7 @@ WIN_REMOTE_SCRIPT
 deploy_host_windows() {
     local host=$1
     local host_user=$2
+    local purpose_file=$3
     local win_tmp="C:/Windows/Temp"
     echo ""
     echo "┌─ $host (windows)"
@@ -591,6 +640,11 @@ deploy_host_windows() {
     elif [[ -n "$WINDOWS_SYSTEM_PROMPT" ]]; then
         echo "│  ⚠ WARNING: windows-system-prompt.txt not found ($WINDOWS_SYSTEM_PROMPT) — skipping"
     fi
+    local purpose_base=""
+    if [[ -n "$purpose_file" && -f "$purpose_file" ]]; then
+        purpose_base=$(basename "$purpose_file")
+        files+=("$purpose_file")
+    fi
 
     local win_setup_base
     win_setup_base=$(basename "$WIN_SETUP_SCRIPT")
@@ -617,7 +671,8 @@ deploy_host_windows() {
             -File ${win_tmp}/${win_setup_base} \
             -ConfigFile ${cfg_base} \
             -ResponsibilitiesFile ${resp_base} \
-            -SystemPromptFile ${prompt_base}" \
+            -SystemPromptFile ${prompt_base} \
+            -PurposeFile ${purpose_base}" \
         2>&1 | sed 's/^/│  /' || rc=$?
 
     if [[ $rc -eq 0 ]]; then
@@ -638,6 +693,7 @@ deploy_host_windows() {
 deploy_host() {
     local host=$1
     local host_user=$2
+    local purpose_file=$3
     echo ""
     echo "┌─ $host"
 
@@ -662,6 +718,9 @@ deploy_host() {
         files+=("$SUDOERS_FILE")
     elif [[ -n "$SUDOERS_FILE" ]]; then
         echo "│  ⚠ WARNING: sudoers file not found ($SUDOERS_FILE) — agent will run without privilege separation"
+    fi
+    if [[ -n "$purpose_file" && -f "$purpose_file" ]]; then
+        files+=("$purpose_file")
     fi
 
     echo "│  Connecting as ${host_user}@${host}"
@@ -722,6 +781,14 @@ deploy_host() {
             "cp /tmp/$sudoers_base /tmp/agent_patches_sudoers" 2>/dev/null || true
     fi
 
+    # Rename the purpose file to the expected name on the remote
+    if [[ -n "$purpose_file" && -f "$purpose_file" ]]; then
+        local purpose_base
+        purpose_base=$(basename "$purpose_file")
+        "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
+            "cp /tmp/$purpose_base /tmp/agent_patches_purpose.txt" 2>/dev/null || true
+    fi
+
     # Rename the setup script to its expected name
     local setup_base
     setup_base=$(basename "$SETUP_SCRIPT")
@@ -773,11 +840,17 @@ for i in "${!HOSTS[@]}"; do
             continue
         fi
     fi
-    if [[ "${HOST_OSTYPES[$i]}" == "windows" ]]; then
-        deploy_host_windows "${HOSTS[$i]}" "${HOST_USERS[$i]}" || FAILED=$((FAILED + 1))
-    else
-        deploy_host "${HOSTS[$i]}" "${HOST_USERS[$i]}" || FAILED=$((FAILED + 1))
+    purpose_file=""
+    if [[ -n "${HOST_PURPOSES[$i]}" ]]; then
+        purpose_file=$(mktemp /tmp/agent_patches_purpose.XXXXXX)
+        printf '%s\n' "${HOST_PURPOSES[$i]}" > "$purpose_file"
     fi
+    if [[ "${HOST_OSTYPES[$i]}" == "windows" ]]; then
+        deploy_host_windows "${HOSTS[$i]}" "${HOST_USERS[$i]}" "$purpose_file" || FAILED=$((FAILED + 1))
+    else
+        deploy_host "${HOSTS[$i]}" "${HOST_USERS[$i]}" "$purpose_file" || FAILED=$((FAILED + 1))
+    fi
+    [[ -n "$purpose_file" ]] && rm -f "$purpose_file"
 done
 
 echo ""

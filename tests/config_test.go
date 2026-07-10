@@ -191,6 +191,53 @@ func TestLoad_EmptyOSSystemPromptFileFallsBack(t *testing.T) {
 	}
 }
 
+func TestLoad_PurposeFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(validYAML), 0o644); err != nil {
+		t.Fatalf("could not write config: %v", err)
+	}
+	purposePath := filepath.Join(dir, "purpose.txt")
+	if err := os.WriteFile(purposePath, []byte("Primary database for internal apps\n"), 0o644); err != nil {
+		t.Fatalf("could not write purpose file: %v", err)
+	}
+	t.Setenv(config.EnvKey, cfgPath)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.SystemPurpose != "Primary database for internal apps" {
+		t.Errorf("SystemPurpose = %q, want %q", s.SystemPurpose, "Primary database for internal apps")
+	}
+	if !strings.Contains(s.Agent.SystemPrompt, "Primary database for internal apps") {
+		t.Errorf("Agent.SystemPrompt does not contain the system purpose: %q", s.Agent.SystemPrompt)
+	}
+	if !strings.Contains(s.ResponsibilitySystemPrompt, "Primary database for internal apps") {
+		t.Errorf("ResponsibilitySystemPrompt does not contain the system purpose: %q", s.ResponsibilitySystemPrompt)
+	}
+}
+
+func TestLoad_NoPurposeFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(validYAML), 0o644); err != nil {
+		t.Fatalf("could not write config: %v", err)
+	}
+	t.Setenv(config.EnvKey, cfgPath)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.SystemPurpose != "" {
+		t.Errorf("SystemPurpose = %q, want empty when purpose.txt is absent", s.SystemPurpose)
+	}
+	if s.Agent.SystemPrompt != "test prompt" {
+		t.Errorf("Agent.SystemPrompt = %q, want unchanged %q", s.Agent.SystemPrompt, "test prompt")
+	}
+}
+
 func TestLoad_FileNotFound(t *testing.T) {
 	t.Setenv(config.EnvKey, "/nonexistent/agent_patches/config.yaml")
 

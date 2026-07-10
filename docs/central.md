@@ -38,14 +38,17 @@ All configuration is via environment variables. There is no config file.
 
 A CSV file enumerates every managed agent. Path set by `AGENT_INVENTORY_FILE`.
 
-Columns: `fqdn`, `port`, `displayName`, `osType`, `role`, `tags`
+Columns: `display_name`, `fqdn`, `port`, `os_type`, `role`, `tags` (optional, comma-separated within the cell), `purpose` (optional)
 
 ```csv
-host-a.example.com,9976,Web Server,linux,web,prod
-host-b.example.com,9976,Database,linux,db,prod
+display_name,fqdn,port,os_type,role,tags,purpose
+Web Server,host-a.example.com,9976,linux,web,"prod",
+Database,host-b.example.com,9976,linux,db,"prod","Primary database for internal apps"
 ```
 
 The inventory is read at startup (and re-read on each poll cycle). It is the authoritative list of which agents to contact.
+
+`purpose` is deliberately **not** parsed out of this file by central-backend (see `services/inventory.js`). It exists here only so `deploy/linux/deploy.sh` can seed each endpoint's `config/purpose.txt` from it; central-backend instead reads the live `purpose` field back from each agent's own `GET /status` response (see `services/fleet.js`), so the fleet view can never drift from what's actually deployed on the host.
 
 ### REST API
 
