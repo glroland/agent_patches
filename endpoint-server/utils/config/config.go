@@ -1,11 +1,13 @@
 package config
 
 import (
+	"encoding/csv"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -127,6 +129,30 @@ type Settings struct {
 	// interactive query and scheduled responsibility weighs it before
 	// flagging normal purpose-serving activity as a problem.
 	SystemPurpose string `yaml:"-"`
+
+	// BaselinePorts classifies this host's expected and known-risk ports for
+	// check_security_posture. It has no YAML tag: the single source of truth
+	// is "baseline_ports.csv" next to the config file. Unlike the OS-specific
+	// responsibilities and system prompt files, the filename is always the
+	// same — deploy.sh selects the correct OS-specific source content at
+	// deploy time (LINUX_BASELINE_PORTS / WINDOWS_BASELINE_PORTS in
+	// deploy/linux/deploy.sh), so the file already deployed is the right one
+	// for this host.
+	BaselinePorts []BaselinePortEntry `yaml:"-"`
+}
+
+// BaselinePortEntry classifies one port/protocol pair loaded from
+// baseline_ports.csv, for use by check_security_posture. Severity
+// "baseline" marks a port expected on this OS type — never flagged.
+// Severity "info", "warning", or "critical" marks a known port that is
+// always flagged at that severity when found listening, regardless of
+// whether it happens to also be an expected part of the baseline; the
+// agent still weighs the host's stated system purpose before acting on it.
+type BaselinePortEntry struct {
+	Port        int
+	Protocol    string // "tcp" or "udp"
+	Severity    string // "baseline", "info", "warning", or "critical"
+	Description string
 }
 
 // ResponsibilitySettings describes one recurring duty assigned to the agent.
@@ -335,6 +361,15 @@ func Load() (*Settings, error) {
 		slog.Info("config: loaded system purpose, folded into agent and responsibility system prompts",
 			"file", PurposePath(path), "purpose", purpose)
 	}
+	baselinePorts, err := loadBaselinePorts(path)
+	if err != nil {
+		slog.Warn("config: could not load baseline ports file, continuing without port classification",
+			"file", BaselinePortsPath(path), "error", err)
+	}
+	s.BaselinePorts = baselinePorts
+	if len(baselinePorts) > 0 {
+		slog.Info("config: loaded baseline ports", "file", BaselinePortsPath(path), "count", len(baselinePorts))
+	}
 	if s.LoginMonitor.FailedLoginThreshold <= 0 {
 		s.LoginMonitor.FailedLoginThreshold = 3
 	}
@@ -411,6 +446,65 @@ func purposePromptBlock(purpose string) string {
 		`purpose are not incidents on their own. Do not recommend stopping, ` +
 		`disabling, or removing a service that is core to this system's purpose ` +
 		`in order to free resources — flag it only if it is genuinely malfunctioning.`
+}
+
+// BaselinePortsPath returns the path of the optional baseline ports file that
+// is loaded alongside the given config file path. Unlike the OS-specific
+// responsibilities and system prompt files, this file always has the fixed
+// name "baseline_ports.csv" — deploy.sh picks the correct OS-specific source
+// content at deploy time (see LINUX_BASELINE_PORTS / WINDOWS_BASELINE_PORTS
+// in deploy/linux/deploy.sh), so the file already on disk is the right one
+// for this host.
+func BaselinePortsPath(configPath string) string {
+	return filepath.Join(filepath.Dir(configPath), "baseline_ports.csv")
+}
+
+// loadBaselinePorts reads the optional baseline ports CSV (columns:
+// port,protocol,severity,description). Returns nil, nil when the file does
+// not exist — the file is optional and check_security_posture simply skips
+// port classification without it. Malformed rows (wrong column count,
+// non-numeric port) are skipped with a warning rather than failing the load.
+func loadBaselinePorts(configPath string) ([]BaselinePortEntry, error) {
+	path := BaselinePortsPath(configPath)
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("reading %s: %w", path, err)
+	}
+	defer f.Close()
+
+	r := csv.NewReader(f)
+	r.Comment = '#'
+	r.FieldsPerRecord = -1
+	rows, err := r.ReadAll()
+	if err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", path, err)
+	}
+
+	var entries []BaselinePortEntry
+	for _, row := range rows {
+		if len(row) > 0 && strings.EqualFold(strings.TrimSpace(row[0]), "port") {
+			continue // header row
+		}
+		if len(row) < 4 {
+			slog.Warn("config: skipping malformed baseline ports row", "file", path, "row", row)
+			continue
+		}
+		port, err := strconv.Atoi(strings.TrimSpace(row[0]))
+		if err != nil {
+			slog.Warn("config: skipping baseline ports row with non-numeric port", "file", path, "row", row)
+			continue
+		}
+		entries = append(entries, BaselinePortEntry{
+			Port:        port,
+			Protocol:    strings.ToLower(strings.TrimSpace(row[1])),
+			Severity:    strings.ToLower(strings.TrimSpace(row[2])),
+			Description: strings.TrimSpace(row[3]),
+		})
+	}
+	return entries, nil
 }
 
 // loadOSSystemPrompt reads the OS-specific responsibility system prompt file.

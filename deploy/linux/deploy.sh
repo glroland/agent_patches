@@ -12,6 +12,8 @@
 #   WINDOWS_RESPONSIBILITIES Path to windows-responsibilities.yaml (optional)
 #   LINUX_SYSTEM_PROMPT     Path to linux-system-prompt.txt (optional)
 #   WINDOWS_SYSTEM_PROMPT   Path to windows-system-prompt.txt (optional)
+#   LINUX_BASELINE_PORTS    Path to linux-baseline-ports.csv (optional)
+#   WINDOWS_BASELINE_PORTS  Path to windows-baseline-ports.csv (optional)
 #   SUDOERS_FILE            Path to sudoers drop-in (default: <service-file-dir>/sudoers.d/agent_patches)
 
 set -uo pipefail
@@ -38,18 +40,22 @@ SSH_PORT="${SSH_PORT:-22}"
 #   WINDOWS_USER             Login user on Windows hosts (default: Administrator)
 #   WINDOWS_RESPONSIBILITIES Path to windows-responsibilities.yaml
 #   WINDOWS_SYSTEM_PROMPT    Path to windows-system-prompt.txt
+#   WINDOWS_BASELINE_PORTS   Path to windows-baseline-ports.csv
 WINDOWS_BINARY="${WINDOWS_BINARY:-}"
 WINDOWS_CONFIG="${WINDOWS_CONFIG:-}"
 WINDOWS_USER="${WINDOWS_USER:-Administrator}"
 WINDOWS_RESPONSIBILITIES="${WINDOWS_RESPONSIBILITIES:-}"
 WINDOWS_SYSTEM_PROMPT="${WINDOWS_SYSTEM_PROMPT:-}"
+WINDOWS_BASELINE_PORTS="${WINDOWS_BASELINE_PORTS:-}"
 
 # Linux-specific env vars.
 #   LINUX_RESPONSIBILITIES  Path to linux-responsibilities.yaml
 #   LINUX_SYSTEM_PROMPT     Path to linux-system-prompt.txt
+#   LINUX_BASELINE_PORTS    Path to linux-baseline-ports.csv
 #   SUDOERS_FILE            Path to agent_patches sudoers drop-in (default: auto-detected)
 LINUX_RESPONSIBILITIES="${LINUX_RESPONSIBILITIES:-}"
 LINUX_SYSTEM_PROMPT="${LINUX_SYSTEM_PROMPT:-}"
+LINUX_BASELINE_PORTS="${LINUX_BASELINE_PORTS:-}"
 SUDOERS_FILE="${SUDOERS_FILE:-$(dirname "$SERVICE_FILE")/sudoers.d/agent_patches}"
 
 for f in "$INVENTORY_CSV" "$BINARY" "$SERVICE_FILE"; do
@@ -355,6 +361,16 @@ else
     warn "no system purpose supplied — existing file preserved"
 fi
 
+# ── Baseline ports profile ────────────────────────────────────────────────────
+step "Deploying baseline ports profile..."
+if [[ -f /tmp/agent_patches_baseline_ports.csv ]]; then
+    install -o root -g "$SERVICE_USER" -m 640 \
+        /tmp/agent_patches_baseline_ports.csv "$INSTALL_ROOT/config/baseline_ports.csv"
+    ok "baseline ports written to $INSTALL_ROOT/config/baseline_ports.csv"
+else
+    warn "no baseline ports file found in /tmp — skipping (existing file preserved)"
+fi
+
 # ── Start service ─────────────────────────────────────────────────────────────
 step "Enabling and starting agent_patches service..."
 systemctl enable --now agent_patches
@@ -369,6 +385,7 @@ rm -f /tmp/patches-endpoint-server \
       /tmp/linux-responsibilities.yaml \
       /tmp/linux-system-prompt.txt \
       /tmp/agent_patches_purpose.txt \
+      /tmp/agent_patches_baseline_ports.csv \
       /tmp/agent_patches_sudoers \
       /tmp/agent_patches_setup.*.sh
 ok "done"
@@ -381,7 +398,8 @@ param(
     [string]$ConfigFile = "",
     [string]$ResponsibilitiesFile = "",
     [string]$SystemPromptFile = "",
-    [string]$PurposeFile = ""
+    [string]$PurposeFile = "",
+    [string]$BaselinePortsFile = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -528,6 +546,14 @@ if ($PurposeFile -ne "" -and (Test-Path "$Tmp\$PurposeFile")) {
     Warn "no system purpose supplied - existing file preserved"
 }
 
+Step "Installing baseline ports profile..."
+if ($BaselinePortsFile -ne "" -and (Test-Path "$Tmp\$BaselinePortsFile")) {
+    Copy-Item -Path "$Tmp\$BaselinePortsFile" -Destination "$ConfigDir\baseline_ports.csv" -Force
+    OK "baseline ports written to $ConfigDir\baseline_ports.csv"
+} else {
+    Warn "no baseline ports file supplied - existing file preserved"
+}
+
 Step "Configuring Windows service..."
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc) {
@@ -594,6 +620,9 @@ if ($SystemPromptFile -ne "") {
 if ($PurposeFile -ne "") {
     Remove-Item -Path "$Tmp\$PurposeFile" -Force -ErrorAction SilentlyContinue
 }
+if ($BaselinePortsFile -ne "") {
+    Remove-Item -Path "$Tmp\$BaselinePortsFile" -Force -ErrorAction SilentlyContinue
+}
 OK "done"
 WIN_REMOTE_SCRIPT
 
@@ -645,6 +674,13 @@ deploy_host_windows() {
         purpose_base=$(basename "$purpose_file")
         files+=("$purpose_file")
     fi
+    local baseline_ports_base=""
+    if [[ -n "$WINDOWS_BASELINE_PORTS" && -f "$WINDOWS_BASELINE_PORTS" ]]; then
+        baseline_ports_base=$(basename "$WINDOWS_BASELINE_PORTS")
+        files+=("$WINDOWS_BASELINE_PORTS")
+    elif [[ -n "$WINDOWS_BASELINE_PORTS" ]]; then
+        echo "│  ⚠ WARNING: windows-baseline-ports.csv not found ($WINDOWS_BASELINE_PORTS) — skipping"
+    fi
 
     local win_setup_base
     win_setup_base=$(basename "$WIN_SETUP_SCRIPT")
@@ -672,7 +708,8 @@ deploy_host_windows() {
             -ConfigFile ${cfg_base} \
             -ResponsibilitiesFile ${resp_base} \
             -SystemPromptFile ${prompt_base} \
-            -PurposeFile ${purpose_base}" \
+            -PurposeFile ${purpose_base} \
+            -BaselinePortsFile ${baseline_ports_base}" \
         2>&1 | sed 's/^/│  /' || rc=$?
 
     if [[ $rc -eq 0 ]]; then
@@ -718,6 +755,11 @@ deploy_host() {
         files+=("$SUDOERS_FILE")
     elif [[ -n "$SUDOERS_FILE" ]]; then
         echo "│  ⚠ WARNING: sudoers file not found ($SUDOERS_FILE) — agent will run without privilege separation"
+    fi
+    if [[ -n "$LINUX_BASELINE_PORTS" && -f "$LINUX_BASELINE_PORTS" ]]; then
+        files+=("$LINUX_BASELINE_PORTS")
+    elif [[ -n "$LINUX_BASELINE_PORTS" ]]; then
+        echo "│  ⚠ WARNING: linux-baseline-ports.csv not found ($LINUX_BASELINE_PORTS) — skipping"
     fi
     if [[ -n "$purpose_file" && -f "$purpose_file" ]]; then
         files+=("$purpose_file")
@@ -779,6 +821,14 @@ deploy_host() {
         sudoers_base=$(basename "$SUDOERS_FILE")
         "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
             "cp /tmp/$sudoers_base /tmp/agent_patches_sudoers" 2>/dev/null || true
+    fi
+
+    # Rename the baseline ports file to the expected name on the remote
+    if [[ -n "$LINUX_BASELINE_PORTS" && -f "$LINUX_BASELINE_PORTS" ]]; then
+        local baseline_ports_base
+        baseline_ports_base=$(basename "$LINUX_BASELINE_PORTS")
+        "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
+            "cp /tmp/$baseline_ports_base /tmp/agent_patches_baseline_ports.csv" 2>/dev/null || true
     fi
 
     # Rename the purpose file to the expected name on the remote

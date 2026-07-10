@@ -1,0 +1,42 @@
+# windows-baseline-ports.csv — Baseline port profile for Windows hosts.
+#
+# Deployed to C:\ProgramData\agent_patches\config\baseline_ports.csv by
+# deploy.sh (from WINDOWS_BASELINE_PORTS) and loaded by
+# check_security_posture to classify listening ports beyond the current
+# posture snapshot/diff. Edit this file to match your fleet's real baseline
+# -- the shipped defaults are a starting point covering common Windows
+# services and well-known risky ports, not a completeness guarantee for
+# every role (domain controller, workstation, server core, etc).
+#
+# Columns: port,protocol,severity,description
+#   protocol: tcp or udp
+#   severity: "baseline"  -- expected on every host of this OS type, never
+#                            flagged even if it appears in the report.
+#             "info"/"warning"/"critical" -- a known port that is always
+#                            flagged at this severity when found listening,
+#                            regardless of baseline status. The agent still
+#                            weighs the host's stated system purpose before
+#                            treating a flagged port as an incident.
+#
+# Any listening port matching no row at all is reported as an unclassified
+# deviation from baseline, at a default severity of "warning".
+port,protocol,severity,description
+135,tcp,baseline,RPC endpoint mapper
+445,tcp,baseline,SMB file sharing
+3389,tcp,baseline,RDP remote desktop
+5985,tcp,baseline,WinRM HTTP (remote management)
+5986,tcp,baseline,WinRM HTTPS (remote management)
+137,udp,baseline,NetBIOS name service
+138,udp,baseline,NetBIOS datagram service
+139,tcp,baseline,NetBIOS session service
+23,tcp,critical,Telnet -- unencrypted remote shell (legacy feature)
+21,tcp,critical,FTP -- unencrypted plaintext credentials
+5900,tcp,critical,VNC remote desktop (3rd-party -- not built-in)
+6379,tcp,critical,Redis -- frequently deployed without auth
+27017,tcp,critical,MongoDB -- frequently deployed without auth
+11211,tcp,critical,Memcached -- frequently deployed without auth
+1433,tcp,warning,SQL Server
+9200,tcp,warning,Elasticsearch HTTP API
+8080,tcp,warning,Common alternate HTTP port
+8443,tcp,warning,Common alternate HTTPS port
+3000,tcp,warning,Common dev/app server port

@@ -20,6 +20,7 @@ import (
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skillstate"
+	"agent_patches/endpoint-server/utils/config"
 )
 
 // domainName is the memory domain snapshots are written to.
@@ -125,13 +126,14 @@ func diffLists(prev, cur []string) (added, removed []string) {
 
 // NewCheckSecurityPostureTool returns the production tool using the
 // platform-specific gatherer.
-func NewCheckSecurityPostureTool(mem *memory.Store) (tool.Tool, error) {
-	return NewWithGatherer(mem, gather)
+func NewCheckSecurityPostureTool(mem *memory.Store, baseline []config.BaselinePortEntry) (tool.Tool, error) {
+	return NewWithGatherer(mem, gather, baseline)
 }
 
 // NewWithGatherer returns the tool with an injected snapshot gatherer.
-// Exported for tests.
-func NewWithGatherer(mem *memory.Store, gatherFn func(ctx context.Context) Snapshot) (tool.Tool, error) {
+// Exported for tests. baseline may be nil, in which case port classification
+// against a baseline profile is skipped entirely.
+func NewWithGatherer(mem *memory.Store, gatherFn func(ctx context.Context) Snapshot, baseline []config.BaselinePortEntry) (tool.Tool, error) {
 	return tool.New(
 		"check_security_posture",
 		"Capture the host's security posture — listening ports (with owning process), "+
@@ -139,10 +141,14 @@ func NewWithGatherer(mem *memory.Store, gatherFn func(ctx context.Context) Snaps
 			"per-user authorized_keys fingerprints, and setuid binaries — and compare it "+
 			"against the previous snapshot. The report leads with what CHANGED (new/removed "+
 			"ports, users, admins, setuid binaries; sudoers or authorized_keys modifications) "+
-			"followed by the current posture. Snapshots are stored in the "+
-			"check_security_posture memory domain, so compare_to_baseline can also provide "+
-			"~24h/~7d comparisons. Changes are facts, not verdicts — investigate unexpected "+
-			"ones with run_diagnostic_command before judging severity.",
+			"followed by the current posture. When a baseline_ports.csv profile is deployed, "+
+			"the report also lists listening ports that fall outside that OS-specific baseline "+
+			"(and any known-risk port regardless of baseline status), each tagged info/warning/"+
+			"critical. That tag is a starting point, not a verdict — weigh the host's stated "+
+			"system purpose before treating a flagged port as an incident. Snapshots are stored "+
+			"in the check_security_posture memory domain, so compare_to_baseline can also "+
+			"provide ~24h/~7d comparisons. Changes are facts, not verdicts — investigate "+
+			"unexpected ones with run_diagnostic_command before judging severity.",
 		func(ctx context.Context, _ struct{}) (string, error) {
 			slog.Info("check_security_posture: starting")
 
@@ -157,6 +163,8 @@ func NewWithGatherer(mem *memory.Store, gatherFn func(ctx context.Context) Snaps
 				cur.Errors = append(cur.Errors, fmt.Sprintf("snapshot not persisted: %v", err))
 			}
 
+			portFindings := classifyPorts(cur.ListeningPorts, baseline)
+
 			var sb strings.Builder
 			var diff Diff
 			if hasPrev {
@@ -167,18 +175,26 @@ func NewWithGatherer(mem *memory.Store, gatherFn func(ctx context.Context) Snaps
 				sb.WriteString("No previous snapshot — this run establishes the baseline.\n")
 			}
 			writeCurrentSection(&sb, cur)
+			writePortFindingsSection(&sb, portFindings)
 
-			summary := stateSummary(cur, diff, hasPrev)
+			summary := stateSummary(cur, diff, hasPrev, portFindings)
 			health := skillstate.HealthOK
 			if hasPrev && !diff.Empty() {
 				health = skillstate.HealthWarning
+			}
+			if hasWarningFinding(portFindings) {
+				health = skillstate.HealthWarning
+			}
+			if hasCriticalFinding(portFindings) {
+				health = skillstate.HealthCritical
 			}
 			_ = skillstate.Save(mem, "check_security_posture", health, summary)
 
 			slog.Info("check_security_posture: completed",
 				"ports", len(cur.ListeningPorts), "users", len(cur.Users),
 				"admins", len(cur.AdminUsers), "setuid", len(cur.SetuidBinaries),
-				"changed", hasPrev && !diff.Empty(), "gather_errors", len(cur.Errors))
+				"changed", hasPrev && !diff.Empty(), "gather_errors", len(cur.Errors),
+				"ports_beyond_baseline", len(portFindings))
 			return sb.String(), nil
 		},
 	)
@@ -256,22 +272,27 @@ func writeCurrentSection(sb *strings.Builder, s Snapshot) {
 }
 
 // stateSummary builds the one-line skillstate summary.
-func stateSummary(s Snapshot, d Diff, hasPrev bool) string {
+func stateSummary(s Snapshot, d Diff, hasPrev bool, findings []portFinding) string {
 	base := fmt.Sprintf("%d listening ports, %d users, %d admins, %d setuid binaries",
 		len(s.ListeningPorts), len(s.Users), len(s.AdminUsers), len(s.SetuidBinaries))
-	if !hasPrev {
-		return base + "; baseline established"
+	switch {
+	case !hasPrev:
+		base += "; baseline established"
+	case d.Empty():
+		base += "; no changes since last check"
+	default:
+		changes := len(d.AddedPorts) + len(d.RemovedPorts) + len(d.AddedUsers) + len(d.RemovedUsers) +
+			len(d.AddedAdmins) + len(d.RemovedAdmins) + len(d.ChangedAuthorizedKeys) +
+			len(d.AddedSetuid) + len(d.RemovedSetuid)
+		if d.SudoersChanged {
+			changes++
+		}
+		base += fmt.Sprintf("; %d posture change(s) since last check: %s", changes, summarizeChanges(d))
 	}
-	if d.Empty() {
-		return base + "; no changes since last check"
+	if n := len(findings); n > 0 {
+		base += fmt.Sprintf("; %d port(s) beyond baseline profile: %s", n, summarizePortFindings(findings))
 	}
-	changes := len(d.AddedPorts) + len(d.RemovedPorts) + len(d.AddedUsers) + len(d.RemovedUsers) +
-		len(d.AddedAdmins) + len(d.RemovedAdmins) + len(d.ChangedAuthorizedKeys) +
-		len(d.AddedSetuid) + len(d.RemovedSetuid)
-	if d.SudoersChanged {
-		changes++
-	}
-	return fmt.Sprintf("%s; %d posture change(s) since last check: %s", base, changes, summarizeChanges(d))
+	return base
 }
 
 // maxSummaryItems caps how many items per change category are named in the

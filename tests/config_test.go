@@ -238,6 +238,55 @@ func TestLoad_NoPurposeFile(t *testing.T) {
 	}
 }
 
+func TestLoad_BaselinePortsFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(validYAML), 0o644); err != nil {
+		t.Fatalf("could not write config: %v", err)
+	}
+	csvContent := "# comment line\n" +
+		"port,protocol,severity,description\n" +
+		"22,tcp,baseline,SSH remote administration\n" +
+		"23,TCP,Critical,Telnet - unencrypted\n" +
+		"bogus,tcp,critical,malformed port\n" +
+		"9,tcp\n"
+	if err := os.WriteFile(filepath.Join(dir, "baseline_ports.csv"), []byte(csvContent), 0o644); err != nil {
+		t.Fatalf("could not write baseline ports file: %v", err)
+	}
+	t.Setenv(config.EnvKey, cfgPath)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if len(s.BaselinePorts) != 2 {
+		t.Fatalf("BaselinePorts = %+v, want 2 valid entries", s.BaselinePorts)
+	}
+	if s.BaselinePorts[0].Port != 22 || s.BaselinePorts[0].Protocol != "tcp" || s.BaselinePorts[0].Severity != "baseline" {
+		t.Errorf("BaselinePorts[0] = %+v, want port 22/tcp/baseline", s.BaselinePorts[0])
+	}
+	if s.BaselinePorts[1].Port != 23 || s.BaselinePorts[1].Protocol != "tcp" || s.BaselinePorts[1].Severity != "critical" {
+		t.Errorf("BaselinePorts[1] = %+v, want port 23/tcp/critical (case-normalized)", s.BaselinePorts[1])
+	}
+}
+
+func TestLoad_NoBaselinePortsFile(t *testing.T) {
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(cfgPath, []byte(validYAML), 0o644); err != nil {
+		t.Fatalf("could not write config: %v", err)
+	}
+	t.Setenv(config.EnvKey, cfgPath)
+
+	s, err := config.Load()
+	if err != nil {
+		t.Fatalf("Load() unexpected error: %v", err)
+	}
+	if s.BaselinePorts != nil {
+		t.Errorf("BaselinePorts = %+v, want nil when baseline_ports.csv is absent", s.BaselinePorts)
+	}
+}
+
 func TestLoad_FileNotFound(t *testing.T) {
 	t.Setenv(config.EnvKey, "/nonexistent/agent_patches/config.yaml")
 

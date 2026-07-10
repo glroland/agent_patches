@@ -73,7 +73,7 @@ func TestCheckSecurityPostureTool_BaselineThenDrift(t *testing.T) {
 
 	snap := postureSnapshotA()
 	gatherer := func(context.Context) check_security_posture.Snapshot { return snap }
-	tl, err := check_security_posture.NewWithGatherer(mem, gatherer)
+	tl, err := check_security_posture.NewWithGatherer(mem, gatherer, nil)
 	if err != nil {
 		t.Fatalf("NewWithGatherer: %v", err)
 	}
@@ -137,5 +137,59 @@ func TestCheckSecurityPostureTool_BaselineThenDrift(t *testing.T) {
 	}
 	if len(stored.ListeningPorts) != 3 {
 		t.Errorf("stored snapshot ports = %d, want 3", len(stored.ListeningPorts))
+	}
+}
+
+func TestCheckSecurityPostureTool_BaselinePortClassification(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+
+	snap := check_security_posture.Snapshot{
+		ListeningPorts: []string{
+			"tcp 0.0.0.0:22 (sshd)",    // baseline — expected, never flagged
+			"tcp 0.0.0.0:23 (telnetd)", // known risk — always critical
+			"tcp 0.0.0.0:4444 (nc)",    // unclassified — default warning
+		},
+	}
+	gatherer := func(context.Context) check_security_posture.Snapshot { return snap }
+	baseline := []config.BaselinePortEntry{
+		{Port: 22, Protocol: "tcp", Severity: "baseline", Description: "SSH"},
+		{Port: 23, Protocol: "tcp", Severity: "critical", Description: "Telnet — unencrypted"},
+	}
+	tl, err := check_security_posture.NewWithGatherer(mem, gatherer, baseline)
+	if err != nil {
+		t.Fatalf("NewWithGatherer: %v", err)
+	}
+
+	out, err := tl.Execute(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if idx := strings.Index(out, "=== Ports Beyond Baseline Profile ==="); idx < 0 {
+		t.Fatalf("output missing ports-beyond-baseline section: %q", out)
+	} else if strings.Contains(out[idx:], "0.0.0.0:22") {
+		t.Errorf("baseline port 22 should not appear in ports-beyond-baseline section: %q", out)
+	}
+	if !strings.Contains(out, "[CRITICAL] tcp 0.0.0.0:23 (telnetd)") {
+		t.Errorf("output missing critical telnet finding: %q", out)
+	}
+	if !strings.Contains(out, "[WARNING] tcp 0.0.0.0:4444 (nc) — not in baseline profile") {
+		t.Errorf("output missing default-severity finding for unclassified port: %q", out)
+	}
+
+	states, err := skillstate.LoadAll(mem)
+	if err != nil {
+		t.Fatalf("LoadAll: %v", err)
+	}
+	found := false
+	for _, st := range states {
+		if st.Skill == "check_security_posture" {
+			found = true
+			if st.Health != skillstate.HealthCritical {
+				t.Errorf("skillstate health = %q, want critical due to telnet finding", st.Health)
+			}
+		}
+	}
+	if !found {
+		t.Error("no skillstate recorded for check_security_posture")
 	}
 }

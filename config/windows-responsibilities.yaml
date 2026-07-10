@@ -131,11 +131,19 @@ responsibilities:
         Get-NetTCPConnection -State Listen -LocalPort <port> |
           Select-Object OwningProcess
         Get-Process -Id <pid> | Select-Object Name, Path
-      Report changes via report_findings with an appropriate severity — treat
-      an unexplained new Administrators member as critical. Track unresolved
-      suspicious changes in the incident ledger and resolve incidents once
-      explained. Do not propose remediation commands unless a change is clearly
-      malicious and a safe reversal exists. If nothing changed, say so briefly.
+      Also review the "Ports Beyond Baseline Profile" section when present:
+      each listed port is tagged info, warning, or critical against this
+      host's baseline_ports.csv profile. That tag is a starting point, not a
+      verdict — cross-reference it against this host's stated system purpose
+      (already in your context) before deciding the final severity; a port
+      that plainly serves the stated purpose is not automatically an incident
+      even if tagged warning or critical here. Report changes via
+      report_findings with an appropriate severity — treat an unexplained new
+      Administrators member or an unexplained critical-tagged port as
+      critical. Track unresolved suspicious changes in the incident ledger and
+      resolve incidents once explained. Do not propose remediation commands
+      unless a change is clearly malicious and a safe reversal exists. If
+      nothing changed, say so briefly.
     tools:
       - check_security_posture
       - compare_to_baseline

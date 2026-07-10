@@ -207,7 +207,7 @@ func runServer(ctx context.Context) {
 	}
 	registry.Register(readMemoryTool)
 
-	securityPostureTool, err := check_security_posture.NewCheckSecurityPostureTool(mem)
+	securityPostureTool, err := check_security_posture.NewCheckSecurityPostureTool(mem, cfg.BaselinePorts)
 	if err != nil {
 		slog.Error("failed to create check_security_posture tool", "error", err)
 		return

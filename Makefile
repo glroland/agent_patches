@@ -117,6 +117,8 @@ deploy:
 	LINUX_RESPONSIBILITIES=$(CONFIG_DIR)/linux-responsibilities.yaml \
 	WINDOWS_SYSTEM_PROMPT=$(CONFIG_DIR)/windows-system-prompt.txt \
 	LINUX_SYSTEM_PROMPT=$(CONFIG_DIR)/linux-system-prompt.txt \
+	WINDOWS_BASELINE_PORTS=$(CONFIG_DIR)/windows-baseline-ports.csv \
+	LINUX_BASELINE_PORTS=$(CONFIG_DIR)/linux-baseline-ports.csv \
 	$(DEPLOY_SCRIPT) \
 		$(INVENTORY_ROOT)/inventory.csv \
 		$(LINUX_AMD64_DIR)/$(BINARY) \

@@ -1,0 +1,47 @@
+# linux-baseline-ports.csv — Baseline port profile for Linux/macOS hosts.
+#
+# Deployed to $INSTALL_ROOT/config/baseline_ports.csv by deploy.sh (from
+# LINUX_BASELINE_PORTS) and loaded by check_security_posture to classify
+# listening ports beyond the current posture snapshot/diff. Edit this file
+# to match your fleet's real baseline — the shipped defaults are a starting
+# point covering common services and well-known risky ports, not a
+# completeness guarantee for every distro or workload.
+#
+# Columns: port,protocol,severity,description
+#   protocol: tcp or udp
+#   severity: "baseline"  — expected on every host of this OS type, never
+#                            flagged even if it appears in the report.
+#             "info"/"warning"/"critical" — a known port that is always
+#                            flagged at this severity when found listening,
+#                            regardless of baseline status. The agent still
+#                            weighs the host's stated system purpose before
+#                            treating a flagged port as an incident.
+#
+# Any listening port matching no row at all is reported as an unclassified
+# deviation from baseline, at a default severity of "warning".
+port,protocol,severity,description
+22,tcp,baseline,SSH remote administration
+68,udp,baseline,DHCP client lease renewal
+123,udp,baseline,NTP/chrony time sync
+53,udp,baseline,systemd-resolved DNS stub (loopback)
+53,tcp,baseline,systemd-resolved DNS stub (loopback)
+23,tcp,critical,Telnet -- unencrypted remote shell
+21,tcp,critical,FTP -- unencrypted, plaintext credentials
+513,tcp,critical,rlogin -- unencrypted remote shell
+514,tcp,critical,rsh/rexec -- unencrypted remote shell
+6379,tcp,critical,Redis -- frequently deployed without auth
+11211,tcp,critical,Memcached -- frequently deployed without auth
+27017,tcp,critical,MongoDB -- frequently deployed without auth
+5900,tcp,critical,VNC remote desktop
+3389,tcp,critical,RDP -- unusual on a Linux host
+445,tcp,warning,SMB -- unusual outside a file server
+9200,tcp,warning,Elasticsearch HTTP API
+2049,tcp,warning,NFS server
+111,tcp,warning,rpcbind/portmapper
+8080,tcp,warning,Common alternate HTTP port
+8443,tcp,warning,Common alternate HTTPS port
+3000,tcp,warning,Common dev/app server port
+5000,tcp,warning,Common dev/app server port
+631,tcp,info,CUPS printing
+631,udp,info,CUPS printing
+5353,udp,info,mDNS/Avahi service discovery
