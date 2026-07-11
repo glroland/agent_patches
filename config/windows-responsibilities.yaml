@@ -120,7 +120,7 @@ responsibilities:
     when_to_notify: "on error"
 
   - name: security-posture-check
-    frequency: "6h"
+    time: "06:00"
     instruction: |
       Review this host's security posture for drift. Run check_security_posture
       to capture the current posture (listening ports with owning processes,

@@ -6,13 +6,6 @@ The approvals tab in the central UI lists pending approval requests being surfac
 ## 2
 Is the LLM/intelligence called if no NFS mounts exist on the server?
 
-## 3
-Implement this recommendation - "security-posture-check
-every 6h
-→
-Increase interval to daily at 06:00.
-Multiple checks show no drift; only anomaly is the persistent tcp/9976 unexplained port, which would be caught in weekly review — reduce noise without sacrificing coverage."
-
 ## 4
 Let's say the memory-utilization-check runs every 5 minutes.  Is the LLM called everytime?  If not, under what circumstance is it called?
 
