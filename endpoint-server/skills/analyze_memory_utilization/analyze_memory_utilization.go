@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/memory"
@@ -55,6 +56,28 @@ func (m MemStat) SwapUsedPct() float64 {
 
 type memoryUsageInput struct{}
 
+// runCheck reads memory usage, records the health as a skillstate entry, and
+// returns a human-readable report. It makes no LLM calls — callers decide
+// whether the result warrants one.
+func runCheck(mem *memory.Store) (stat MemStat, report string, err error) {
+	slog.Info("analyze_memory_utilization: starting")
+	stat, err = localMemory()
+	if err != nil {
+		slog.Info("analyze_memory_utilization: failed", "error", err)
+		_ = skillstate.Save(mem, "analyze_memory_utilization", skillstate.HealthCritical, fmt.Sprintf("failed to read memory usage: %v", err))
+		return MemStat{}, "", fmt.Errorf("memory_usage: %w", err)
+	}
+	slog.Debug("analyze_memory_utilization: read stats",
+		"total", stat.Total, "available", stat.Available,
+		"swap_total", stat.SwapTotal, "swap_free", stat.SwapFree)
+	report = BuildReport(stat)
+	slog.Info("analyze_memory_utilization: completed",
+		"used_pct", fmt.Sprintf("%.1f", stat.UsedPct()), "output_len", len(report))
+	health, summary := memoryHealth(stat)
+	_ = skillstate.Save(mem, "analyze_memory_utilization", health, summary)
+	return stat, report, nil
+}
+
 // NewMemoryUsageTool returns a task tool that reports current RAM and swap
 // usage for the host. The result is also recorded as the skill's last known
 // state (see skillstate), so high memory pressure is reflected in
@@ -65,24 +88,41 @@ func NewMemoryUsageTool(mem *memory.Store) (tool.Tool, error) {
 		"Reports current RAM and swap usage for the host, including total, "+
 			"used, and available memory.",
 		func(_ context.Context, _ memoryUsageInput) (string, error) {
-			slog.Info("analyze_memory_utilization: starting")
-			stat, err := localMemory()
-			if err != nil {
-				slog.Info("analyze_memory_utilization: failed", "error", err)
-				_ = skillstate.Save(mem, "analyze_memory_utilization", skillstate.HealthCritical, fmt.Sprintf("failed to read memory usage: %v", err))
-				return "", fmt.Errorf("memory_usage: %w", err)
-			}
-			slog.Debug("analyze_memory_utilization: read stats",
-				"total", stat.Total, "available", stat.Available,
-				"swap_total", stat.SwapTotal, "swap_free", stat.SwapFree)
-			report := BuildReport(stat)
-			slog.Info("analyze_memory_utilization: completed",
-				"used_pct", fmt.Sprintf("%.1f", stat.UsedPct()), "output_len", len(report))
-			health, summary := memoryHealth(stat)
-			_ = skillstate.Save(mem, "analyze_memory_utilization", health, summary)
-			return report, nil
+			_, report, err := runCheck(mem)
+			return report, err
 		},
 	)
+}
+
+// NewPreCheck returns a loop.PreCheck-compatible function that reads memory
+// usage directly, bypassing the LLM tool-use loop entirely. It reports
+// needsLLM=false whenever RAM usage is below the warning threshold AND has
+// not grown enough over the last day to suggest a leak — the common case on
+// most scheduled ticks — so the loop can skip the LLM call outright instead
+// of invoking it just to have it discover nothing is wrong.
+func NewPreCheck(mem *memory.Store) func(ctx context.Context) (bool, string, error) {
+	return func(_ context.Context) (bool, string, error) {
+		stat, report, err := runCheck(mem)
+		if err != nil {
+			// Fail open: let the LLM path see and report the failure rather
+			// than silently going quiet on a broken health check.
+			return true, "", err
+		}
+
+		now := time.Now()
+		samples, terr := RecordSample(mem, stat.UsedPct(), now)
+		if terr != nil {
+			slog.Warn("analyze_memory_utilization: trend recording failed", "error", terr)
+		}
+
+		if stat.UsedPct() >= usedPctWarning {
+			return true, report, nil
+		}
+		if growth := GrowthIssue(samples, stat.UsedPct(), now); growth != "" {
+			return true, report + "\nTrend: " + growth + "\n", nil
+		}
+		return false, report, nil
+	}
 }
 
 // memoryHealth derives a skillstate health/summary pair from a memory

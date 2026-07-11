@@ -234,12 +234,18 @@ type AgentSettings struct {
 	// tells llm-gateway to substitute its own configured upstream model
 	// (GATEWAY_UPSTREAM_MODEL) instead. Set this explicitly only when this
 	// agent should use a model other than the gateway's default.
-	Model        string `yaml:"model"`
-	MaxTokens    int    `yaml:"max_tokens"`
-	SystemPrompt string `yaml:"system_prompt"`
-	MaxIter      int    `yaml:"max_iterations"`
-	APIKey       string `yaml:"api_key"`
-	BaseURL      string `yaml:"base_url"`
+	Model     string `yaml:"model"`
+	MaxTokens int    `yaml:"max_tokens"`
+	// ResponsibilityMaxTokens, when > 0, caps the completion tokens of each
+	// LLM call made by a scheduled responsibility run, overriding MaxTokens
+	// for those runs only. Responsibility reports are short; a tight cap
+	// (e.g. 4096) bounds how long a runaway generation can occupy one of the
+	// gateway's scarce concurrency slots. Interactive requests keep MaxTokens.
+	ResponsibilityMaxTokens int    `yaml:"responsibility_max_tokens"`
+	SystemPrompt            string `yaml:"system_prompt"`
+	MaxIter                 int    `yaml:"max_iterations"`
+	APIKey                  string `yaml:"api_key"`
+	BaseURL                 string `yaml:"base_url"`
 	// RequestTimeout is a Go duration string (e.g. "6m") for the per-request
 	// HTTP timeout applied to each LLM API call. Defaults to "6m" — set it
 	// just above the upstream gateway's GATEWAY_REQUEST_TIMEOUT so the gateway

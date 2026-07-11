@@ -358,8 +358,19 @@ func runServer(ctx context.Context) {
 	connMon := connmonitor.New(mem, notify, incidentStore, cfg.NetworkMonitor)
 
 	lp := loop.New(cfg, registry, notify, mem, incidentStore)
+	// Pre-checks run the responsibility's deterministic health survey before
+	// any LLM call and skip the call entirely when everything is healthy —
+	// the common case on most ticks. The keys must match the responsibility
+	// names in config; a renamed responsibility simply runs without its
+	// pre-check (every tick pays for an LLM run again).
 	lp.RegisterPreCheck("nfs-health-check", check_nfs.NewPreCheck(mem))
 	lp.RegisterPreCheck("temperature-health-check", analyze_system_temperature.NewPreCheck(mem))
+	lp.RegisterPreCheck("container-health-check", check_containers.NewPreCheck(mem))
+	lp.RegisterPreCheck("cpu-utilization-check", analyze_cpu_utilization.NewPreCheck(mem))
+	lp.RegisterPreCheck("memory-utilization-check", analyze_memory_utilization.NewPreCheck(mem))
+	lp.RegisterPreCheck("disk-space-check", check_drives.NewPreCheck(mem))
+	lp.RegisterPreCheck("network-utilization-check", analyze_network_utilization.NewPreCheck(mem))
+	lp.RegisterPreCheck("keep-system-up-to-date", check_for_pending_system_patches.NewPreCheck(mem))
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem, notify, policyStore)

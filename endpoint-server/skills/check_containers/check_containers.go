@@ -37,6 +37,63 @@ var exitCodeRe = regexp.MustCompile(`Exited \((\d+)\)`)
 
 type checkContainersInput struct{}
 
+// CheckResult is the outcome of one container health survey.
+type CheckResult struct {
+	Health  skillstate.Health
+	Report  string
+	Summary string
+}
+
+// runCheck surveys all Docker/Podman containers, records the worst health as
+// a skillstate entry, and returns a human-readable report. It makes no LLM
+// calls — callers decide whether the result warrants one.
+func runCheck(ctx context.Context, mem *memory.Store) (CheckResult, error) {
+	slog.Info("check_containers: starting")
+
+	var sections []string
+	var allIssues []string
+	worst := skillstate.HealthOK
+
+	for _, runtime := range []string{"docker", "podman"} {
+		if _, err := exec.LookPath(runtime); err != nil {
+			continue
+		}
+		slog.Debug("check_containers: scanning runtime", "runtime", runtime)
+
+		containers, err := listContainers(ctx, runtime)
+		if err != nil {
+			slog.Warn("check_containers: list failed", "runtime", runtime, "error", err)
+			issue := fmt.Sprintf("%s: failed to list containers (%v)", runtime, err)
+			allIssues = append(allIssues, issue)
+			worst = WorseHealth(worst, skillstate.HealthWarning)
+			sections = append(sections, fmt.Sprintf("=== %s ===\n%s", runtime, issue))
+			continue
+		}
+		if len(containers) == 0 {
+			sections = append(sections, fmt.Sprintf("=== %s ===\nNo containers found.", runtime))
+			continue
+		}
+
+		section, issues, health := buildSection(runtime, containers)
+		sections = append(sections, section)
+		allIssues = append(allIssues, issues...)
+		worst = WorseHealth(worst, health)
+	}
+
+	if len(sections) == 0 {
+		msg := "no container runtime (docker/podman) found on this host"
+		_ = skillstate.Save(mem, "check_containers", skillstate.HealthOK, msg)
+		slog.Info("check_containers: no runtime found")
+		return CheckResult{Health: skillstate.HealthOK, Report: msg, Summary: msg}, nil
+	}
+
+	report := strings.Join(sections, "\n\n")
+	summary := HealthSummary(allIssues)
+	_ = skillstate.Save(mem, "check_containers", worst, summary)
+	slog.Info("check_containers: completed", "health", worst, "issues", len(allIssues))
+	return CheckResult{Health: worst, Report: report, Summary: summary}, nil
+}
+
 // NewCheckContainersTool returns a skill that lists all containers across
 // Docker and Podman runtimes and assesses their health state.
 func NewCheckContainersTool(mem *memory.Store) (tool.Tool, error) {
@@ -49,52 +106,27 @@ func NewCheckContainersTool(mem *memory.Store) (tool.Tool, error) {
 			"skill's last known health state so problems appear in GET /status "+
 			"automatically between scheduled runs.",
 		func(ctx context.Context, _ checkContainersInput) (string, error) {
-			slog.Info("check_containers: starting")
-
-			var sections []string
-			var allIssues []string
-			worst := skillstate.HealthOK
-
-			for _, runtime := range []string{"docker", "podman"} {
-				if _, err := exec.LookPath(runtime); err != nil {
-					continue
-				}
-				slog.Debug("check_containers: scanning runtime", "runtime", runtime)
-
-				containers, err := listContainers(ctx, runtime)
-				if err != nil {
-					slog.Warn("check_containers: list failed", "runtime", runtime, "error", err)
-					issue := fmt.Sprintf("%s: failed to list containers (%v)", runtime, err)
-					allIssues = append(allIssues, issue)
-					worst = WorseHealth(worst, skillstate.HealthWarning)
-					sections = append(sections, fmt.Sprintf("=== %s ===\n%s", runtime, issue))
-					continue
-				}
-				if len(containers) == 0 {
-					sections = append(sections, fmt.Sprintf("=== %s ===\nNo containers found.", runtime))
-					continue
-				}
-
-				section, issues, health := buildSection(runtime, containers)
-				sections = append(sections, section)
-				allIssues = append(allIssues, issues...)
-				worst = WorseHealth(worst, health)
-			}
-
-			if len(sections) == 0 {
-				msg := "no container runtime (docker/podman) found on this host"
-				_ = skillstate.Save(mem, "check_containers", skillstate.HealthOK, msg)
-				slog.Info("check_containers: no runtime found")
-				return msg, nil
-			}
-
-			report := strings.Join(sections, "\n\n")
-			summary := HealthSummary(allIssues)
-			_ = skillstate.Save(mem, "check_containers", worst, summary)
-			slog.Info("check_containers: completed", "health", worst, "issues", len(allIssues))
-			return report, nil
+			res, err := runCheck(ctx, mem)
+			return res.Report, err
 		},
 	)
+}
+
+// NewPreCheck returns a loop.PreCheck-compatible function that runs the
+// container health survey directly, bypassing the LLM tool-use loop entirely.
+// It reports needsLLM=false whenever every container is healthy — the common
+// case on most scheduled ticks — so the loop can skip the LLM call outright
+// instead of invoking it just to have it discover nothing is wrong.
+func NewPreCheck(mem *memory.Store) func(ctx context.Context) (bool, string, error) {
+	return func(ctx context.Context) (bool, string, error) {
+		res, err := runCheck(ctx, mem)
+		if err != nil {
+			// Fail open: let the LLM path see and report the failure rather
+			// than silently going quiet on a broken health check.
+			return true, "", err
+		}
+		return res.Health != skillstate.HealthOK, res.Report, nil
+	}
 }
 
 // listContainers runs `<runtime> ps -a` and returns parsed entries.
@@ -278,13 +310,16 @@ func AutoResponsibility() (config.ResponsibilitySettings, bool) {
 	return config.ResponsibilitySettings{
 		Name:      "container-health-check",
 		Frequency: "15m",
-		Instruction: `Check the health of all Docker and Podman containers on this host.
-Report any containers that are stopped unexpectedly, stuck in a restart loop,
-OOM killed (exit 137), or failing their health check. If a container is
-unhealthy, use run_diagnostic_command to investigate logs (e.g.
-docker logs --tail 50 <name> or podman logs --tail 50 <name>) before proposing
-any restart via run_approved_command. Do not flag containers that exited cleanly
-(exit code 0) — those are expected for one-shot jobs.`,
+		Instruction: `A container health issue was detected on this host (see the
+pre-gathered health report included with this instruction — no need to call
+check_containers again unless you want a fresh read). Containers stopped
+unexpectedly, stuck in a restart loop, OOM killed (exit 137), or failing their
+health check all warrant investigation. Use run_diagnostic_command to
+investigate logs (e.g. docker logs --tail 50 <name> or
+podman logs --tail 50 <name>) before proposing any restart via
+run_approved_command. Do not flag containers that exited cleanly
+(exit code 0) — those are expected for one-shot jobs. Call report_findings
+with your assessment.`,
 		Tools:        []string{"check_containers", "run_diagnostic_command", "run_approved_command", "report_findings"},
 		WhenToNotify: "on error",
 	}, true

@@ -45,6 +45,57 @@ func (d DiskStat) UsedPct() float64 {
 
 type diskUsageInput struct{}
 
+// checkOutcome is the result of one disk survey, minus the expensive
+// largest-files report (see buildReport), which callers request only when
+// they actually need it.
+type checkOutcome struct {
+	disks      []DiskStat
+	smartCache map[string][]SmartReport
+	health     skillstate.Health
+	summary    string
+}
+
+// runCheck gathers disk usage, SMART status, and trend data, records the
+// worst health as a skillstate entry, and returns the raw outcome. It makes
+// no LLM calls and skips the largest-directories/files scan — callers decide
+// whether the result warrants either.
+func runCheck(ctx context.Context, mem *memory.Store) (checkOutcome, error) {
+	slog.Info("check_drives: starting")
+	disks, err := localDisks()
+	if err != nil {
+		slog.Info("check_drives: failed", "error", err)
+		_ = skillstate.Save(mem, "check_drives", skillstate.HealthCritical, fmt.Sprintf("failed to read disk usage: %v", err))
+		return checkOutcome{}, fmt.Errorf("disk_usage: %w", err)
+	}
+	disks = DedupeDisks(disks)
+	slog.Debug("check_drives: found local disks", "count", len(disks))
+	if len(disks) == 0 {
+		slog.Info("check_drives: completed", "disks", 0)
+		_ = skillstate.Save(mem, "check_drives", skillstate.HealthOK, "no local disks found")
+		return checkOutcome{health: skillstate.HealthOK, summary: "no local disks found"}, nil
+	}
+	smartCache := collectSmartReports(ctx, disks)
+	health, summary := diskHealth(disks, smartCache)
+
+	trends, err := RecordSamples(mem, disks, time.Now())
+	if err != nil {
+		slog.Warn("check_drives: trend recording failed", "error", err)
+	}
+	if tHealth, tSummary := TrendHealth(trends); severityOf(tHealth) > severityOf(health) {
+		health, summary = tHealth, tSummary
+	}
+
+	rawAttrs := CollectRawSmartAttrs(ctx, disks)
+	smartTrends, _ := RecordSmartSamples(mem, rawAttrs, time.Now())
+	if stHealth, stSummary := SmartTrendHealth(smartTrends); severityOf(stHealth) > severityOf(health) {
+		health, summary = stHealth, stSummary
+	}
+
+	_ = skillstate.Save(mem, "check_drives", health, summary)
+	slog.Info("check_drives: completed", "disks", len(disks), "health", health)
+	return checkOutcome{disks: disks, smartCache: smartCache, health: health, summary: summary}, nil
+}
+
 // NewDiskUsageTool returns a task tool that reports current disk space usage
 // for all local disks on the host. The result is also recorded as the
 // skill's last known state (see skillstate), so a near-full or failing disk
@@ -57,43 +108,51 @@ func NewDiskUsageTool(mem *memory.Store) (tool.Tool, error) {
 			"largest directories and files on each disk, and S.M.A.R.T. health "+
 			"status for the underlying physical disk (when available).",
 		func(ctx context.Context, _ diskUsageInput) (string, error) {
-			slog.Info("check_drives: starting")
-			disks, err := localDisks()
+			out, err := runCheck(ctx, mem)
 			if err != nil {
-				slog.Info("check_drives: failed", "error", err)
-				_ = skillstate.Save(mem, "check_drives", skillstate.HealthCritical, fmt.Sprintf("failed to read disk usage: %v", err))
-				return "", fmt.Errorf("disk_usage: %w", err)
+				return "", err
 			}
-			disks = DedupeDisks(disks)
-			slog.Debug("check_drives: found local disks", "count", len(disks))
-			if len(disks) == 0 {
-				slog.Info("check_drives: completed", "disks", 0)
-				_ = skillstate.Save(mem, "check_drives", skillstate.HealthOK, "no local disks found")
+			if len(out.disks) == 0 {
 				return "No local disks found.", nil
 			}
-			smartCache := collectSmartReports(ctx, disks)
-			report := buildReport(ctx, disks, smartCache)
-			slog.Info("check_drives: completed", "disks", len(disks), "output_len", len(report))
-			health, summary := diskHealth(disks, smartCache)
-
-			trends, err := RecordSamples(mem, disks, time.Now())
-			if err != nil {
-				slog.Warn("check_drives: trend recording failed", "error", err)
-			}
-			if tHealth, tSummary := TrendHealth(trends); severityOf(tHealth) > severityOf(health) {
-				health, summary = tHealth, tSummary
-			}
-
-			rawAttrs := CollectRawSmartAttrs(ctx, disks)
-			smartTrends, _ := RecordSmartSamples(mem, rawAttrs, time.Now())
-			if stHealth, stSummary := SmartTrendHealth(smartTrends); severityOf(stHealth) > severityOf(health) {
-				health, summary = stHealth, stSummary
-			}
-
-			_ = skillstate.Save(mem, "check_drives", health, summary)
-			return report, nil
+			return buildReport(ctx, out.disks, out.smartCache), nil
 		},
 	)
+}
+
+// NewPreCheck returns a loop.PreCheck-compatible function that runs the disk
+// survey directly, bypassing the LLM tool-use loop entirely. It reports
+// needsLLM=false whenever every disk is below the warning threshold, SMART is
+// clean, and usage trends are unremarkable — the common case on most
+// scheduled ticks — so the loop can skip the LLM call outright. The expensive
+// largest-directories/files scan runs only when a problem is found, to give
+// the escalated LLM run its investigation data up front.
+func NewPreCheck(mem *memory.Store) func(ctx context.Context) (bool, string, error) {
+	return func(ctx context.Context) (bool, string, error) {
+		out, err := runCheck(ctx, mem)
+		if err != nil {
+			// Fail open: let the LLM path see and report the failure rather
+			// than silently going quiet on a broken health check.
+			return true, "", err
+		}
+		if out.health == skillstate.HealthOK {
+			return false, usageSummary(out.disks, out.summary), nil
+		}
+		return true, buildReport(ctx, out.disks, out.smartCache), nil
+	}
+}
+
+// usageSummary composes the short all-clear report persisted as the run
+// summary when the pre-check skips the LLM: the health summary plus one
+// usage line per disk.
+func usageSummary(disks []DiskStat, summary string) string {
+	var sb strings.Builder
+	sb.WriteString(summary)
+	for _, d := range disks {
+		fmt.Fprintf(&sb, "\n%s: %.1f%% used (%s free of %s)",
+			d.Mount, d.UsedPct(), formatBytes(d.Free), formatBytes(d.Total))
+	}
+	return sb.String()
 }
 
 // diskHealth derives a skillstate health/summary pair from a set of disks:

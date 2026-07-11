@@ -201,6 +201,48 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 	)
 }
 
+// NewPreCheck returns a loop.PreCheck-compatible function that performs the
+// dry-run update check directly, bypassing the LLM tool-use loop entirely. It
+// reports needsLLM=false when the system is already up to date — the common
+// case most nights — so the loop can skip the LLM call outright. When updates
+// are pending, the LLM run proceeds (with the dry-run summary attached) to
+// drive the CVE analysis / approval / apply flow via the tool.
+func NewPreCheck(mem *memory.Store) func(ctx context.Context) (bool, string, error) {
+	return func(ctx context.Context) (bool, string, error) {
+		p, err := patching.New()
+		if err != nil {
+			// Fail open: let the LLM path see and report the failure rather
+			// than silently going quiet on a broken check.
+			return true, "", err
+		}
+
+		available, checkOut, err := p.UpdatesAvailable(ctx)
+		if err != nil {
+			return true, "", err
+		}
+
+		distUpgrade := p.CheckDistUpgrade()
+		if available {
+			report := "Pending updates were found (dry-run output below). Run the " +
+				"check_for_pending_system_patches tool to analyse, request approval for, " +
+				"and apply them.\n\n" + checkOut
+			return true, report, nil
+		}
+
+		result := "System packages are up to date.\n\n" + checkOut
+		stateMsg := "system is up to date"
+		if distUpgrade != "" {
+			result += "\n\nDistribution upgrade: " + distUpgrade
+			if strings.Contains(distUpgrade, "New release") {
+				stateMsg = "packages current; " + distUpgrade
+			}
+		}
+		slog.Info("check_for_pending_system_patches: pre-check completed", "result", "up_to_date")
+		_ = skillstate.Save(mem, "check_for_pending_system_patches", skillstate.HealthOK, stateMsg)
+		return false, result, nil
+	}
+}
+
 // proposedActionFor returns a human-readable string describing what will run.
 func proposedActionFor(os patching.OSType, updates []patching.PackageUpdate) string {
 	var cmd string

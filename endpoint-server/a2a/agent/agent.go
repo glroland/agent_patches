@@ -63,6 +63,7 @@ type Agent struct {
 	tools        []tool.Tool
 	cfg          *config.Settings
 	systemPrompt string
+	maxTokens    int
 }
 
 // New creates an Agent using cfg.Agent.SystemPrompt as the system message.
@@ -83,9 +84,16 @@ func NewWithResponsibility(tools []tool.Tool, cfg *config.Settings, systemPrompt
 }
 
 func newAgent(tools []tool.Tool, cfg *config.Settings, systemPrompt, responsibility string) *Agent {
+	// Responsibility runs produce short reports; cap their completion tokens
+	// (when configured) so a runaway generation can't monopolise a gateway
+	// concurrency slot. Interactive/ad-hoc runs keep the full budget.
+	maxTokens := cfg.Agent.MaxTokens
+	if responsibility != "" && cfg.Agent.ResponsibilityMaxTokens > 0 {
+		maxTokens = cfg.Agent.ResponsibilityMaxTokens
+	}
 	slog.Debug("agent: initialised",
 		"model", cfg.Agent.Model,
-		"max_tokens", cfg.Agent.MaxTokens,
+		"max_tokens", maxTokens,
 		"max_iterations", cfg.Agent.MaxIter,
 		"tools", len(tools),
 	)
@@ -118,6 +126,7 @@ func newAgent(tools []tool.Tool, cfg *config.Settings, systemPrompt, responsibil
 		tools:        tools,
 		cfg:          cfg,
 		systemPrompt: systemPrompt,
+		maxTokens:    maxTokens,
 	}
 }
 
@@ -128,7 +137,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 		trace.WithSpanKind(trace.SpanKindInternal),
 		trace.WithAttributes(
 			attribute.String("model", a.cfg.Agent.Model),
-			attribute.Int("llm.request.max_tokens", a.cfg.Agent.MaxTokens),
+			attribute.Int("llm.request.max_tokens", a.maxTokens),
 			attribute.Int("llm.request.max_iterations", a.cfg.Agent.MaxIter),
 			attribute.String("llm.system_prompt", a.systemPrompt),
 			attribute.String("llm.user_input", input),
@@ -168,7 +177,7 @@ func (a *Agent) Run(ctx context.Context, input string) (string, error) {
 	for iter := 0; iter < a.cfg.Agent.MaxIter; iter++ {
 		req := openai.ChatCompletionNewParams{
 			Model:     a.cfg.Agent.Model,
-			MaxTokens: param.NewOpt(int64(a.cfg.Agent.MaxTokens)),
+			MaxTokens: param.NewOpt(int64(a.maxTokens)),
 			Messages:  messages,
 		}
 		if len(oaiTools) > 0 {

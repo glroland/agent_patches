@@ -11,13 +11,22 @@
 #
 # "tools" names the skills available during the run.
 # "when_to_notify": "always" | "on_error" (default) | "never"
+#
+# NOTE: the responsibility names below are bound to deterministic pre-checks
+# registered in endpoint-server/main.go. A pre-check runs the health survey
+# without the LLM and skips the LLM call entirely when everything is healthy;
+# the instruction only reaches the model when a problem was found, with the
+# pre-gathered report appended. Renaming a responsibility detaches its
+# pre-check, and every scheduled tick pays for a full LLM run again.
 
 responsibilities:
   - name: disk-space-check
     frequency: "4h"
     instruction: |
-      Check disk usage on all drives. Review disk space usage, SMART health,
-      and the largest directories on each drive. Compare current usage against
+      A disk problem was detected on this host — see the pre-gathered report
+      included with this instruction (usage, SMART status, and the largest
+      directories per drive). Do not call check_drives again unless you want
+      a fresh read. Compare current usage against
       history with compare_to_baseline (domain: check_drives): report each
       drive's growth rate and, for any drive trending upward, the predicted
       time until full.
@@ -44,11 +53,14 @@ responsibilities:
   - name: cpu-utilization-check
     frequency: "1h"
     instruction: |
-      Check CPU utilization on this host. Report overall CPU usage percentage
-      and the top consuming processes. Use compare_to_baseline
+      Elevated CPU load was detected on this host — usage at/above 80% or a
+      load average exceeding the logical CPU count. See the pre-gathered
+      report included with this instruction; do not call
+      analyze_cpu_utilization again unless you want a fresh read.
+      Use compare_to_baseline
       (domain: analyze_cpu_utilization) to judge whether current load is normal
       for this host — distinguish sustained pressure from a momentary spike.
-      If CPU usage is above 80%, use run_diagnostic_command to investigate —
+      Use run_diagnostic_command to investigate —
       for example:
         Get-Process | Sort-Object CPU -Descending | Select-Object -First 20 Name, CPU, Id
       Report your findings. Only use run_approved_command if you determine a
@@ -69,11 +81,14 @@ responsibilities:
   - name: memory-utilization-check
     frequency: "1h"
     instruction: |
-      Check memory utilization on this host. Report total RAM, used memory,
-      and available memory. Use compare_to_baseline
+      A memory problem was detected on this host — RAM usage at/above 80%, or
+      day-over-day growth of 20+ percentage points that suggests a leak. See
+      the pre-gathered report included with this instruction; do not call
+      analyze_memory_utilization again unless you want a fresh read.
+      Use compare_to_baseline
       (domain: analyze_memory_utilization) to compare against this host's
-      normal usage — flag steady growth that suggests a leak even when the
-      current level is below alert thresholds. Use run_diagnostic_command to
+      normal usage and judge whether the pressure is persistent or growing.
+      Use run_diagnostic_command to
       gather details — for example:
         Get-CimInstance Win32_OperatingSystem |
           Select-Object TotalVisibleMemorySize, FreePhysicalMemory
@@ -96,12 +111,13 @@ responsibilities:
   - name: network-utilization-check
     frequency: "2h"
     instruction: |
-      Check network utilization on all active interfaces. Report upload and
-      download rates. Use compare_to_baseline
-      (domain: analyze_network_utilization) to judge whether current traffic is
-      normal for this host — flag traffic well above the 24-hour or 7-day
-      baseline even if it looks unremarkable in isolation. If any interface
-      shows unusually high or unexpected traffic, use run_diagnostic_command to
+      Unusual network traffic was detected on this host — the current rate
+      exceeds 3x this host's 7-day median, or the host is too new to have a
+      baseline yet. See the pre-gathered report included with this
+      instruction; do not call analyze_network_utilization again unless you
+      want a fresh read. Use compare_to_baseline
+      (domain: analyze_network_utilization) for additional historical context.
+      Use run_diagnostic_command to
       investigate — for example:
         netstat -ano | Select-String ESTABLISHED | Select-Object -First 40
         Get-NetTCPConnection -State Established |
@@ -224,9 +240,11 @@ responsibilities:
   - name: keep-system-up-to-date
     time: "03:00"
     instruction: |
-      Ensure the system is up to date. Use the check_for_pending_system_patches
-      tool to check for and apply any available Windows updates, rebooting if
-      required.
+      Pending Windows updates were detected on this host (see the pre-gathered
+      dry-run report included with this instruction). Use the
+      check_for_pending_system_patches tool to analyse their severity, request
+      operator approval, and apply them, rebooting if required. Report the
+      outcome via report_findings.
     tools:
       - check_for_pending_system_patches
       - report_findings

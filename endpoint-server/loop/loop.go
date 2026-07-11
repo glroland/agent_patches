@@ -126,7 +126,7 @@ func (l *Loop) Start(ctx context.Context) {
 		slog.Error("loop: invalid heartbeat, defaulting", "heartbeat", l.cfg.Loop.Heartbeat, "default", defaultHeartbeat, "error", err)
 		heartbeat = defaultHeartbeat
 	}
-	slog.Info("loop: starting — frequency-based responsibilities are delayed by a random startup jitter to spread LLM load across the fleet on simultaneous restarts",
+	slog.Info("loop: starting — responsibilities are offset by a random startup jitter (frequency-based: first run delayed; time-of-day: daily time shifted) to spread LLM load across the fleet",
 		"heartbeat", heartbeat,
 		"responsibilities", len(l.responsibilities),
 		"startup_jitter_minutes", int(l.startupDelay.Minutes()),

@@ -32,8 +32,10 @@ type Responsibility struct {
 // NewResponsibility validates cfg and builds its scheduling state.
 // startupDelay is added to the initial nextRun for frequency-based
 // responsibilities so agents stagger their first LLM call after restart.
-// Time-of-day responsibilities are unaffected (they already have fixed
-// wall-clock scheduling).
+// Time-of-day responsibilities are shifted by the same delay: every host in
+// a fleet typically configures the same wall-clock times (03:00 patching,
+// 07:00 summary), and without the per-host offset they all hit the shared
+// LLM gateway in the same minute.
 func NewResponsibility(cfg config.ResponsibilitySettings, startupDelay time.Duration) (*Responsibility, error) {
 	if cfg.Frequency != "" && cfg.Time != "" {
 		return nil, fmt.Errorf("responsibility %q: specify either frequency or time, not both", cfg.Name)
@@ -49,10 +51,11 @@ func NewResponsibility(cfg config.ResponsibilitySettings, startupDelay time.Dura
 		r.Freq = d
 		r.nextRun = time.Now().Add(startupDelay)
 	case cfg.Time != "":
-		if _, err := time.Parse(timeOfDayFormat, cfg.Time); err != nil {
+		t, err := time.Parse(timeOfDayFormat, cfg.Time)
+		if err != nil {
 			return nil, fmt.Errorf("responsibility %q: invalid time %q: %w", cfg.Name, cfg.Time, err)
 		}
-		r.TimeOfDay = cfg.Time
+		r.TimeOfDay = t.Add(startupDelay).Format(timeOfDayFormat)
 	default:
 		return nil, fmt.Errorf("responsibility %q: must specify either frequency or time", cfg.Name)
 	}
