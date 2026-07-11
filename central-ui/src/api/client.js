@@ -129,6 +129,11 @@ export function fetchIssues() {
   return getJSON('/issues');
 }
 
+// Dismisses a specific issue/finding so it stops showing up as open.
+export function resolveIssue(issueId, agentId) {
+  return postJSON(`/issues/${issueId}/resolve`, { agentId });
+}
+
 // Sends a chat message to an agent and returns its reply.
 export function sendAgentMessage(id, message) {
   return postJSON(`/agents/${id}/messages`, { message });

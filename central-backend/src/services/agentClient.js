@@ -184,6 +184,31 @@ export class AgentClient {
     }
   }
 
+  // Marks a timeline finding (an observation/recommendation with a severity)
+  // resolved so it stops counting as an open concern on the Issues page.
+  async resolveFinding(id) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const headers = {};
+      if (this.authToken) {
+        headers.Authorization = `Bearer ${this.authToken}`;
+      }
+      const res = await fetch(`${this.baseUrl}/findings/${id}/resolve`, {
+        method: 'POST',
+        headers,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => null);
+        throw new Error(payload?.message || `agent returned ${res.status} ${res.statusText}`);
+      }
+      return res.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // Posts the operator's output (or skip decision) for a pending manual-run request.
   // status must be "completed" or "skipped"; output is the pasted command output.
   async submitManualRunResult(id, output, status) {

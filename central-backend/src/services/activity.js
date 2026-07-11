@@ -41,7 +41,7 @@ export function concerns(agents) {
       });
     }
     for (const entry of agent.timeline) {
-      if (entry.severity) {
+      if (entry.severity && entry.status !== 'resolved') {
         items.push({
           id: entry.id,
           severity: entry.severity,

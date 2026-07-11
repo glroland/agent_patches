@@ -30,7 +30,7 @@ function attentionDescription(timeline) {
   }
 
   const criticals = timeline.filter(
-    (e) => e.severity === 'critical' && e.type !== 'escalation'
+    (e) => e.severity === 'critical' && e.type !== 'escalation' && e.status !== 'resolved'
   );
   if (criticals.length > 0) {
     const label = criticals.length === 1
@@ -186,6 +186,20 @@ export async function resolveApproval(agentId, approvalId, decision, reason = ''
     timeoutMs: config.agents.pollTimeoutMs,
   });
   return client.resolveApproval(approvalId, decision, reason);
+}
+
+export async function resolveFinding(agentId, findingId) {
+  const inventoryAgent = inventory.listAgents().find((agent) => shortHost(agent.fqdn) === agentId);
+  if (!inventoryAgent) {
+    throw new Error(`agent ${agentId} not found in inventory`);
+  }
+  const client = new AgentClient({
+    fqdn: inventoryAgent.fqdn,
+    port: inventoryAgent.port,
+    authToken: config.agents.authToken,
+    timeoutMs: config.agents.pollTimeoutMs,
+  });
+  return client.resolveFinding(findingId);
 }
 
 // Fetches GET /log from a single agent. Returns undefined if not in inventory,
