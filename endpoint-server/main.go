@@ -39,6 +39,7 @@ import (
 	"agent_patches/endpoint-server/skills/analyze_cpu_utilization"
 	"agent_patches/endpoint-server/skills/analyze_memory_utilization"
 	"agent_patches/endpoint-server/skills/analyze_network_utilization"
+	"agent_patches/endpoint-server/skills/analyze_system_temperature"
 	"agent_patches/endpoint-server/skills/capture_system_info"
 	"agent_patches/endpoint-server/skills/check_containers"
 	"agent_patches/endpoint-server/skills/check_drives"
@@ -187,6 +188,13 @@ func runServer(ctx context.Context) {
 	}
 	registry.Register(networkUsageTool)
 
+	temperatureTool, err := analyze_system_temperature.NewTemperatureTool(mem)
+	if err != nil {
+		slog.Error("failed to create analyze_system_temperature tool", "error", err)
+		return
+	}
+	registry.Register(temperatureTool)
+
 	loginSessionsTool, err := check_interactive_logins.NewLoginSessionsTool(mem)
 	if err != nil {
 		slog.Error("failed to create check_interactive_logins tool", "error", err)
@@ -331,12 +339,27 @@ func runServer(ctx context.Context) {
 		}
 	}
 
+	if rs, ok := analyze_system_temperature.AutoResponsibility(); ok {
+		alreadyDefined := false
+		for _, r := range cfg.Responsibilities {
+			if r.Name == rs.Name {
+				alreadyDefined = true
+				break
+			}
+		}
+		if !alreadyDefined {
+			cfg.Responsibilities = append(cfg.Responsibilities, rs)
+			slog.Info("auto-injected temperature-health-check responsibility")
+		}
+	}
+
 	loginMon := loginmonitor.New(mem, notify, incidentStore, cfg.LoginMonitor)
 	failedLoginMon := loginmonitor.NewFailedMonitor(mem, notify, cfg.LoginMonitor)
 	connMon := connmonitor.New(mem, notify, incidentStore, cfg.NetworkMonitor)
 
 	lp := loop.New(cfg, registry, notify, mem, incidentStore)
 	lp.RegisterPreCheck("nfs-health-check", check_nfs.NewPreCheck(mem))
+	lp.RegisterPreCheck("temperature-health-check", analyze_system_temperature.NewPreCheck(mem))
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem, notify, policyStore)

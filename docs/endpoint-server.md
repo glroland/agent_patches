@@ -91,6 +91,7 @@ All tools are registered in `endpoint-server/main.go`.
 | `analyze_cpu_utilization` | CPU usage over time, per-core breakdown |
 | `analyze_memory_utilization` | RAM and swap usage |
 | `analyze_network_utilization` | Per-interface traffic statistics |
+| `analyze_system_temperature` | Temperature sensor readings (Linux thermal zones, Windows ACPI thermal zones, macOS SMC via `powermetrics`) + trend tracking. Flags sensors above 80°C/90°C and sustained-high readings over a 15-minute window. |
 | `check_interactive_logins` | Active interactive login sessions |
 | `check_security_posture` | Security posture drift: listening ports (with owning process), login-capable users, admin group membership, sudoers fingerprint, per-user authorized_keys fingerprints, setuid binaries. Reports what changed since the previous snapshot; drift sets a `warning` skillstate. Snapshots stored in the `check_security_posture` domain. |
 | `read_agent_memory` | Lets the LLM read the agent's own memory store. `history=true` with a `window` duration (default `"1h"`, up to 90 days) bounds how much of the tiered history is returned. |
