@@ -9,8 +9,8 @@ WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Only the gateway source is needed — no other internal packages are imported.
 COPY llm-gateway/ llm-gateway/
+COPY llmmodel/ llmmodel/
 
 RUN CGO_ENABLED=0 GOOS=linux \
     go build -ldflags="-s -w" -o /llm-gateway ./llm-gateway/
