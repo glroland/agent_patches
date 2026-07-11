@@ -336,6 +336,7 @@ func runServer(ctx context.Context) {
 	connMon := connmonitor.New(mem, notify, incidentStore, cfg.NetworkMonitor)
 
 	lp := loop.New(cfg, registry, notify, mem, incidentStore)
+	lp.RegisterPreCheck("nfs-health-check", check_nfs.NewPreCheck(mem))
 	statusSvc := status.New(hostInfo, mem, lp, cfg)
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem, notify, policyStore)

@@ -6,8 +6,16 @@ The approvals tab in the central UI lists pending approval requests being surfac
 ## 2
 Is the LLM/intelligence called if no NFS mounts exist on the server?
 
+## 3
+
+On the token usage sub tab on the activity page in central UI, there is a rectangle with the words upstream then the LLM URL.  I want to label this "Intelligence Provider URL".  I also want a second line that lists "Model Name".
+
 ## 4
 Let's say the memory-utilization-check runs every 5 minutes.  Is the LLM called everytime?  If not, under what circumstance is it called?
+
+## 5
+
+In a new or existing skill or loop or health check, look at system attributes such as temperature and track values over time.  If above normal levels, generate an alert.
 
 # Fable
 

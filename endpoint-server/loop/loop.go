@@ -42,6 +42,17 @@ type RunState struct {
 	Summary   string `json:"summary,omitempty"`
 }
 
+// PreCheck runs deterministic, non-LLM logic before a responsibility's agent
+// invocation. If needsLLM is false, the loop skips the LLM call entirely and
+// treats report as the run's summary — this is the mechanism responsibilities
+// use to avoid paying for an inference call on every tick when there's
+// nothing worth escalating. When needsLLM is true, report (if non-empty) is
+// appended to the responsibility's instruction so the agent doesn't have to
+// re-derive data the pre-check already gathered. On error, callers should
+// fail open (return needsLLM=true) so a broken pre-check surfaces via the LLM
+// path instead of silently suppressing real incidents.
+type PreCheck func(ctx context.Context) (needsLLM bool, report string, err error)
+
 // Loop wakes up on a configurable interval, runs a tick handler, and
 // dispatches any configured responsibilities that are due.
 type Loop struct {
@@ -52,6 +63,7 @@ type Loop struct {
 	incidents        *incidents.Store
 	responsibilities []*Responsibility
 	startupDelay     time.Duration
+	preChecks        map[string]PreCheck
 }
 
 // New creates a Loop. Call Start to launch the background goroutine.
@@ -73,6 +85,15 @@ func New(cfg *config.Settings, registry *tasks.Registry, notify *notifier.Notifi
 
 // Responsibilities returns the live list of scheduled responsibilities.
 func (l *Loop) Responsibilities() []*Responsibility { return l.responsibilities }
+
+// RegisterPreCheck attaches a PreCheck to the named responsibility. It must
+// be called before the loop starts ticking (i.e., before Start).
+func (l *Loop) RegisterPreCheck(name string, pc PreCheck) {
+	if l.preChecks == nil {
+		l.preChecks = make(map[string]PreCheck)
+	}
+	l.preChecks[name] = pc
+}
 
 // CurrentTask returns the name of the responsibility currently in flight, or
 // "" if none is running. If multiple are running concurrently, the first one
@@ -160,8 +181,24 @@ func (l *Loop) execute(ctx context.Context, r *Responsibility) {
 	log := slog.With("responsibility", r.cfg.Name)
 	log.Info("loop: responsibility started")
 
+	instruction := r.cfg.Instruction
+	if pc, ok := l.preChecks[r.cfg.Name]; ok {
+		needsLLM, report, pcErr := pc(ctx)
+		if pcErr != nil {
+			log.Warn("loop: pre-check failed, falling back to LLM", "error", pcErr)
+		} else if !needsLLM {
+			log.Info("loop: pre-check clean, skipping LLM call", "summary", report)
+			span.SetStatus(codes.Ok, "")
+			l.persistRunState(r, report, nil)
+			l.maybeNotify(ctx, r, report, nil)
+			return
+		} else if report != "" {
+			instruction = instruction + "\n\nPre-gathered health report:\n" + report
+		}
+	}
+
 	a := agent.NewWithResponsibility(l.filterTools(r.cfg.Tools), l.cfg, l.cfg.ResponsibilitySystemPrompt, r.cfg.Name)
-	result, err := a.Run(ctx, l.withOpenIncidents(r.cfg.Instruction))
+	result, err := a.Run(ctx, l.withOpenIncidents(instruction))
 	if err != nil {
 		log.Error("loop: responsibility failed", "error", err)
 		span.RecordError(err)

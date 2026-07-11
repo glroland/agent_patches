@@ -47,6 +47,80 @@ type RawNFSStats struct {
 
 type nfsCheckInput struct{}
 
+// CheckResult is the outcome of one NFS health survey.
+type CheckResult struct {
+	Health  skillstate.Health
+	Report  string // human-readable report (or "no NFS mounts found on this host")
+	Summary string // short skillstate/log summary; empty when there are no mounts
+}
+
+// runCheck surveys all NFS mounts and their health, records the worst health
+// as a skillstate entry, and executes an emergency lazy unmount if needed. It
+// makes no LLM calls — callers decide whether the result warrants one.
+func runCheck(ctx context.Context, mem *memory.Store) (CheckResult, error) {
+	slog.Info("check_nfs: starting")
+
+	mounts, err := listNFSMounts()
+	if err != nil {
+		slog.Warn("check_nfs: failed to list NFS mounts", "error", err)
+	}
+
+	if len(mounts) == 0 {
+		slog.Info("check_nfs: no NFS mounts found — skipping health record")
+		return CheckResult{Health: skillstate.HealthOK, Report: "no NFS mounts found on this host"}, nil
+	}
+
+	dStateTotal := countDStateProcs()
+
+	stats, statErr := gatherStats(ctx, mounts)
+	if statErr != nil {
+		slog.Warn("check_nfs: partial stat failure", "error", statErr)
+	}
+
+	// Distribute D-state count evenly across mounts (we can't attribute
+	// per-mount without tracing individual syscalls).
+	for i := range stats {
+		stats[i].DStateProcs = dStateTotal
+	}
+
+	var autoUnmounted []string
+	var sections []string
+	worst := skillstate.HealthOK
+	var allIssues []string
+
+	for _, s := range stats {
+		h, issue := AssessMount(s)
+
+		if h == skillstate.HealthCritical && s.PendingOps >= pendingOpsCritical {
+			if umErr := lazyUnmount(ctx, s.Mount); umErr != nil {
+				slog.Error("check_nfs: auto-unmount failed", "mount", s.Mount, "error", umErr)
+				issue += fmt.Sprintf(" (auto-unmount failed: %v)", umErr)
+			} else {
+				slog.Warn("check_nfs: emergency lazy unmount executed", "mount", s.Mount, "pending_ops", s.PendingOps)
+				autoUnmounted = append(autoUnmounted, s.Mount)
+				issue += " [AUTO-UNMOUNTED]"
+			}
+		}
+
+		if issue != "" {
+			allIssues = append(allIssues, issue)
+		}
+		worst = worseHealth(worst, h)
+		sections = append(sections, buildMountSection(s, h, issue))
+	}
+
+	var report strings.Builder
+	report.WriteString(strings.Join(sections, "\n\n"))
+	if len(autoUnmounted) > 0 {
+		fmt.Fprintf(&report, "\n\nEMERGENCY LAZY UNMOUNT executed for: %s", strings.Join(autoUnmounted, ", "))
+	}
+
+	summary := nfsSummary(allIssues, len(mounts))
+	_ = skillstate.Save(mem, "check_nfs", worst, summary)
+	slog.Info("check_nfs: completed", "mounts", len(mounts), "health", worst, "issues", len(allIssues))
+	return CheckResult{Health: worst, Report: report.String(), Summary: summary}, nil
+}
+
 // NewCheckNFSTool returns a skill that surveys all NFS mounts and their health.
 func NewCheckNFSTool(mem *memory.Store) (tool.Tool, error) {
 	return tool.New(
@@ -59,69 +133,28 @@ func NewCheckNFSTool(mem *memory.Store) (tool.Tool, error) {
 			"automatically executes a lazy unmount (umount -l) when pending ops "+
 			"exceed 2000, preventing a non-responsive NFS server from hanging the host.",
 		func(ctx context.Context, _ nfsCheckInput) (string, error) {
-			slog.Info("check_nfs: starting")
-
-			mounts, err := listNFSMounts()
-			if err != nil {
-				slog.Warn("check_nfs: failed to list NFS mounts", "error", err)
-			}
-
-			if len(mounts) == 0 {
-				slog.Info("check_nfs: no NFS mounts found — skipping health record")
-				return "no NFS mounts found on this host", nil
-			}
-
-			dStateTotal := countDStateProcs()
-
-			stats, statErr := gatherStats(ctx, mounts)
-			if statErr != nil {
-				slog.Warn("check_nfs: partial stat failure", "error", statErr)
-			}
-
-			// Distribute D-state count evenly across mounts (we can't attribute
-			// per-mount without tracing individual syscalls).
-			for i := range stats {
-				stats[i].DStateProcs = dStateTotal
-			}
-
-			var autoUnmounted []string
-			var sections []string
-			worst := skillstate.HealthOK
-			var allIssues []string
-
-			for _, s := range stats {
-				h, issue := AssessMount(s)
-
-				if h == skillstate.HealthCritical && s.PendingOps >= pendingOpsCritical {
-					if umErr := lazyUnmount(ctx, s.Mount); umErr != nil {
-						slog.Error("check_nfs: auto-unmount failed", "mount", s.Mount, "error", umErr)
-						issue += fmt.Sprintf(" (auto-unmount failed: %v)", umErr)
-					} else {
-						slog.Warn("check_nfs: emergency lazy unmount executed", "mount", s.Mount, "pending_ops", s.PendingOps)
-						autoUnmounted = append(autoUnmounted, s.Mount)
-						issue += " [AUTO-UNMOUNTED]"
-					}
-				}
-
-				if issue != "" {
-					allIssues = append(allIssues, issue)
-				}
-				worst = worseHealth(worst, h)
-				sections = append(sections, buildMountSection(s, h, issue))
-			}
-
-			var report strings.Builder
-			report.WriteString(strings.Join(sections, "\n\n"))
-			if len(autoUnmounted) > 0 {
-				fmt.Fprintf(&report, "\n\nEMERGENCY LAZY UNMOUNT executed for: %s", strings.Join(autoUnmounted, ", "))
-			}
-
-			summary := nfsSummary(allIssues, len(mounts))
-			_ = skillstate.Save(mem, "check_nfs", worst, summary)
-			slog.Info("check_nfs: completed", "mounts", len(mounts), "health", worst, "issues", len(allIssues))
-			return report.String(), nil
+			res, err := runCheck(ctx, mem)
+			return res.Report, err
 		},
 	)
+}
+
+// NewPreCheck returns a loop.PreCheck-compatible function (see loop.PreCheck)
+// that runs the NFS health survey directly, bypassing the LLM tool-use loop
+// entirely. It reports needsLLM=false whenever there are no NFS mounts or
+// every mount is healthy — the common case on most scheduled ticks — so the
+// loop can skip the LLM call outright instead of invoking it just to have it
+// discover nothing is wrong.
+func NewPreCheck(mem *memory.Store) func(ctx context.Context) (bool, string, error) {
+	return func(ctx context.Context) (bool, string, error) {
+		res, err := runCheck(ctx, mem)
+		if err != nil {
+			// Fail open: let the LLM path see and report the failure rather
+			// than silently going quiet on a broken health check.
+			return true, "", err
+		}
+		return res.Health != skillstate.HealthOK, res.Report, nil
+	}
 }
 
 // AssessMount derives a skillstate health level and short issue label for a
@@ -326,36 +359,32 @@ func buildMountSection(s NFSMountStats, h skillstate.Health, issue string) strin
 }
 
 // AutoResponsibility returns the built-in nfs-health-check responsibility and
-// true on Linux hosts that have at least one NFS mount. Returns false on other
-// platforms or when no NFS mounts are present; callers should skip injection.
+// true on Linux hosts. It is always registered regardless of whether any NFS
+// mounts exist at startup — mounts added later are still picked up on the
+// next scheduled tick. The associated PreCheck (see NewPreCheck) runs the
+// health survey directly and only invokes the LLM when it finds a real issue,
+// so registering unconditionally does not cost an LLM call on hosts without
+// NFS mounts. Returns false on non-Linux platforms, where NFS monitoring
+// isn't implemented at all.
 func AutoResponsibility() (config.ResponsibilitySettings, bool) {
 	if !nfsSupported() {
-		return config.ResponsibilitySettings{}, false
-	}
-	mounts, err := listNFSMounts()
-	if err != nil {
-		slog.Warn("check_nfs: failed to list NFS mounts for auto-responsibility", "error", err)
-		return config.ResponsibilitySettings{}, false
-	}
-	if len(mounts) == 0 {
 		return config.ResponsibilitySettings{}, false
 	}
 	return config.ResponsibilitySettings{
 		Name:      "nfs-health-check",
 		Frequency: "60m",
-		Instruction: `Check the health of all NFS mount points on this host.
-Run check_nfs and review the output. If the result is "no NFS mounts found on
-this host", stop — do NOT call report_findings; the outcome is logged automatically.
-Only call report_findings when there is something that requires attention:
-elevated pending ops (>500), slow GETATTR latency (>1000ms), D-state processes,
-or an emergency unmount ([AUTO-UNMOUNTED] in the output).
-When issues are present, use run_diagnostic_command to investigate further:
+		Instruction: `An NFS mount health issue was detected on this host (see the
+pre-gathered health report included with this instruction — no need to call
+check_nfs again unless you want a fresh read). Elevated pending ops (>500),
+slow GETATTR latency (>1000ms), D-state processes, or an emergency unmount
+([AUTO-UNMOUNTED] in the report) all warrant investigation.
+Use run_diagnostic_command to gather more context if useful:
   nfsstat -m                     # per-mount NFS statistics
   dmesg | grep -i nfs | tail -20 # kernel NFS messages
   ps aux | awk '$8 ~ /^D/ {print}' | head -20  # D-state processes
-If an emergency unmount was performed, report it via report_findings and
-investigate why the NFS server became unresponsive. Do not re-mount without
-operator approval via run_approved_command.`,
+Call report_findings with your assessment and remediation recommendation. If
+an emergency unmount was performed, explain why the NFS server likely became
+unresponsive. Do not re-mount without operator approval via run_approved_command.`,
 		Tools:        []string{"check_nfs", "run_diagnostic_command", "run_approved_command", "report_findings"},
 		WhenToNotify: "on error",
 	}, true
