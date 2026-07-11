@@ -32,7 +32,23 @@ All configuration is via environment variables. There is no config file.
 | `INTELLIGENCE_MODEL` | `gpt-4o` | Model name |
 | `INTELLIGENCE_INTERVAL_MINUTES` | `30` | Re-analysis interval. `0` = run once on startup only. |
 | `INTELLIGENCE_TIMEOUT_MS` | `1200000` (20m) | Timeout for intelligence API calls |
+| `GATEWAY_STATS_URL` | — | Base URL of llm-gateway; enables the `/api/gateway/*` proxy routes |
+| `GATEWAY_AUTH_TOKEN` | — | Bearer token for llm-gateway (must match the gateway's `GATEWAY_AUTH_TOKEN`) |
+| `OAUTH_CLIENT_ID` / `OAUTH_CLIENT_SECRET` | — | OAuth client for operator login |
+| `OAUTH_AUTHORIZE_URL` / `OAUTH_TOKEN_URL` | — | OAuth endpoints (OpenShift OAuth server) |
+| `OAUTH_SAR_RESOURCE` / `OAUTH_SAR_VERB` | `nodes` / `list` | SubjectAccessReview used to authorize the logged-in user |
+| `SESSION_SECRET` | dev fallback | HMAC secret for signing session JWTs — set in production |
 | `LOG_LEVEL` | `info` | Logging verbosity |
+
+### Authentication
+
+Operator access is gated by OAuth (OpenShift OAuth server) + short-lived session JWTs:
+
+1. central-ui redirects the operator through the OAuth authorize flow; the callback lands on `POST /api/auth/callback`.
+2. central-backend exchanges the code, verifies the user via a Kubernetes SubjectAccessReview (`OAUTH_SAR_RESOURCE`/`OAUTH_SAR_VERB` — by default, "can this user list nodes?"), and issues an HMAC-signed session JWT (`SESSION_SECRET`).
+3. All `/api/*` routes (except `/api/auth/*`) require `Authorization: Bearer <session JWT>` via the `requireAuth` middleware; the WebSocket upgrade validates the same token from its `?token=` query param.
+
+This session-JWT auth is between the operator's browser and central-backend only — it is separate from `AGENT_AUTH_TOKEN`, the static bearer token central-backend presents to each endpoint-server.
 
 ### Inventory
 
@@ -69,6 +85,12 @@ All routes are under `/api`.
 | `/api/chat` | POST | Broadcast a message to all agents in parallel |
 | `/api/summary` | GET | Daily briefing |
 | `/api/issues` | GET | Open concerns (critical timeline entries) across the fleet |
+| `/api/issues/:id/resolve` | POST | Mark an issue resolved on its agent |
+| `/api/manual-runs/:id/result` | POST | Forward a manual-run result (output or skip) to the agent |
+| `/api/intelligence/refresh` | POST | Trigger an immediate fleet-intelligence re-analysis |
+| `/api/gateway/stats` | GET | Proxy of llm-gateway `GET /stats` (token/queue statistics) |
+| `/api/gateway/pending` | GET | Proxy of llm-gateway `GET /pending` (live queued/in-flight LLM requests) |
+| `/api/auth/*` | — | OAuth login flow (see "Authentication") — the only unauthenticated `/api` routes |
 | `/api/admin/memory` | DELETE | Clear all agents' memory in parallel |
 
 Agent IDs are derived from the first segment of the FQDN (e.g. `host-a` from `host-a.example.com`).
@@ -88,7 +110,7 @@ Message shape:
   "type": "fleet_update",
   "agents": [ /* AgentSummary objects — id, hostname, status, statusLabel, currentTask, lastPoll, pendingApprovalCount, latestActivity */ ],
   "dashboard": {
-    "stats": { "totalAgents": N, "healthyAgents": N, "attentionCount": N, "pendingApprovalCount": N, "openRecommendations": N, "hasHighRiskApproval": bool },
+    "stats": { "totalAgents": N, "healthyAgents": N, "attentionCount": N, "pendingApprovalCount": N, "openRecommendations": N, "hasHighRiskApproval": bool, "hasHighImportanceApproval": bool },
     "attention": [ /* agents needing attention */ ],
     "approvals": [ /* up to 4 pending approvals */ ],
     "activity": [ /* 8 most recent non-approval timeline entries across fleet */ ]
@@ -100,6 +122,8 @@ Message shape:
 ```
 
 A 30-second ping keeps connections alive through proxies.
+
+Pending approvals are sorted by **importance** first (the urgency signal), then risk, then age; an agent's "needs attention" description likewise counts high/medium-**importance** approvals, not risk (see [endpoint-server.md](endpoint-server.md#importance-vs-risk)).
 
 ### AgentClient (`services/agentClient.js`)
 

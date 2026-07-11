@@ -17,6 +17,11 @@ The endpoint-server is a Go binary that runs on each managed host. It exposes an
 | `/policies` | GET | Yes (if bearer) | List standing approval policies |
 | `/policies` | POST | Yes (if bearer) | Create a standing approval policy `{description, pattern, risk}` |
 | `/policies/:id` | DELETE | Yes (if bearer) | Remove a standing approval policy |
+| `/manual-runs/:id/result` | POST | Yes (if bearer) | Submit operator output (or a skip) for a pending manual-run request |
+| `/log` | GET | Yes (if bearer) | Tail of the agent's log file (last 1 MB), for the UI log viewer |
+| `/network-connections` | GET | Yes (if bearer) | Connection history with unusual-connection flags |
+| `/interactive-logins` | GET | Yes (if bearer) | Login history with unusual-login flags |
+| `/findings/:id/resolve` | POST | Yes (if bearer) | Mark a `report_findings` timeline entry resolved |
 
 ### GET /status response shape
 
@@ -52,6 +57,10 @@ Drives the OpenAI chat completions tool-use loop. On each iteration:
 4. Repeats until `finish_reason != tool_calls` or `MaxIter` is reached
 
 **Duplicate call detection:** tracks call signatures (tool name + arguments). On the second call with identical arguments, returns the cached result with a prompt nudging the model to write its final answer. On the third, returns the cached result and terminates with a note to the caller.
+
+**Gateway headers:** every LLM request carries `X-Agent-Name` (display name) and, for scheduled runs, `X-Responsibility` (the responsibility name) so [llm-gateway](llm-gateway.md) can attribute token usage. Interactive requests (operator chat arriving via the A2A endpoint) are tagged `X-Priority: interactive` and jump the gateway's queue.
+
+**Token budgets:** interactive runs use `agent.max_tokens`. Scheduled responsibility runs use `agent.responsibility_max_tokens` when set (> 0), capping completion length so a runaway generation cannot monopolise a gateway concurrency slot.
 
 ### executor.go (`a2a/executor/executor.go`)
 
@@ -106,6 +115,16 @@ All tools are registered in `endpoint-server/main.go`.
 | `manage_incidents` | Reads and updates the incident ledger (`list`, `report`, `log_action`, `resolve`). See "Incident ledger" below. |
 | `request_approval` | Blocking HITL gate. Writes a `pending` `ApprovalEntry` to AttrsStore and blocks until an operator decides or the 24-hour window expires. Used internally by the patch flow. See below. |
 | `run_approved_command` | Files an **async** approval and returns immediately; the command executes when the operator approves (see "Async approval flow"). Commands matching a standing approval policy execute immediately instead. |
+| `request_manual_run` | Used when a command fails under sudoers restrictions: files a `manual_run` entry, notifies the operator to run the command by hand and paste the output back via `POST /manual-runs/:id/result`, and blocks polling until completed/skipped or the 24-hour window expires. The entry carries a copy-pasteable sudoers instruction for adding native support. |
+
+### Importance vs. risk
+
+Every approval carries two independently assessed dimensions:
+
+- **Importance** — how urgent it is to act (CVE severity, security exposure, business impact of delay).
+- **Risk** — how likely the action *itself* is to disrupt the host if something goes wrong (blast radius, reversibility, downtime potential).
+
+A critical security patch can be high importance but low risk to apply; a routine but disruptive restart can be high risk but low importance. An immediate out-of-band notification fires when **either** is high. central-backend sorts and surfaces pending approvals by importance first (that is the urgency signal), then risk, then age.
 
 `check_for_pending_system_patches` also drives the update application path (calls `Patcher.Run`), which uses `request_approval` internally before applying changes.
 
@@ -135,7 +154,7 @@ The `policy` package stores operator-created policies in AttrsStore under `appro
 
 ### Async approval flow (run_approved_command)
 
-`run_approved_command` never blocks on the operator. It calls `request_approval.SubmitApproval` with `AutoExecute=true`, which writes the pending `ApprovalEntry` + timeline card (+ immediate notification for high risk) and returns the approval ID at once. The tool tells the model the command has NOT run and will execute on approval.
+`run_approved_command` never blocks on the operator. It calls `request_approval.SubmitApproval` with `AutoExecute=true`, which writes the pending `ApprovalEntry` + timeline card (+ immediate notification for high importance or high risk) and returns the approval ID at once. The tool tells the model the command has NOT run and will execute on approval.
 
 - On **approve** (`POST /approvals/:id/decision`), the approvalapi handler launches `run_approved_command.ExecuteOnApproval` in a detached goroutine: it runs the command (same sudo / manual-run escalation path), records the output on the approval entry (`Output`) and as an `action` timeline entry, notifies the operator of the result, and counts the approval for standing-policy promotion.
 - On **reject**, nothing executes.
@@ -149,7 +168,7 @@ Used by flows that need the decision in-run (the patch pipeline applies updates 
 
 - Writes an `ApprovalEntry` to `AttrsStore` under key `approval:<uuid>`
 - Writes a `TimelineEntry` (type=approval, status=pending) to the `timeline` domain
-- For `risk="high"`: fires `notifier.Notify` immediately (out-of-band alert)
+- For `importance="high"` or `risk="high"`: fires `notifier.Notify` immediately (out-of-band alert)
 - Polls `AttrsStore` every 5 seconds until the status changes from `pending`
 - Single 24-hour timeout — permanently cancelled on expiry, not retried
 - On timeout: fires a second `notifier.Notify` to confirm the action was NOT taken
@@ -171,21 +190,34 @@ Storage failures are logged but never propagate — a failing write never aborts
 
 For each due responsibility:
 1. Sets an `atomic.Bool` to mark it as running (prevents overlapping runs)
-2. Launches a goroutine that creates a new `agent.Agent` with the responsibility's filtered tool set
-3. Calls `agent.Run(instruction)` — the instruction is the responsibility's `Instruction` with any open incidents from the ledger appended (see "Incident ledger"), so the agent dedupes against known problems instead of re-reporting them
-4. Persists run state (`lastRunAt`, `status`, `summary`) to `AttrsStore` under `responsibility_run:<name>`
-5. Fires a notification based on `when_to_notify`: `"always"`, `"on_error"` (default), or `"never"`
+2. Runs the responsibility's registered **pre-check**, if any (see below) — when the pre-check reports healthy, the LLM run is skipped entirely
+3. Otherwise launches a goroutine that creates a new `agent.Agent` with the responsibility's filtered tool set
+4. Calls `agent.Run(instruction)` — the instruction is the responsibility's `Instruction` with any open incidents from the ledger appended (see "Incident ledger"), so the agent dedupes against known problems instead of re-reporting them
+5. Persists run state (`lastRunAt`, `status`, `summary`) to `AttrsStore` under `responsibility_run:<name>`
+6. Fires a notification based on `when_to_notify`: `"always"`, `"on_error"` (default), or `"never"`
 
 If a responsibility is still in flight when its next interval fires, that run is skipped and an error is logged.
+
+### Pre-checks
+
+A `PreCheck` is deterministic, non-LLM logic attached to a responsibility by name in `main.go` (`lp.RegisterPreCheck(name, pc)`). Its signature is `func(ctx) (needsLLM bool, report string, err error)`:
+
+- `needsLLM=false` — everything is healthy; the pre-check's report is persisted as the run's summary and **no LLM call is made**. This is the common case on most ticks and is the primary lever keeping fleet-wide token usage inside the shared gateway's capacity.
+- `needsLLM=true` — something needs judgment; the LLM run proceeds with the pre-check's report attached to the instruction.
+- errors fail open (the LLM run proceeds) so a broken check never silently goes quiet.
+
+Pre-checks are registered for: `nfs-health-check`, `temperature-health-check`, `container-health-check`, `cpu-utilization-check`, `memory-utilization-check`, `disk-space-check`, `network-utilization-check`, and `keep-system-up-to-date`. The key must match the responsibility name in config — a renamed responsibility simply runs without its pre-check (every tick pays for an LLM run again). New scheduled responsibilities should ship with a pre-check.
 
 ## Responsibilities Scheduling
 
 `loop/responsibility.go` — two schedule modes:
 
-- `frequency` — a Go duration string (e.g. `"1h"`, `"30m"`). Fires repeatedly at that interval. Starts immediately on process start.
+- `frequency` — a Go duration string (e.g. `"1h"`, `"30m"`). Fires repeatedly at that interval.
 - `time` — a wall-clock time in `HH:MM` format. Fires once per day at that local time.
 
 Exactly one of `frequency` or `time` must be set per responsibility.
+
+**Fleet staggering:** both modes are offset by a per-host startup delay — frequency-based responsibilities delay their first run, and time-of-day responsibilities are shifted by the same delay. Without this, every host configured with the same wall-clock time (03:00 patching, 07:00 summary) would hit the shared LLM gateway in the same minute.
 
 ### OS-specific responsibility files
 
@@ -230,11 +262,15 @@ Config file at `config.yaml` or `$AGENT_PATCHES_CONFIG`. Key sections:
 
 ```yaml
 agent:
-  model: gpt-4o
+  # model: <optional> — omit to use the DEFAULT sentinel, which llm-gateway
+  # rewrites to its own GATEWAY_UPSTREAM_MODEL; set only when this agent
+  # should use a different model than the fleet default
   max_tokens: 4096
+  responsibility_max_tokens: 4096  # optional; caps completion tokens for scheduled runs only
   max_iterations: 10
   api_key: <optional, defaults to OPENAI_API_KEY env var>
-  base_url: <optional, for Azure or local models>
+  base_url: <points at llm-gateway, or any OpenAI-compatible server>
+  request_timeout: "6m"  # per-LLM-call HTTP timeout; set just above the gateway's GATEWAY_REQUEST_TIMEOUT
 
 server:
   host: 0.0.0.0
@@ -281,9 +317,15 @@ Defaults applied by `config.Load`:
 - `security.scheme` → `none`
 - `memory.root` → `./agent_memory`
 - `loop.heartbeat` → `1s`
+- `agent.model` → the `DEFAULT` sentinel (resolved by llm-gateway)
+- `agent.request_timeout` → `6m`
+- `logging.max_backups` → `10`
 - `login_monitor.failed_login_threshold` → `3`
 - `login_monitor.baseline_min_events` → `5`
+- `status.summary_ttl` → `5m`
 - `responsibility_system_prompt` → `<goos>-system-prompt.txt` next to the config file, else a built-in prompt with tool selection rules
+
+`config.Load` also loads `<goos>-baseline-ports.csv` from the config directory (see `check_security_posture` — expected/known-risk port classification).
 
 ## Startup Sequence
 
@@ -297,9 +339,10 @@ Defaults applied by `config.Load`:
 8. Auto-inject NFS and container health responsibilities if the relevant subsystems are detected
 9. Wrap all tools with `storage.WrapAll`
 10. Create `agent.Agent` and `executor.Executor`
-11. Build A2A agent card and HTTP mux
-12. Start login monitors, background loop
-13. Start HTTP server
+11. Register responsibility pre-checks (`lp.RegisterPreCheck`) so healthy ticks skip the LLM
+12. Build A2A agent card and HTTP mux (A2A requests with `X-Priority: interactive` are tagged for gateway priority)
+13. Start login monitors, connection monitor, background loop, approval expiry sweeper
+14. Start HTTP server
 
 ## Platform Support
 

@@ -540,13 +540,14 @@ type limitedCapture struct {
 }
 
 func (lc *limitedCapture) Write(p []byte) (int, error) {
+	n := len(p)
 	if remaining := lc.max - lc.w.Len(); remaining > 0 {
 		if len(p) > remaining {
 			p = p[:remaining]
 		}
 		lc.w.Write(p) //nolint:errcheck — bytes.Buffer.Write never fails
 	}
-	return len(p), nil // always report full write to tee reader
+	return n, nil // always report full write so the tee reader never aborts the stream
 }
 
 // ---------------------------------------------------------------------------

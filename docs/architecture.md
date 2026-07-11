@@ -1,6 +1,6 @@
 # Architecture
 
-agent_patches is a fleet management system made up of three components: an endpoint agent that runs on each managed host, a central backend that aggregates fleet state, and a web UI for operator control.
+agent_patches is a fleet management system made up of four components: an endpoint agent that runs on each managed host, a central backend that aggregates fleet state, a web UI for operator control, and an LLM gateway that queues and meters every agent's model calls against the shared LLM.
 
 ## Components
 
@@ -34,6 +34,12 @@ See [central.md](central.md) for full detail.
 A React SPA served by nginx. Connects to central-backend via HTTP REST and WebSocket. Pages: Dashboard, Agents, AgentDetail, Approvals, ActivityFeed, FleetIntelligence, FleetChat, Admin.
 
 See [central.md](central.md) for full detail.
+
+### llm-gateway
+
+A Go queuing reverse proxy between every agent and the shared OpenAI-compatible LLM. It bounds upstream concurrency, prioritizes interactive (operator-initiated) requests over scheduled background work, substitutes the fleet-wide default model for the `DEFAULT` sentinel, and tracks per-agent / per-responsibility token usage (surfaced in the UI via central-backend's `/api/gateway/*` proxy routes).
+
+See [llm-gateway.md](llm-gateway.md) for full detail.
 
 ## System Topology
 
@@ -73,6 +79,11 @@ See [central.md](central.md) for full detail.
 
 CLI tool: patches-cli ──────────────────────────────────────────────────────►
           (one-shot A2A message/send to any endpoint-server)
+
+LLM path: every endpoint-server agent  ──►  llm-gateway  ──►  upstream LLM
+          (X-Agent-Name / X-Responsibility / X-Priority headers;
+           priority queue for interactive requests, bounded concurrency,
+           per-agent token stats via GET /stats and /pending)
 ```
 
 ## Data Flows
@@ -152,6 +163,11 @@ The blocking variant (`request_approval` tool, used by the patch pipeline) still
 | `/responsibilities` | GET | Responsibilities + last run state |
 | `/policies` | GET / POST | List / create standing approval policies |
 | `/policies/:id` | DELETE | Remove a standing approval policy |
+| `/manual-runs/:id/result` | POST | Submit operator output for a manual-run request |
+| `/log` | GET | Tail of the agent's log file (last 1 MB) |
+| `/network-connections` | GET | Connection history with unusual-connection flags |
+| `/interactive-logins` | GET | Login history with unusual-login flags |
+| `/findings/:id/resolve` | POST | Mark a reported finding resolved |
 
 All endpoints except `/.well-known/agent.json` and `/` require `Authorization: Bearer <token>` when `security.scheme = bearer`.
 
@@ -165,9 +181,9 @@ Deployed via `deploy/linux/deploy.sh` (Ansible-driven). The binary is cross-comp
 
 Deploy script at `deploy/linux/deploy.sh` includes a PowerShell section that SCPs the binary, config, `windows-responsibilities.yaml`, and `windows-system-prompt.txt` to the target via SSH and registers a Windows Service via `sc.exe`. Runs as the `agent_patches` local user account.
 
-### central-backend and central-ui (Kubernetes/OpenShift)
+### central-backend, central-ui, and llm-gateway (Kubernetes/OpenShift)
 
-Helm charts at `deploy/helm/central-backend/` and `deploy/helm/central-ui/`. Top-level umbrella chart at `deploy/helm/`. ArgoCD application manifest at `deploy/argo-app.yaml`. Both components have `Containerfile`s for container image builds.
+Helm charts at `deploy/helm/central-backend/`, `deploy/helm/central-ui/`, and `deploy/helm/llm-gateway/`. Top-level umbrella chart at `deploy/helm/`. ArgoCD application manifest at `deploy/argo-app.yaml`. Each component has a `Containerfile` for container image builds.
 
 ### CLI
 
@@ -183,4 +199,4 @@ Each endpoint-server reads a YAML file at `config.yaml` (or `$AGENT_PATCHES_CONF
 
 ## Observability
 
-All three components export OpenTelemetry traces via `OTEL_EXPORTER_OTLP_ENDPOINT`. endpoint-server service names default to `endpoint-server-<FQDN>`; central-backend uses `central-backend`; central-ui uses browser OTel. Traces cover LLM inference calls, individual tool executions, and responsibility runs.
+endpoint-server, central-backend, and central-ui export OpenTelemetry traces via `OTEL_EXPORTER_OTLP_ENDPOINT`. endpoint-server service names default to `endpoint-server-<FQDN>`; central-backend uses `central-backend`; central-ui uses browser OTel. Traces cover LLM inference calls, individual tool executions, and responsibility runs. llm-gateway exposes its own operational metrics via `GET /stats` and `GET /pending` (per-agent and per-responsibility token/request counts) rather than OTel.

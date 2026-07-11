@@ -87,6 +87,7 @@ One mutex for the entire `AttrsStore`. All reads and writes hold it.
 | `analyze_cpu_utilization` | CPU skill | CPU skill (ReadHistory) | CPU usage snapshot |
 | `analyze_memory_utilization` | memory skill | memory skill (ReadHistory) | RAM/swap snapshot |
 | `analyze_network_utilization` | network skill | network skill (ReadHistory) | Network stats snapshot |
+| `analyze_system_temperature` | temperature skill | temperature skill (ReadHistory for sustained-high detection) | Temperature sensor snapshot |
 | `check_interactive_logins` | login skill | — | Login session snapshot |
 | `check_security_posture` | `check_security_posture` skill | same skill (previous-snapshot diff), `compare_to_baseline` | Security posture snapshot: listening ports, users, admins, sudoers/authorized_keys fingerprints, setuid binaries |
 
@@ -105,6 +106,9 @@ Skills that track trends call `ReadHistory()` on their own domain to compare cur
 | `incidents` | `[]Incident` | `manage_incidents` skill (via `incidents.Store`) | responsibility loop (prompt injection), `manage_incidents` | The incident ledger: fingerprinted ongoing problems with first/last-seen times, occurrence counts, actions taken, and resolutions. Open incidents are appended to every responsibility instruction. Resolved incidents pruned after 30 days; ledger capped at 100 entries. |
 | `approval_policies` | `[]Policy` | `POST /policies` (operator only) | `run_approved_command` (via `policy.Store`) | Standing approval policies: `{ id, description, pattern, risk, createdAt, enabled }`. `pattern` is a Go regex matched against the ENTIRE command (anchored). A matching command executes without a fresh HITL approval. |
 | `approval_history` | `map[string]int` | `run_approved_command` after each operator approval | `run_approved_command` | Count of operator approvals per (whitespace-normalised) command. At 3 approvals of the same command, a recommendation to create a standing policy is added to the timeline. Capped at 200 entries. |
+| `manual_run:<uuid>` | `ManualRunEntry` | `request_manual_run` | `manualrunapi`, `request_manual_run` (poll) | Manual-execution request state when sudoers blocks a command: `pending` → `completed \| skipped \| timed_out \| cancelled`, with the operator-pasted `output` and a copy-pasteable sudoers instruction. |
+| `login_history` | login event list | `loginmonitor` | `GET /interactive-logins`, baseline comparison | Rolling history of interactive logins with unusual-login flags (`new_user`, `new_source`, `unusual_time`). |
+| `connection_history` | connection event list | `connmonitor` | `GET /network-connections`, baseline comparison | Rolling open/close history of TCP/UDP connections with unusual-connection flags (`new_inbound_port`, `new_process`, `new_remote_host`). |
 
 ### ApprovalEntry schema
 
@@ -113,11 +117,12 @@ Skills that track trends call `ReadHistory()` on their own domain to compare cur
   "id": "<uuid>",
   "title": "...",
   "detail": "...",
-  "proposedAction": "apt-get upgrade -y",
+  "proposed_action": "apt-get upgrade -y",
+  "importance": "low | medium | high",
   "risk": "low | medium | high",
   "status": "pending | approved | rejected | timed_out | cancelled",
-  "requestedAt": "<RFC3339>",
-  "decidedAt": "<RFC3339 or null>",
+  "requested_at": "<RFC3339>",
+  "decided_at": "<RFC3339 or null>",
   "reason": "<operator comment or empty>",
   "auto_execute": true,
   "exec_reason": "<agent's reason, used in manual-run escalation>",
@@ -125,7 +130,7 @@ Skills that track trends call `ReadHistory()` on their own domain to compare cur
 }
 ```
 
-The last three fields are present only on async approvals filed by `run_approved_command`.
+`importance` (urgency to act) and `risk` (blast radius of the action itself) are assessed independently; either being `high` triggers an immediate notification. The last three fields are present only on async approvals filed by `run_approved_command`.
 
 ### RunState schema
 

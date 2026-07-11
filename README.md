@@ -1,147 +1,124 @@
 # agent_patches
 
-An AI-powered server administration agent that applies OS patches, monitors
-patch availability, and delivers notifications. Built on the
-[A2A protocol](https://github.com/a2aproject/a2a-go) with a
-[Claude](https://www.anthropic.com/claude) tool-use loop.
+An AI-powered fleet management system for servers. An autonomous LLM agent
+runs on every managed host — monitoring health, applying OS patches behind a
+human-in-the-loop approval gate, watching for security drift, and reporting
+findings to a central dashboard. Built on the
+[A2A protocol](https://github.com/a2aproject/a2a-go) with an
+OpenAI-compatible tool-use loop.
+
+## Components
+
+| Component | Language | Runs on | Purpose |
+|---|---|---|---|
+| [endpoint-server](docs/endpoint-server.md) | Go | every managed host | The agent: A2A JSON-RPC server, scheduled responsibilities, tool-use loop, login/network monitoring, durable memory |
+| [central-backend](docs/central.md) | Node.js/Express | Kubernetes/OpenShift | Fleet aggregation: polls all agents, WebSocket push to the UI, fleet intelligence (LLM analysis), approvals forwarding, email alerts |
+| [central-ui](docs/central.md) | React SPA | Kubernetes/OpenShift | Operator dashboard: fleet status, approvals, per-agent chat, activity feed, intelligence reports |
+| [llm-gateway](docs/llm-gateway.md) | Go | Kubernetes/OpenShift | Queuing reverse proxy in front of the shared LLM: bounded concurrency, interactive-priority queue, per-agent token stats |
+| cli | Go | anywhere | `patches-cli` — one-shot A2A `message/send` to any endpoint-server |
+
+See [docs/architecture.md](docs/architecture.md) for the full system topology
+and data flows.
 
 ## Features
 
-- **Agent-driven patching** — a Claude-backed agent accepts natural-language
-  requests and runs the appropriate OS update commands (Debian/Ubuntu,
-  Fedora/RHEL/Rocky, Windows)
-- **Pre-flight update check** — before applying patches the agent checks
-  whether updates are actually available; if none are found it stops without
-  touching the system or sending notifications
-- **Notifications** — a pluggable notifier sends email alerts before patching
-  starts, on completion, and on failure; a separate alert fires when the daily
-  check finds pending updates
-- **Daily task loop** — a background goroutine wakes once per day at a
-  configured wall-clock time, checks for available updates, and notifies if
-  any are found; the loop always runs and individual tasks are
-  individually enabled or disabled in config
-- **Bearer-token security** — optional `Authorization: Bearer <token>` guard
-  on every JSON-RPC request
-- **A2A agent card** — standard `/.well-known/agent.json` endpoint for
-  capability discovery
+- **Autonomous responsibilities** — each agent runs a schedule of health
+  checks (disks, CPU, memory, network, temperature, containers, NFS, security
+  posture, pending patches) driven by an LLM tool-use loop. Deterministic
+  pre-checks skip the LLM call entirely when everything is healthy.
+- **Human-in-the-loop patching** — the agent analyses pending updates
+  (including CVE severity), files an approval with independent *importance*
+  and *risk* ratings, and only applies patches after an operator approves.
+- **Standing approval policies** — operators can promote frequently-approved
+  commands to regex-matched policies that execute without a fresh approval.
+- **Security monitoring** — real-time login and network-connection monitors
+  compare activity against each host's own learned baseline; drift in
+  listening ports, users, sudoers, or authorized_keys is flagged.
+- **Incident ledger** — fingerprinted, deduplicated incidents survive across
+  runs so the agent tracks ongoing problems instead of re-reporting them.
+- **Durable agent memory** — tiered snapshot retention (5-minute resolution
+  for an hour, hourly for a week, daily for 90 days) lets the agent compare
+  current readings against the host's own history.
+- **Fleet dashboard** — real-time WebSocket-driven UI with fleet-wide chat,
+  approvals, activity feed, and periodic LLM-generated fleet intelligence.
+- **Prompt-injection defense** — every tool output is sanitized (control
+  characters, injection phrases, truncation) before reaching the model.
+  See [docs/security.md](docs/security.md).
 
-## Quick start
+## Quick start (single agent)
 
 ```bash
-cp config.example.yaml config.yaml
-# edit config.yaml — set your Claude model, SMTP credentials, bearer token, etc.
+cp config.example.linux.yaml config.yaml
+# edit config.yaml — LLM base_url/model, bearer token, responsibilities, etc.
 make build
-./target/patches-server
+./target/patches-endpoint-server
 ```
 
-The server exposes a JSON-RPC endpoint on `0.0.0.0:8080` by default.
+The agent serves A2A JSON-RPC and its HTTP APIs on `0.0.0.0:8080` by default
+(production deploys typically configure port 9976). Override the config path
+with `AGENT_PATCHES_CONFIG=<path>`.
 
-## Configuration
-
-All configuration lives in a single YAML file (default `./config.yaml`).
-Override the path with the `AGENT_PATCHES_CONFIG` environment variable.
-
-```yaml
-agent:
-  model: claude-opus-4-7   # Claude model to use
-  max_tokens: 4096
-  max_iterations: 10
-  system_prompt: |
-    You are agent_patches, an AI agent that handles server administration tasks.
-
-logging:
-  level: info              # debug | info | warn | error
-  # file: /var/log/agent_patches.log  # omit to log to stderr
-
-storage:
-  tasks_file: tasks.jsonl  # persists in-progress task state
-
-server:
-  host: 0.0.0.0
-  port: 8080
-  # public_url: http://myserver.example.com:8080
-  # URL embedded in the agent card. Defaults to http://<hostname>:<port>.
-  # Set this when clients connect via a hostname that differs from os.Hostname().
-
-# security.scheme: "none" | "bearer"
-security:
-  scheme: bearer
-  token: change-me
-
-# notifier — event sinks for patch lifecycle and responsibility alerts.
-notifier:
-  email:
-    enabled: false
-    host: smtp.example.com
-    port: 587
-    username: alerts@example.com
-    password: change-me
-    from: alerts@example.com
-    to:
-      - admin@example.com
-    # tls_mode: "starttls" (default) | "tls" (port 465) | "none" (local relay)
-    tls_mode: starttls
-```
-
-### TLS modes for email
-
-| `tls_mode` | Transport | Typical port |
-|---|---|---|
-| `starttls` (default) | Plain TCP upgraded via STARTTLS | 587 |
-| `tls` | Implicit TLS (SMTPS) from the start | 465 |
-| `none` | No encryption — local/relay servers only | 25 |
-
-## Notifications
-
-The notifier fires on the following events:
-
-| Event | Subject |
-|---|---|
-| Patch starting | `[hostname] Patch Starting` |
-| Patch completed | `[hostname] Patch Complete` |
-| Patch failed | `[hostname] Patch Failed` |
-
-Notifications are **not** sent when no updates are available.
-
-## Responsibilities loop
-
-The background loop starts with the server and, on each heartbeat, checks
-every entry under `responsibilities` in the config to see if it's due — either
-on a recurring `frequency` or at a once-daily `time`. When a responsibility is
-due, the agent runs its `instruction` (with any listed `tools` available) in
-its own goroutine. If a previous run of that responsibility is still in
-flight when it comes due again, the run is skipped and an error is logged.
-See `config.example.yaml` for examples and the `when_to_notify` options.
-
-## OS support
-
-| OS family | Detection | Update command | Reboot check |
-|---|---|---|---|
-| Debian / Ubuntu | `/etc/os-release` `ID`/`ID_LIKE` | `apt-get update && apt-get upgrade` | `/var/run/reboot-required` |
-| Fedora / RHEL / Rocky | `/etc/os-release` | `dnf update` (falls back to `yum`) | `needs-restarting -r` |
-| Windows | `runtime.GOOS` | PowerShell + Windows Update COM API | Registry key |
-
-## Building
+Send it a task:
 
 ```bash
-make build          # builds server and CLI into ./target/
-make test           # runs the full test suite
+make run-cli ARGS="check disk usage and report findings"
 ```
+
+## Building and testing
+
+```bash
+make build          # go fmt + go vet, then build server and CLI into ./target/
+make test           # full test suite (integration tests in tests/)
+make release        # cross-compile server + CLI for linux/darwin/windows, amd64/arm64
+make deploy         # deploy to all hosts in inventory.csv (Ansible/SSH driven)
+make run-central-backend   # local central-backend dev server
+make run-central-ui        # local central-ui dev server (Vite)
+make help           # list all targets
+```
+
+## Deployment
+
+- **endpoint-server** — `deploy/linux/deploy.sh` installs the binary, config,
+  OS-specific responsibilities/system-prompt/baseline-ports files, and a
+  systemd service (Linux) or Windows service on each host in `inventory.csv`.
+  Runs as a locked-down `agent_patches` service account; see
+  [docs/security.md](docs/security.md) for the privilege model.
+- **central components + llm-gateway** — Helm umbrella chart at
+  `deploy/helm/` (subcharts: `central-backend`, `central-ui`, `llm-gateway`),
+  ArgoCD app manifest at `deploy/argo-app.yaml`.
 
 ## Project layout
 
 ```
-server/
-  agent/        Claude tool-use loop
-  config/       YAML config loader and types
-  executor/     A2A task executor
-  logger/       slog setup
-  notifier/     event sinks (email; extensible)
-  patching/     OS detection, update checking, patch execution
-  scheduler/    daily background task loop
-  storage/      task persistence (JSONL)
-  tasks/        agent tool definitions (hello, patch)
-cli/
-  client/       A2A JSON-RPC client
-tests/          integration and unit tests
+endpoint-server/     the per-host agent
+  a2a/               agent loop, executor, tool interface, registry
+  skills/            tool implementations (check_*, analyze_*, run_*, ...)
+  loop/              responsibility scheduler + pre-checks
+  memory/            tiered snapshot store + key-value attrs store
+  *api/              plain HTTP endpoints (/status, /memory, /approvals, ...)
+  loginmonitor/      interactive/failed login monitoring + baselines
+  connmonitor/       network connection monitoring + baselines
+  incidents/         fingerprinted incident ledger
+  policy/            standing approval policies
+  status/            GET /status aggregation, timeline, summarizer
+  utils/             config, logger, notifier, sanitize, storage, tracing
+central-backend/     Node.js fleet aggregator + REST/WS API
+central-ui/          React operator dashboard
+llm-gateway/         queuing LLM reverse proxy
+llmmodel/            shared model-name sentinel
+cli/                 patches-cli (one-shot A2A client)
+config/              OS default responsibilities, system prompts, baseline ports
+deploy/              deploy scripts, systemd unit, Helm charts, ArgoCD app
+docs/                architecture, endpoint-server, central, llm-gateway,
+                     memory, security
+tests/               integration tests (run with make test)
 ```
+
+## Documentation
+
+- [Architecture](docs/architecture.md) — components, topology, data flows
+- [Endpoint server](docs/endpoint-server.md) — APIs, tools, loop, config
+- [Central control plane](docs/central.md) — backend, UI, REST/WS API
+- [LLM gateway](docs/llm-gateway.md) — queuing, priorities, token stats
+- [Memory system](docs/memory.md) — domains, attrs, retention
+- [Security](docs/security.md) — auth, privilege separation, HITL, sanitization
