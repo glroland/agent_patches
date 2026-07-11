@@ -135,7 +135,13 @@ export default function Dashboard() {
           label="Approvals waiting"
           value={stats.pendingApprovalCount}
           tone={stats.pendingApprovalCount > 0 ? 'danger' : 'success'}
-          hint={stats.hasHighRiskApproval ? 'Includes high-risk requests' : 'Review when convenient'}
+          hint={
+            stats.hasHighImportanceApproval
+              ? 'Includes high-importance requests'
+              : stats.hasHighRiskApproval
+                ? 'Includes high-risk requests'
+                : 'Review when convenient'
+          }
         />
         <StatCard
           label="Open recommendations"

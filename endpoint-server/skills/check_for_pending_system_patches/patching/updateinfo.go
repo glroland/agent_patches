@@ -200,15 +200,18 @@ func shortestName(names []string) string {
 	return root
 }
 
-// RiskAssessment maps pending updates to an approval risk level ("low",
+// ImportanceAssessment maps pending updates to an urgency level ("low",
 // "medium", or "high") and a one-line rationale tying that level to evidence,
-// so the operator sees *why* a request needs review, not just what it lists.
+// so the operator sees *why* a request needs prompt attention, not just what
+// it lists. This is the CVE-severity dimension: how urgent is it to apply
+// these updates soon. It says nothing about how risky the update itself is
+// to apply — see RiskAssessment for that, independent, dimension.
 //
-// Critical CVEs make the request high risk; any other CVE makes it medium.
-// A run where most per-package CVE lookups failed is also medium, because
-// "no CVEs found" cannot be distinguished from "no CVE data" — only verified
-// routine updates are low risk.
-func RiskAssessment(updates []PackageUpdate) (risk, rationale string) {
+// Critical CVEs make the request high importance; any other CVE makes it
+// medium. A run where most per-package CVE lookups failed is also medium,
+// because "no CVEs found" cannot be distinguished from "no CVE data" — only
+// verified routine updates are low importance.
+func ImportanceAssessment(updates []PackageUpdate) (importance, rationale string) {
 	var critical, high, other, failed int
 	seen := make(map[string]bool)
 	for _, u := range updates {
@@ -271,6 +274,51 @@ func RiskAssessment(updates []PackageUpdate) (risk, rationale string) {
 	}
 }
 
+// RiskAssessment maps pending updates to an operational risk level ("low",
+// "medium", or "high") and a one-line rationale: how likely is *applying*
+// this update to disrupt the host, independent of how urgent the CVEs it
+// fixes are (see ImportanceAssessment for that). A routine kernel update
+// carries real operational risk — a reboot, a boot-time failure — even when
+// it fixes no CVEs at all; conversely a single low-blast-radius library
+// fixing a CRITICAL CVE is operationally low risk to apply.
+//
+// Risk rises with reboot requirements, blast radius (package count), and
+// whether core server packages (databases, auth, container runtimes) are
+// touched.
+func RiskAssessment(updates []PackageUpdate) (risk, rationale string) {
+	var rebootNames, notableNames []string
+	for _, u := range updates {
+		if rebootLikely(u.Name) {
+			rebootNames = append(rebootNames, u.Name)
+		}
+		if isNotable(u.Name) {
+			notableNames = append(notableNames, u.Name)
+		}
+	}
+	n := len(updates)
+	needsReboot := len(rebootNames) > 0
+	touchesCore := len(notableNames) > 0
+
+	switch {
+	case needsReboot && (touchesCore || n > 20):
+		return "high", fmt.Sprintf(
+			"requires a reboot (%s) and touches %d package(s) including core server components — meaningful disruption if something goes wrong",
+			shortestName(rebootNames), n)
+
+	case needsReboot:
+		return "medium", fmt.Sprintf("requires a reboot (%s) — brief service interruption expected", shortestName(rebootNames))
+
+	case touchesCore:
+		return "medium", fmt.Sprintf("updates core server package(s) (%s) — no reboot expected but a service restart may be needed", shortestName(notableNames))
+
+	case n > 20:
+		return "medium", fmt.Sprintf("large batch of %d packages — broader surface for something to go wrong", n)
+
+	default:
+		return "low", fmt.Sprintf("%d package(s), no reboot or core service impact expected", n)
+	}
+}
+
 // FormatFallbackSummary builds the approval detail used when ListUpdates could
 // not produce structured update data at all. Updates ARE pending in this path,
 // so it must never claim the system is up to date; it shows the raw
@@ -286,7 +334,8 @@ func FormatFallbackSummary(rawCheckOutput string, listErr error) string {
 		raw = raw[:maxRaw] + "\n… (truncated)"
 	}
 	return fmt.Sprintf(
-		"Risk: MEDIUM — %s; update severity could not be assessed.\n\n"+
+		"Importance: MEDIUM — %s; update severity could not be assessed.\n"+
+			"Risk: MEDIUM — package list unavailable; blast radius could not be assessed.\n\n"+
 			"Pending updates as reported by the package manager:\n\n%s",
 		reason, raw)
 }
@@ -294,7 +343,9 @@ func FormatFallbackSummary(rawCheckOutput string, listErr error) string {
 // FormatUpdateSummary produces an operator-readable dashboard summary of pending
 // updates. It surfaces what matters most:
 //
-//  1. A "Risk: LEVEL — rationale" header explaining why the request needs review.
+//  1. An "Importance: LEVEL — rationale" and "Risk: LEVEL — rationale" header
+//     pair explaining, independently, how urgent the fix is and how likely
+//     applying it is to disrupt the host.
 //  2. One bullet per HIGH/CRITICAL CVE being addressed.
 //  3. One bullet per package whose fixes are all MEDIUM/LOW/unrated CVEs.
 //  4. One bullet summarising packages that will require a reboot.
@@ -432,9 +483,13 @@ func FormatUpdateSummary(host string, osType OSType, updates []PackageUpdate) st
 
 	var sb strings.Builder
 
-	// 1. Risk header — why this request needs review, not just what it lists.
-	risk, rationale := RiskAssessment(updates)
-	fmt.Fprintf(&sb, "Risk: %s — %s\n\n", strings.ToUpper(risk), rationale)
+	// 1. Importance and Risk headers — independent dimensions of why this
+	// request needs review: how urgent the CVE fixes are, and how likely
+	// applying the update is to disrupt the host.
+	importance, importanceRationale := ImportanceAssessment(updates)
+	risk, riskRationale := RiskAssessment(updates)
+	fmt.Fprintf(&sb, "Importance: %s — %s\n", strings.ToUpper(importance), importanceRationale)
+	fmt.Fprintf(&sb, "Risk: %s — %s\n\n", strings.ToUpper(risk), riskRationale)
 
 	// 2. CVE bullets — one per HIGH/CRITICAL CVE.
 	for _, ref := range topCVEs {

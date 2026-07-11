@@ -57,7 +57,7 @@ export default function Approvals() {
       <div>
         <h1 className="text-2xl font-semibold text-black">Approvals</h1>
         <p className="mt-1 text-sm text-navy-500">
-          Actions agents have proposed but won't take until you sign off. Sorted by risk.
+          Actions agents have proposed but won't take until you sign off. Sorted by importance, then risk.
         </p>
       </div>
 
@@ -72,6 +72,7 @@ export default function Approvals() {
                 <div key={entry.id} className="rounded-lg border border-navy-200 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div className="flex flex-wrap items-center gap-2">
+                      {entry.importance && <Badge variant={entry.importance}>{entry.importance} importance</Badge>}
                       <Badge variant={entry.risk}>{entry.risk} risk</Badge>
                       <Link to={`/agents/${entry.agentId}`} className="text-sm font-medium text-navy-600 hover:text-navy-800">
                         {entry.hostname}

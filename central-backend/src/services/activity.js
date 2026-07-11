@@ -16,10 +16,17 @@ export function recentActivity(agents, limit = 10) {
 }
 
 export function pendingApprovals(agents) {
-  const riskOrder = { high: 0, medium: 1, low: 2 };
+  // Importance (urgency) and risk (operational blast radius) are assessed
+  // independently by the agent — sort by importance first since that's what
+  // determines how urgently the operator should review, then by risk, then age.
+  const order = { high: 0, medium: 1, low: 2 };
   return allTimelineEntries(agents)
     .filter((entry) => (entry.type === 'approval' || entry.type === 'manual_run') && entry.status === 'pending')
-    .sort((a, b) => riskOrder[a.risk] - riskOrder[b.risk] || new Date(a.time) - new Date(b.time));
+    .sort((a, b) =>
+      (order[a.importance] ?? 1) - (order[b.importance] ?? 1) ||
+      (order[a.risk] ?? 1) - (order[b.risk] ?? 1) ||
+      new Date(a.time) - new Date(b.time)
+    );
 }
 
 export function concerns(agents) {

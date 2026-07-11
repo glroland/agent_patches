@@ -81,6 +81,7 @@ export default function TimelineEntry({ entry, showAgent = false }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium uppercase tracking-wide text-navy-500">{meta.label}</span>
           {entry.severity && <Badge variant={entry.severity}>{entry.severity}</Badge>}
+          {entry.type === 'approval' && entry.importance && <Badge variant={entry.importance}>{entry.importance} importance</Badge>}
           {entry.type === 'approval' && <Badge variant={entry.risk}>{entry.risk} risk</Badge>}
           {(entry.type === 'approval' || entry.type === 'manual_run') && entry.status !== 'pending' && <Badge variant={entry.status}>{entry.status}</Badge>}
           <span className="text-xs text-navy-400">{relativeTime(entry.time)}</span>

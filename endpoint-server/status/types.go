@@ -35,6 +35,7 @@ type TimelineEntry struct {
 	Title              string  `json:"title"`
 	Detail             string  `json:"detail"`
 	Severity           string  `json:"severity,omitempty"`
+	Importance         string  `json:"importance,omitempty"`
 	Risk               string  `json:"risk,omitempty"`
 	ProposedAction     *string `json:"proposedAction,omitempty"`
 	Status             *string `json:"status,omitempty"`

@@ -52,6 +52,7 @@ function buildPayload(rawAgents) {
       pendingApprovalCount: allApprovals.length,
       openRecommendations,
       hasHighRiskApproval: allApprovals.some((a) => a.risk === 'high'),
+      hasHighImportanceApproval: allApprovals.some((a) => a.importance === 'high'),
     },
     attention: attentionAgents.map((a) => ({
       id: a.id,

@@ -104,10 +104,11 @@ func isEchoStatusCommand(s string) bool {
 }
 
 type runCommandInput struct {
-	Title   string `json:"title" jsonschema_description:"Short one-line title for the approval card (e.g. 'Clear old log files from /var/log')."`
-	Command string `json:"command" jsonschema_description:"The exact shell command to execute if the operator approves."`
-	Reason  string `json:"reason" jsonschema_description:"Explanation of why this command was chosen and what issue it addresses."`
-	Risk    string `json:"risk" jsonschema_description:"Risk level of running the command: low, medium, or high."`
+	Title      string `json:"title" jsonschema_description:"Short one-line title for the approval card (e.g. 'Clear old log files from /var/log')."`
+	Command    string `json:"command" jsonschema_description:"The exact shell command to execute if the operator approves."`
+	Reason     string `json:"reason" jsonschema_description:"Explanation of why this command was chosen and what issue it addresses."`
+	Importance string `json:"importance" jsonschema_description:"How urgent/important it is to take this action soon: low, medium, or high. Driven by things like security exposure, compliance requirements, or business impact of delay. Assess this independently of risk — e.g. a critical security remediation is high importance even when it is low risk to apply."`
+	Risk       string `json:"risk" jsonschema_description:"Risk level of running the command itself if something goes wrong: low, medium, or high. Driven by things like blast radius, reversibility, and potential for downtime or data loss. Assess this independently of importance — e.g. a routine but disruptive restart can be high risk even when it is low importance."`
 }
 
 // NewRunApprovedCommandTool returns a tool that presents a proposed shell
@@ -123,6 +124,10 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier, pol
 			"asynchronously: this tool returns immediately with a pending-approval confirmation, and "+
 			"the command executes automatically once the operator approves (within 24 hours), with the "+
 			"result recorded on the host timeline. Do not wait for or poll the decision. "+
+			"Assess importance and risk independently: importance is how urgent it is to act "+
+			"(e.g. security exposure, compliance requirements); risk is how likely the command "+
+			"itself is to disrupt the host if something goes wrong. Do not use risk as a stand-in "+
+			"for importance. "+
 			"Use this tool ONLY for commands that change system state: installing or "+
 			"removing packages, restarting or reconfiguring services, deleting or overwriting files, "+
 			"modifying users or permissions, or applying updates. "+
@@ -195,6 +200,7 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier, pol
 				title,
 				fmt.Sprintf("Host: %s\n\nReason: %s", host, in.Reason),
 				cmd,
+				in.Importance,
 				in.Risk,
 				true,
 				in.Reason,
@@ -203,14 +209,14 @@ func NewRunApprovedCommandTool(mem *memory.Store, notify *notifier.Notifier, pol
 				return "", fmt.Errorf("approval request failed: %w", err)
 			}
 
-			slog.Info("run_approved_command: approval submitted, not waiting", "id", id, "command", cmd, "risk", in.Risk)
+			slog.Info("run_approved_command: approval submitted, not waiting", "id", id, "command", cmd, "importance", in.Importance, "risk", in.Risk)
 			return fmt.Sprintf(
-				"Approval requested (id %s, risk %s) — the command has NOT been executed yet. "+
+				"Approval requested (id %s, importance %s, risk %s) — the command has NOT been executed yet. "+
 					"It will run automatically if the operator approves within 24 hours, and the "+
 					"result will be recorded on the host timeline. Do not wait for the decision and "+
 					"do not resubmit this command; state in your report that the remediation is "+
 					"pending operator approval.",
-				id, in.Risk,
+				id, in.Importance, in.Risk,
 			), nil
 		},
 	)

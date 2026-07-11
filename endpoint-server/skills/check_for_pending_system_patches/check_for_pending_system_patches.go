@@ -96,17 +96,21 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 
 			// --- Phase 2: request operator approval ---
 
-			// Build the approval detail shown in the dashboard — a risk rationale
-			// plus a concise summary with every CVE severity tier represented.
-			// The full verbose report (updateReport) is reserved for email
-			// notifications. When structured data is unavailable, fall back to
-			// the raw package-manager output at medium risk — never present an
-			// "up to date" summary on an approval that will apply patches.
-			var approvalDetail, risk string
+			// Build the approval detail shown in the dashboard — independent
+			// importance (CVE urgency) and risk (blast radius of applying the
+			// change) rationales, plus a concise summary with every CVE
+			// severity tier represented. The full verbose report (updateReport)
+			// is reserved for email notifications. When structured data is
+			// unavailable, fall back to the raw package-manager output at
+			// medium importance/risk — never present an "up to date" summary
+			// on an approval that will apply patches.
+			var approvalDetail, importance, risk string
 			if err != nil || len(updates) == 0 {
+				importance = "medium"
 				risk = "medium"
 				approvalDetail = patching.FormatFallbackSummary(checkOut, err)
 			} else {
+				importance, _ = patching.ImportanceAssessment(updates)
 				risk, _ = patching.RiskAssessment(updates)
 				approvalDetail = patching.FormatUpdateSummary(host, p.OS(), updates)
 			}
@@ -118,13 +122,14 @@ func NewPatchTool(n *notifier.Notifier, mem *memory.Store) (tool.Tool, error) {
 			proposedAction := proposedActionFor(p.OS(), updates)
 
 			slog.Info("check_for_pending_system_patches: requesting operator approval",
-				"host", host, "packages", len(updates), "risk", risk)
+				"host", host, "packages", len(updates), "importance", importance, "risk", risk)
 
 			decision, err := reqapproval.RequestApproval(
 				ctx, mem, n,
 				fmt.Sprintf("Apply system patches to %s", host),
 				approvalDetail,
 				proposedAction,
+				importance,
 				risk,
 			)
 			if err != nil {

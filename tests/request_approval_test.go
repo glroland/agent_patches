@@ -25,7 +25,7 @@ func TestRequestApproval_ContextCancelled_PatchesTimelineToo(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // already cancelled before RequestApproval ever polls
 
-	_, err := reqapproval.RequestApproval(ctx, mem, nil, "Clear old logs", "detail", "rm -rf /var/log/old", "low")
+	_, err := reqapproval.RequestApproval(ctx, mem, nil, "Clear old logs", "detail", "rm -rf /var/log/old", "low", "low")
 	if err == nil {
 		t.Fatal("RequestApproval: want error on cancelled context, got nil")
 	}
@@ -60,7 +60,7 @@ func TestApprovalAPI_DecisionOnCancelled_Returns409WithClearMessage(t *testing.T
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	_, _ = reqapproval.RequestApproval(ctx, mem, nil, "Clear old logs", "detail", "rm -rf /var/log/old", "low")
+	_, _ = reqapproval.RequestApproval(ctx, mem, nil, "Clear old logs", "detail", "rm -rf /var/log/old", "low", "low")
 
 	var entries []status.TimelineEntry
 	if err := mem.Domain("timeline").ReadCurrent(&entries); err != nil || len(entries) != 1 {

@@ -64,7 +64,7 @@ func TestRequestApproval_OperatorApproves_ReturnsApproved(t *testing.T) {
 	writerDone := make(chan struct{})
 	go writeDecision(ctx, mem, title, "approved", writerDone)
 
-	result, err := reqapproval.RequestApproval(ctx, mem, nil, title, "security patches", "apt-get upgrade nginx", "low")
+	result, err := reqapproval.RequestApproval(ctx, mem, nil, title, "security patches", "apt-get upgrade nginx", "low", "low")
 	if err != nil {
 		t.Fatalf("RequestApproval: unexpected error: %v", err)
 	}
@@ -91,7 +91,7 @@ func TestRequestApproval_OperatorRejects_ReturnsRejected(t *testing.T) {
 	writerDone := make(chan struct{})
 	go writeDecision(ctx, mem, title, "rejected", writerDone)
 
-	result, err := reqapproval.RequestApproval(ctx, mem, nil, title, "free up disk space", "rm -rf /var/log/audit", "medium")
+	result, err := reqapproval.RequestApproval(ctx, mem, nil, title, "free up disk space", "rm -rf /var/log/audit", "low", "medium")
 	if err != nil {
 		t.Fatalf("RequestApproval: unexpected error: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestRequestApproval_HighRisk_NotifiesImmediately(t *testing.T) {
 		}
 	}()
 
-	_, _ = reqapproval.RequestApproval(ctx, mem, notify, "Wipe temp partition", "reclaim disk", "rm -rf /tmp/*", "high")
+	_, _ = reqapproval.RequestApproval(ctx, mem, notify, "Wipe temp partition", "reclaim disk", "rm -rf /tmp/*", "low", "high")
 
 	select {
 	case <-notifyFired:
@@ -151,29 +151,73 @@ func TestRequestApproval_HighRisk_NotifiesImmediately(t *testing.T) {
 	}
 }
 
-// TestRequestApproval_LowRisk_DoesNotNotifyImmediately verifies the inverse of
-// the high-risk test: a low-risk approval must NOT fire the immediate
-// out-of-band notification. Operators are only notified on timeout or if the
-// request was explicitly marked high risk.
-func TestRequestApproval_LowRisk_DoesNotNotifyImmediately(t *testing.T) {
+// TestRequestApproval_HighImportance_NotifiesImmediately mirrors the high-risk
+// test for the independent importance dimension: a low-risk-but-high-importance
+// request (e.g. a critical CVE fix that is operationally safe to apply) must
+// still notify immediately, since importance alone should be enough to alert
+// the operator without the misuse of risk as a stand-in for urgency.
+func TestRequestApproval_HighImportance_NotifiesImmediately(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	notify := notifier.New(mem)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	notifyFired := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(10 * time.Millisecond):
+			}
+			var note struct {
+				Subject string `json:"subject"`
+			}
+			if err := mem.Domain("notifications").ReadCurrent(&note); err != nil {
+				continue
+			}
+			if strings.Contains(note.Subject, "Approval Required") {
+				close(notifyFired)
+				cancel()
+				return
+			}
+		}
+	}()
+
+	_, _ = reqapproval.RequestApproval(ctx, mem, notify, "Patch critical CVE", "fixes a critical CVE", "apt-get upgrade openssl", "high", "low")
+
+	select {
+	case <-notifyFired:
+		// Good — notification arrived before we cancelled.
+	case <-time.After(5 * time.Second):
+		t.Fatal("high-importance notifier did not fire within 5 seconds of RequestApproval being called")
+	}
+}
+
+// TestRequestApproval_LowImportanceLowRisk_DoesNotNotifyImmediately verifies
+// the inverse: a request that is neither high risk nor high importance must
+// NOT fire the immediate out-of-band notification. Operators are only
+// notified on timeout or if the request was explicitly marked high on either
+// dimension.
+func TestRequestApproval_LowImportanceLowRisk_DoesNotNotifyImmediately(t *testing.T) {
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
 	notify := notifier.New(mem)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel() // pre-cancel so the approval loop exits immediately
 
-	_, _ = reqapproval.RequestApproval(ctx, mem, notify, "Reload nginx config", "apply new vhost", "nginx -s reload", "low")
+	_, _ = reqapproval.RequestApproval(ctx, mem, notify, "Reload nginx config", "apply new vhost", "nginx -s reload", "low", "low")
 
 	var note struct {
 		Subject string `json:"subject"`
 	}
 	// Either no notification was written at all, or the subject does not
-	// contain the high-risk alert prefix. A timed-out or cancelled approval
-	// may still write a notification, so we only check that the high-risk
-	// immediate-alert subject did not fire.
+	// contain the immediate-alert prefix. A timed-out or cancelled approval
+	// may still write a notification, so we only check that the immediate-
+	// alert subject did not fire.
 	if err := mem.Domain("notifications").ReadCurrent(&note); err == nil {
 		if strings.Contains(note.Subject, "Approval Required") {
-			t.Errorf("low-risk approval unexpectedly fired immediate notification: %q", note.Subject)
+			t.Errorf("low-importance, low-risk approval unexpectedly fired immediate notification: %q", note.Subject)
 		}
 	}
 }

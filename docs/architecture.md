@@ -118,7 +118,7 @@ Commands matching an operator-created standing approval policy (managed via `/po
 Agent calls run_approved_command tool
   └─► SubmitApproval writes ApprovalEntry (AutoExecute=true) to AttrsStore
         └─► writes TimelineEntry (type=approval, status=pending) to timeline domain
-              └─► high-risk: notifier.Notify fires immediately (email)
+              └─► high-importance or high-risk: notifier.Notify fires immediately (email)
                     └─► tool returns "pending approval" at once — agent run ends,
                         monitoring continues; request survives restarts
 

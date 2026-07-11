@@ -6,10 +6,13 @@
 // writes the operator's decision to the same attrs key; this function polls
 // that key until the status changes from "pending".
 //
-// High-risk approvals trigger an immediate out-of-band notification so the
-// operator does not need to monitor the dashboard. If no decision arrives
-// within approvalTimeout the request is permanently cancelled — not retried —
-// and the operator is notified that the action was NOT taken.
+// Every approval carries two independent dimensions: importance (how urgent
+// it is to act — e.g. CVE severity) and risk (how likely the action itself is
+// to disrupt the host if something goes wrong). High-importance or high-risk
+// approvals trigger an immediate out-of-band notification so the operator
+// does not need to monitor the dashboard. If no decision arrives within
+// approvalTimeout the request is permanently cancelled — not retried — and
+// the operator is notified that the action was NOT taken.
 package request_approval
 
 import (
@@ -37,17 +40,24 @@ const (
 // "approval:<id>". The POST /approvals/:id/decision endpoint updates this
 // record when the operator decides.
 type ApprovalEntry struct {
-	ID             string     `json:"id"`
-	Title          string     `json:"title"`
-	Detail         string     `json:"detail"`
-	ProposedAction string     `json:"proposed_action"`
-	Risk           string     `json:"risk"`
-	Status         string     `json:"status"` // pending | approved | rejected | timed_out | cancelled
-	RequestedAt    time.Time  `json:"requested_at"`
-	DecidedAt      *time.Time `json:"decided_at,omitempty"`
-	Reason         string     `json:"reason,omitempty"`
-	RetryCount     int        `json:"retry_count,omitempty"`
-	ParentID       string     `json:"parent_id,omitempty"` // ID of the first attempt; empty on attempt 0
+	ID             string `json:"id"`
+	Title          string `json:"title"`
+	Detail         string `json:"detail"`
+	ProposedAction string `json:"proposed_action"`
+	// Importance is how urgent it is to act (e.g. CVE severity, security
+	// exposure, business impact of delay). Risk is how likely the action
+	// itself is to disrupt the host if something goes wrong. The two are
+	// assessed independently — a critical security patch can be low risk to
+	// apply, and a routine but disruptive change can be high risk but low
+	// importance.
+	Importance  string     `json:"importance"`
+	Risk        string     `json:"risk"`
+	Status      string     `json:"status"` // pending | approved | rejected | timed_out | cancelled
+	RequestedAt time.Time  `json:"requested_at"`
+	DecidedAt   *time.Time `json:"decided_at,omitempty"`
+	Reason      string     `json:"reason,omitempty"`
+	RetryCount  int        `json:"retry_count,omitempty"`
+	ParentID    string     `json:"parent_id,omitempty"` // ID of the first attempt; empty on attempt 0
 
 	// AutoExecute marks an async approval: no goroutine is waiting on the
 	// decision; instead the approvalapi decision handler executes
@@ -68,23 +78,27 @@ type requestApprovalInput struct {
 	Title          string `json:"title" jsonschema_description:"Short one-line description of what requires approval."`
 	Detail         string `json:"detail" jsonschema_description:"Full explanation of why operator approval is needed."`
 	ProposedAction string `json:"proposed_action" jsonschema_description:"The exact action that will be executed if approved."`
-	Risk           string `json:"risk" jsonschema_description:"Risk level of the proposed action: low, medium, or high."`
+	Importance     string `json:"importance" jsonschema_description:"How urgent/important it is to take this action soon: low, medium, or high. Driven by things like security severity, compliance exposure, or business impact of delay. Assess this independently of risk — e.g. a critical security patch is high importance even when it is low risk to apply."`
+	Risk           string `json:"risk" jsonschema_description:"Risk level of the proposed action itself if something goes wrong while applying it: low, medium, or high. Driven by things like blast radius, reversibility, and potential for downtime or data loss. Assess this independently of importance — e.g. a routine but disruptive restart can be high risk even when it is low importance."`
 }
 
 // RequestApproval writes a pending approval to durable agent memory and blocks
 // until the operator decides via the central dashboard.
 //
-// For high-risk actions, the notifier fires immediately when the request is
-// created so the operator receives an out-of-band alert without needing to
-// monitor the dashboard.
+// Importance and risk are assessed independently: importance is how urgent it
+// is to act (e.g. CVE severity), risk is how likely the action itself is to
+// disrupt the host if something goes wrong. For high-importance or high-risk
+// actions, the notifier fires immediately when the request is created so the
+// operator receives an out-of-band alert without needing to monitor the
+// dashboard.
 //
 // If no decision arrives within approvalTimeout, the request is permanently
 // cancelled — not retried — and the notifier fires again so the operator knows
 // the action was not taken. Returns "approved", "rejected", or "timed_out".
 // Returns an error only on context cancellation.
-func RequestApproval(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, detail, proposedAction, risk string) (string, error) {
+func RequestApproval(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, detail, proposedAction, importance, risk string) (string, error) {
 	id := newUUID()
-	result, err := requestApprovalOnce(ctx, mem, notify, id, title, detail, proposedAction, risk)
+	result, err := requestApprovalOnce(ctx, mem, notify, id, title, detail, proposedAction, importance, risk)
 	if err != nil {
 		return "", err
 	}
@@ -93,8 +107,8 @@ func RequestApproval(ctx context.Context, mem *memory.Store, notify *notifier.No
 		notify.Notify(ctx,
 			fmt.Sprintf("[Approval Expired] %s", title),
 			fmt.Sprintf(
-				"The approval request %q expired without a decision.\n\nProposed action: %s\nRisk: %s\n\nThe action was NOT taken. If it is still needed, reissue from the agent dashboard.",
-				title, proposedAction, risk,
+				"The approval request %q expired without a decision.\n\nProposed action: %s\nImportance: %s\nRisk: %s\n\nThe action was NOT taken. If it is still needed, reissue from the agent dashboard.",
+				title, proposedAction, importance, risk,
 			),
 		)
 	}
@@ -103,8 +117,9 @@ func RequestApproval(ctx context.Context, mem *memory.Store, notify *notifier.No
 }
 
 // createPending writes the pending approval entry, its timeline card, and the
-// immediate high-risk notification. Shared by the blocking and async flows.
-func createPending(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, risk string, autoExecute bool, execReason string) error {
+// immediate high-importance/high-risk notification. Shared by the blocking
+// and async flows.
+func createPending(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, importance, risk string, autoExecute bool, execReason string) error {
 	now := time.Now()
 
 	entry := ApprovalEntry{
@@ -112,6 +127,7 @@ func createPending(ctx context.Context, mem *memory.Store, notify *notifier.Noti
 		Title:          title,
 		Detail:         detail,
 		ProposedAction: proposedAction,
+		Importance:     importance,
 		Risk:           risk,
 		Status:         "pending",
 		RequestedAt:    now,
@@ -122,18 +138,19 @@ func createPending(ctx context.Context, mem *memory.Store, notify *notifier.Noti
 		return fmt.Errorf("request_approval: write attrs: %w", err)
 	}
 
-	if err := writeTimeline(mem, id, title, detail, proposedAction, risk, now); err != nil {
+	if err := writeTimeline(mem, id, title, detail, proposedAction, importance, risk, now); err != nil {
 		slog.Warn("request_approval: failed to write timeline entry", "id", id, "error", err)
 	}
 
-	// High-risk approvals notify immediately so operators get an out-of-band
-	// alert the moment the request is created rather than at timeout.
-	if strings.EqualFold(risk, "high") {
+	// High-importance or high-risk approvals notify immediately so operators
+	// get an out-of-band alert the moment the request is created rather than
+	// at timeout.
+	if strings.EqualFold(importance, "high") || strings.EqualFold(risk, "high") {
 		notify.Notify(ctx,
 			fmt.Sprintf("[Approval Required] %s", title),
 			fmt.Sprintf(
-				"A high-risk action requires your approval.\n\nAction: %s\n\nDetail: %s\n\nRisk: %s\n\nApprove or reject via the central dashboard. If no decision is made within 24 hours the action will be automatically cancelled.",
-				proposedAction, detail, risk,
+				"An action requiring prompt attention needs your approval.\n\nAction: %s\n\nDetail: %s\n\nImportance: %s\nRisk: %s\n\nApprove or reject via the central dashboard. If no decision is made within 24 hours the action will be automatically cancelled.",
+				proposedAction, detail, importance, risk,
 			),
 		)
 	}
@@ -146,12 +163,12 @@ func createPending(ctx context.Context, mem *memory.Store, notify *notifier.Noti
 // RequestApproval, the submitting agent run finishes right away, so a pending
 // approval never parks a responsibility goroutine — and the request survives
 // agent restarts. Expiry is enforced by the sweeper (see StartExpirySweeper).
-func SubmitApproval(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, detail, proposedAction, risk string, autoExecute bool, execReason string) (string, error) {
+func SubmitApproval(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, detail, proposedAction, importance, risk string, autoExecute bool, execReason string) (string, error) {
 	id := newUUID()
-	if err := createPending(ctx, mem, notify, id, title, detail, proposedAction, risk, autoExecute, execReason); err != nil {
+	if err := createPending(ctx, mem, notify, id, title, detail, proposedAction, importance, risk, autoExecute, execReason); err != nil {
 		return "", err
 	}
-	slog.Info("request_approval: submitted async approval", "id", id, "title", title, "risk", risk, "auto_execute", autoExecute)
+	slog.Info("request_approval: submitted async approval", "id", id, "title", title, "importance", importance, "risk", risk, "auto_execute", autoExecute)
 	return id, nil
 }
 
@@ -174,13 +191,13 @@ func SetOutput(mem *memory.Store, id, output string) error {
 // requestApprovalOnce runs a single approval wait cycle bounded by approvalTimeout.
 // Returns "approved", "rejected", or "timed_out"; returns a non-nil error only
 // on context cancellation.
-func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, risk string) (string, error) {
+func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, id, title, detail, proposedAction, importance, risk string) (string, error) {
 	attrKey := AttrsKey(id)
-	if err := createPending(ctx, mem, notify, id, title, detail, proposedAction, risk, false, ""); err != nil {
+	if err := createPending(ctx, mem, notify, id, title, detail, proposedAction, importance, risk, false, ""); err != nil {
 		return "", err
 	}
 
-	slog.Info("request_approval: waiting for operator decision", "id", id, "title", title, "risk", risk)
+	slog.Info("request_approval: waiting for operator decision", "id", id, "title", title, "importance", importance, "risk", risk)
 
 	ticker := time.NewTicker(pollInterval)
 	timer := time.NewTimer(approvalTimeout)
@@ -228,20 +245,24 @@ func NewRequestApprovalTool(mem *memory.Store, notify *notifier.Notifier) (tool.
 		"request_approval",
 		"Pause and request operator approval before taking a potentially impactful action. "+
 			"Writes the request to durable agent memory and blocks until the operator approves "+
-			"or rejects via the central dashboard. High-risk requests trigger an immediate "+
-			"out-of-band notification. If no decision arrives within 24 hours the request is "+
-			"permanently cancelled and the operator is notified — it is NOT retried and the "+
-			"action is NOT taken. Returns \"approved\", \"rejected\", or \"timed_out\". "+
-			"Always use this before actions that modify system state, remove data, restart "+
-			"services, or carry medium-to-high risk.",
+			"or rejects via the central dashboard. Assess importance and risk independently: "+
+			"importance is how urgent it is to act (e.g. security severity, compliance exposure); "+
+			"risk is how likely the action itself is to disrupt the host if something goes wrong. "+
+			"Do not use risk as a stand-in for importance — an urgent security fix can be low risk "+
+			"to apply, and a routine but disruptive action can be high risk but low importance. "+
+			"High-importance or high-risk requests trigger an immediate out-of-band notification. "+
+			"If no decision arrives within 24 hours the request is permanently cancelled and the "+
+			"operator is notified — it is NOT retried and the action is NOT taken. Returns "+
+			"\"approved\", \"rejected\", or \"timed_out\". Always use this before actions that "+
+			"modify system state, remove data, restart services, or carry medium-to-high risk.",
 		func(ctx context.Context, in requestApprovalInput) (string, error) {
-			return RequestApproval(ctx, mem, notify, in.Title, in.Detail, in.ProposedAction, in.Risk)
+			return RequestApproval(ctx, mem, notify, in.Title, in.Detail, in.ProposedAction, in.Importance, in.Risk)
 		},
 	)
 }
 
 // writeTimeline prepends an approval entry to the timeline domain.
-func writeTimeline(mem *memory.Store, id, title, detail, proposedAction, risk string, now time.Time) error {
+func writeTimeline(mem *memory.Store, id, title, detail, proposedAction, importance, risk string, now time.Time) error {
 	d := mem.Domain("timeline")
 	var entries []status.TimelineEntry
 	_ = d.ReadCurrent(&entries)
@@ -253,6 +274,7 @@ func writeTimeline(mem *memory.Store, id, title, detail, proposedAction, risk st
 		Type:           "approval",
 		Title:          title,
 		Detail:         detail,
+		Importance:     importance,
 		Risk:           risk,
 		ProposedAction: &proposedAction,
 		Status:         &pending,
@@ -372,8 +394,8 @@ func ExpirePending(ctx context.Context, mem *memory.Store, notify *notifier.Noti
 			notify.Notify(ctx,
 				fmt.Sprintf("[Approval Expired] %s", entry.Title),
 				fmt.Sprintf(
-					"The approval request %q expired without a decision.\n\nProposed action: %s\nRisk: %s\n\nThe action was NOT taken. If it is still needed, reissue from the agent dashboard.",
-					entry.Title, entry.ProposedAction, entry.Risk,
+					"The approval request %q expired without a decision.\n\nProposed action: %s\nImportance: %s\nRisk: %s\n\nThe action was NOT taken. If it is still needed, reissue from the agent dashboard.",
+					entry.Title, entry.ProposedAction, entry.Importance, entry.Risk,
 				),
 			)
 		}

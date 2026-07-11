@@ -25,6 +25,7 @@ export async function getDashboard() {
       pendingApprovalCount: approvals.length,
       openRecommendations,
       hasHighRiskApproval: approvals.some((a) => a.risk === 'high'),
+      hasHighImportanceApproval: approvals.some((a) => a.importance === 'high'),
     },
     attention: attention.map((a) => ({
       id: a.id,

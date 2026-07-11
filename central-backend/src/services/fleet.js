@@ -39,19 +39,22 @@ function attentionDescription(timeline) {
     parts.push(label);
   }
 
+  // Importance — not risk — is the urgency signal here: a high-risk-but-
+  // low-importance approval (e.g. a disruptive but routine restart) doesn't
+  // need to jump the queue the way a high-importance one does.
   const pendingApprovals = timeline.filter(
     (e) => e.type === 'approval' && e.status === 'pending' &&
-           (e.risk === 'high' || e.risk === 'medium')
+           (e.importance === 'high' || e.importance === 'medium')
   );
   if (pendingApprovals.length > 0) {
-    const highCount  = pendingApprovals.filter((e) => e.risk === 'high').length;
-    const medCount   = pendingApprovals.filter((e) => e.risk === 'medium').length;
-    const riskLabels = [
-      highCount  ? `${highCount} high-risk`   : null,
-      medCount   ? `${medCount} medium-risk`  : null,
+    const highCount  = pendingApprovals.filter((e) => e.importance === 'high').length;
+    const medCount   = pendingApprovals.filter((e) => e.importance === 'medium').length;
+    const importanceLabels = [
+      highCount  ? `${highCount} high-importance`   : null,
+      medCount   ? `${medCount} medium-importance`  : null,
     ].filter(Boolean).join(', ');
     const noun = pendingApprovals.length === 1 ? 'approval' : 'approvals';
-    parts.push(`${riskLabels} ${noun} waiting`);
+    parts.push(`${importanceLabels} ${noun} waiting`);
   }
 
   return parts.length > 0 ? parts.join(' · ') : 'Needs review';

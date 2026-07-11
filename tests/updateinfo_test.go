@@ -546,53 +546,118 @@ func TestDebianChangelogCVEsSince_NoBoundary(t *testing.T) {
 	}
 }
 
-// ---- RiskAssessment -----------------------------------------------------------
+// ---- ImportanceAssessment -----------------------------------------------------
+
+func TestImportanceAssessment(t *testing.T) {
+	cases := []struct {
+		name           string
+		updates        []patching.PackageUpdate
+		wantImportance string
+		wantIn         string // substring expected in the rationale
+	}{
+		{
+			name: "critical CVE is high importance",
+			updates: []patching.PackageUpdate{
+				{Name: "openssl", CVEs: []patching.CVEInfo{{ID: "CVE-1", Severity: "CRITICAL"}}},
+			},
+			wantImportance: "high",
+			wantIn:         "CRITICAL",
+		},
+		{
+			name: "medium CVEs are medium importance with rationale",
+			updates: []patching.PackageUpdate{
+				{Name: "curl", CVEs: []patching.CVEInfo{{ID: "CVE-1", Severity: "MEDIUM"}, {ID: "CVE-2", Severity: "LOW"}}},
+			},
+			wantImportance: "medium",
+			wantIn:         "none rated CRITICAL",
+		},
+		{
+			name:           "no CVEs is low importance",
+			updates:        []patching.PackageUpdate{{Name: "tzdata"}},
+			wantImportance: "low",
+			wantIn:         "routine",
+		},
+		{
+			name: "mostly failed lookups cannot be low importance",
+			updates: []patching.PackageUpdate{
+				{Name: "a", CVELookupFailed: true},
+				{Name: "b", CVELookupFailed: true},
+				{Name: "c"},
+			},
+			wantImportance: "medium",
+			wantIn:         "unavailable",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			importance, rationale := patching.ImportanceAssessment(tc.updates)
+			if importance != tc.wantImportance {
+				t.Errorf("importance = %q, want %q", importance, tc.wantImportance)
+			}
+			if !strings.Contains(rationale, tc.wantIn) {
+				t.Errorf("rationale %q missing %q", rationale, tc.wantIn)
+			}
+		})
+	}
+}
+
+// ---- RiskAssessment -------------------------------------------------------------
+//
+// Risk is the operational-disruption dimension: independent of CVE severity,
+// it depends on reboot requirements, blast radius, and whether core server
+// packages are touched.
 
 func TestRiskAssessment(t *testing.T) {
 	cases := []struct {
 		name     string
 		updates  []patching.PackageUpdate
 		wantRisk string
-		wantIn   string // substring expected in the rationale
+		wantIn   string
 	}{
 		{
-			name: "critical CVE is high risk",
+			name: "critical CVE on a small, non-core update is still low risk",
 			updates: []patching.PackageUpdate{
-				{Name: "openssl", CVEs: []patching.CVEInfo{{ID: "CVE-1", Severity: "CRITICAL"}}},
+				{Name: "acme-widget-lib", CVEs: []patching.CVEInfo{{ID: "CVE-1", Severity: "CRITICAL"}}},
 			},
-			wantRisk: "high",
-			wantIn:   "CRITICAL",
+			wantRisk: "low",
+			wantIn:   "no reboot",
 		},
 		{
-			name: "medium CVEs are medium risk with rationale",
-			updates: []patching.PackageUpdate{
-				{Name: "curl", CVEs: []patching.CVEInfo{{ID: "CVE-1", Severity: "MEDIUM"}, {ID: "CVE-2", Severity: "LOW"}}},
-			},
-			wantRisk: "medium",
-			wantIn:   "none rated CRITICAL",
-		},
-		{
-			name:     "no CVEs is low risk",
+			name:     "routine update with no CVEs is low risk",
 			updates:  []patching.PackageUpdate{{Name: "tzdata"}},
 			wantRisk: "low",
-			wantIn:   "routine",
+			wantIn:   "no reboot",
 		},
 		{
-			name: "mostly failed lookups cannot be low risk",
-			updates: []patching.PackageUpdate{
-				{Name: "a", CVELookupFailed: true},
-				{Name: "b", CVELookupFailed: true},
-				{Name: "c"},
-			},
+			name:     "core server package with no CVEs is still medium risk",
+			updates:  []patching.PackageUpdate{{Name: "postgresql"}},
 			wantRisk: "medium",
-			wantIn:   "unavailable",
+			wantIn:   "core server package",
+		},
+		{
+			name:     "kernel update requires a reboot — medium risk",
+			updates:  []patching.PackageUpdate{{Name: "kernel-core"}},
+			wantRisk: "medium",
+			wantIn:   "reboot",
+		},
+		{
+			name: "reboot plus a large, core-touching batch is high risk",
+			updates: func() []patching.PackageUpdate {
+				updates := []patching.PackageUpdate{{Name: "kernel-core"}, {Name: "postgresql"}}
+				for i := 0; i < 25; i++ {
+					updates = append(updates, patching.PackageUpdate{Name: fmt.Sprintf("pkg%d", i)})
+				}
+				return updates
+			}(),
+			wantRisk: "high",
+			wantIn:   "reboot",
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			risk, rationale := patching.RiskAssessment(tc.updates)
 			if risk != tc.wantRisk {
-				t.Errorf("risk = %q, want %q", risk, tc.wantRisk)
+				t.Errorf("risk = %q, want %q (%s)", risk, tc.wantRisk, rationale)
 			}
 			if !strings.Contains(rationale, tc.wantIn) {
 				t.Errorf("rationale %q missing %q", rationale, tc.wantIn)
