@@ -10,8 +10,12 @@ import (
 // Config holds all runtime configuration for the gateway, loaded from
 // environment variables so the same image can be tuned via Helm values.
 type Config struct {
-	ListenAddr         string
-	UpstreamURL        string
+	ListenAddr  string
+	UpstreamURL string
+	// UpstreamModel is a display-only label for the model served at UpstreamURL,
+	// surfaced via GET /stats. Purely informational — the gateway itself is
+	// model-agnostic and does not inspect or alter request bodies for it.
+	UpstreamModel      string
 	MaxConcurrency     int
 	MaxQueueDepth      int
 	PriorityQueueDepth int
@@ -33,6 +37,7 @@ func LoadConfig() (Config, error) {
 	cfg := Config{
 		ListenAddr:         envStr("GATEWAY_LISTEN_ADDR", ":8080"),
 		UpstreamURL:        envStr("GATEWAY_UPSTREAM_URL", ""),
+		UpstreamModel:      envStr("GATEWAY_UPSTREAM_MODEL", ""),
 		MaxConcurrency:     envInt("GATEWAY_MAX_CONCURRENCY", 2),
 		MaxQueueDepth:      envInt("GATEWAY_MAX_QUEUE_DEPTH", 50),
 		PriorityQueueDepth: envInt("GATEWAY_PRIORITY_QUEUE_DEPTH", 10),

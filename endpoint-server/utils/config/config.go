@@ -11,6 +11,8 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"agent_patches/llmmodel"
 )
 
 // EnvKey is the environment variable that overrides the config file path.
@@ -227,6 +229,11 @@ type LoopSettings struct {
 
 // AgentSettings controls OpenAI API behaviour.
 type AgentSettings struct {
+	// Model is the model name sent with every LLM request. Optional: when
+	// unset, it defaults to llmmodel.Default ("DEFAULT"), a sentinel that
+	// tells llm-gateway to substitute its own configured upstream model
+	// (GATEWAY_UPSTREAM_MODEL) instead. Set this explicitly only when this
+	// agent should use a model other than the gateway's default.
 	Model        string `yaml:"model"`
 	MaxTokens    int    `yaml:"max_tokens"`
 	SystemPrompt string `yaml:"system_prompt"`
@@ -336,6 +343,9 @@ func Load() (*Settings, error) {
 	}
 	if s.Agent.RequestTimeout == "" {
 		s.Agent.RequestTimeout = "6m"
+	}
+	if s.Agent.Model == "" {
+		s.Agent.Model = llmmodel.Default
 	}
 	if s.ResponsibilitySystemPrompt == "" {
 		prompt, err := loadOSSystemPrompt(path)

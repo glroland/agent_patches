@@ -116,6 +116,7 @@ type GatewayStatsResponse struct {
 	QueueCapacity          int                           `json:"queue_capacity"`
 	PriorityQueueCapacity  int                           `json:"priority_queue_capacity"`
 	Upstream               string                        `json:"upstream"`
+	UpstreamModel          string                        `json:"upstream_model,omitempty"`
 	Endpoints              []EndpointStatsSnapshot       `json:"endpoints"`
 	Responsibilities       []ResponsibilityStatsSnapshot `json:"responsibilities"`
 }
@@ -339,6 +340,7 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 		QueueCapacity:          cap(g.queue),
 		PriorityQueueCapacity:  cap(g.priorityQueue),
 		Upstream:               g.upstream.String(),
+		UpstreamModel:          g.upstreamModel,
 		Endpoints:              snaps,
 		Responsibilities:       respSnaps,
 	}

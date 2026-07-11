@@ -47,6 +47,9 @@ llm-gateway:
     port: 8080
   gateway:
     upstreamURL: "http://evolvewired.home.glroland.com:8080"
+    # Display-only label shown in central-ui alongside the upstream URL. Purely
+    # informational — leave blank to hide the "Model Name" line in the UI.
+    upstreamModel: "Qwen3-Coder-Next-GGUF"
     maxConcurrency: "2"
     maxQueueDepth: "100"
     requestTimeout: "20m"

@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"agent_patches/llmmodel"
 )
 
 // nextPendingID is a monotonically-incrementing counter used to assign a unique
@@ -41,6 +43,7 @@ var hopByHopHeaders = map[string]bool{
 // gateway returns 429 immediately rather than blocking the caller.
 type Gateway struct {
 	upstream      *url.URL
+	upstreamModel string // display-only label for the model served at upstream; surfaced via /stats
 	client        *http.Client
 	priorityQueue chan *pending // interactive UI requests — drained first
 	queue         chan *pending // scheduled background requests
@@ -106,6 +109,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 	}
 	g := &Gateway{
 		upstream:      u,
+		upstreamModel: cfg.UpstreamModel,
 		client:        &http.Client{Timeout: cfg.RequestTimeout + 5*time.Second},
 		priorityQueue: make(chan *pending, cfg.PriorityQueueDepth),
 		queue:         make(chan *pending, cfg.MaxQueueDepth),
@@ -185,6 +189,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "gateway: read request body: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	body = g.resolveModel(body)
 
 	host := clientHost(r)
 	interactive := r.Header.Get("X-Priority") == "interactive"
@@ -248,6 +253,37 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Retry-After", "5")
 		http.Error(w, "gateway: upstream LLM queue is full — retry in a few seconds", http.StatusTooManyRequests)
 	}
+}
+
+// resolveModel rewrites the request body's top-level "model" field from the
+// llmmodel.Default sentinel to the gateway's configured upstreamModel, so
+// endpoint-server agents that don't set agent.model in their own config pick
+// up the model configured once here (GATEWAY_UPSTREAM_MODEL). Any other
+// model value — meaning the agent set its own agent.model — passes through
+// untouched. Malformed or non-JSON bodies, or a body with no "model" field,
+// are also passed through untouched.
+func (g *Gateway) resolveModel(body []byte) []byte {
+	if g.upstreamModel == "" {
+		return body
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(body, &fields); err != nil {
+		return body
+	}
+	raw, ok := fields["model"]
+	if !ok {
+		return body
+	}
+	var model string
+	if err := json.Unmarshal(raw, &model); err != nil || model != llmmodel.Default {
+		return body
+	}
+	fields["model"], _ = json.Marshal(g.upstreamModel)
+	rewritten, err := json.Marshal(fields)
+	if err != nil {
+		return body
+	}
+	return rewritten
 }
 
 // dispatcher drains both queues, always preferring the priority queue over the

@@ -27,6 +27,10 @@ spec:
               value: ":{{ .Values.containerPort }}"
             - name: GATEWAY_UPSTREAM_URL
               value: {{ .Values.gateway.upstreamURL | quote }}
+            {{- if .Values.gateway.upstreamModel }}
+            - name: GATEWAY_UPSTREAM_MODEL
+              value: {{ .Values.gateway.upstreamModel | quote }}
+            {{- end }}
             - name: GATEWAY_MAX_CONCURRENCY
               value: {{ .Values.gateway.maxConcurrency | quote }}
             - name: GATEWAY_MAX_QUEUE_DEPTH

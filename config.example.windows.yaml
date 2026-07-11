@@ -14,7 +14,9 @@
 # manager or `sc.exe`/registry) before starting patches-endpoint-server.
 
 agent:
-  model: gpt-4o
+  # model: gpt-4o             # optional; omit to use the gateway's configured
+  # default model (GATEWAY_UPSTREAM_MODEL). Set this only when this agent
+  # should use a different model than the gateway default.
   max_tokens: 4096
   max_iterations: 10
   system_prompt: |

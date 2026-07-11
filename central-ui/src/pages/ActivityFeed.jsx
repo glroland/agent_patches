@@ -222,8 +222,18 @@ function TokenConsumptionTab({ onPendingClick }) {
         <>
           {/* Gateway queue info bar */}
           <div className="flex items-center gap-3 rounded-lg border border-navy-200 bg-navy-50 px-4 py-2.5 text-xs text-navy-500">
-            <span className="font-semibold text-navy-700">Upstream</span>
-            <span className="font-mono">{stats.upstream}</span>
+            <div className="flex flex-col gap-0.5">
+              <span>
+                <span className="font-semibold text-navy-700">Intelligence Provider URL</span>{' '}
+                <span className="font-mono">{stats.upstream}</span>
+              </span>
+              {stats.upstream_model && (
+                <span>
+                  <span className="font-semibold text-navy-700">Model Name</span>{' '}
+                  <span className="font-mono">{stats.upstream_model}</span>
+                </span>
+              )}
+            </div>
             <span className="ml-auto flex items-center gap-4">
               <span>
                 Queue{' '}
