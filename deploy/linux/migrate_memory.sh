@@ -372,12 +372,23 @@ migrate_host_windows() {
             2>/dev/null || true
     fi
 
+    # Windows OpenSSH's non-interactive exec runs the remote command through
+    # cmd.exe, not bash — POSIX empty-string quoting ('') does not survive
+    # that hop (cmd.exe has no concept of it and passes the two literal
+    # quote characters through to PowerShell as a non-empty string). So
+    # MemoryRootOverride is only included when actually set; the PowerShell
+    # script's own default ("") handles the unset case correctly.
+    local win_root_arg=""
+    if [[ -n "$MEMORY_ROOT" ]]; then
+        win_root_arg="-MemoryRootOverride \"${MEMORY_ROOT}\""
+    fi
+
     echo "│  Running migration (stops agent_patches, leaves it stopped)..."
     local rc=0
     "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
         "powershell -NoProfile -ExecutionPolicy Bypass \
             -File C:/Windows/Temp/${win_setup_base} \
-            -DryRun ${MIGRATE_DRY_RUN} -Purge ${MIGRATE_PURGE} -MemoryRootOverride '${MEMORY_ROOT}'" \
+            -DryRun ${MIGRATE_DRY_RUN} -Purge ${MIGRATE_PURGE} ${win_root_arg}" \
         2>&1 | sed 's/^/│  /' || rc=$?
 
     "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
