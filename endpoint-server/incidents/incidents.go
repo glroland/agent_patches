@@ -6,10 +6,10 @@
 // occurrence count, and a log of actions taken, and lets the agent close the
 // loop by resolving incidents that have cleared.
 //
-// Incidents are stored in the AttrsStore under a single key so they survive
-// restarts and appear in the /memory dump. All mutations go through Store,
-// whose mutex serialises the read-modify-write cycle across concurrently
-// running responsibilities.
+// Incidents are stored in the "Incidents" memory domain so they survive
+// restarts and appear in the /memory dump under their own section. All
+// mutations go through Store, whose mutex serialises the read-modify-write
+// cycle across concurrently running responsibilities.
 package incidents
 
 import (
@@ -23,8 +23,10 @@ import (
 )
 
 const (
-	// attrsKey is the AttrsStore key holding the full incident list.
-	attrsKey = "incidents"
+	// incidentsDomain is the memory.Domain name holding the full incident
+	// list, so it surfaces as its own "Incidents" section rather than in
+	// the flat attrs bucket.
+	incidentsDomain = "Incidents"
 
 	// maxIncidents caps the ledger size; the oldest resolved incidents are
 	// dropped first when the cap is exceeded.
@@ -246,9 +248,8 @@ func (s *Store) OpenSummary() string {
 // first. Caller must hold s.mu.
 func (s *Store) load() ([]Incident, error) {
 	var list []Incident
-	if err := s.mem.Attrs().Get(attrsKey, &list); err != nil {
-		// Key not existing yet is the normal empty state; Get also fails when
-		// attrs.json itself is missing.
+	if err := s.mem.Domain(incidentsDomain).ReadCurrent(&list); err != nil {
+		// No snapshot existing yet is the normal empty state.
 		return nil, nil //nolint:nilerr
 	}
 	sort.SliceStable(list, func(i, j int) bool {
@@ -283,7 +284,7 @@ func (s *Store) save(list []Incident) error {
 		kept = kept[:maxIncidents]
 	}
 
-	return s.mem.Attrs().Set(attrsKey, kept)
+	return s.mem.Domain(incidentsDomain).Write(kept)
 }
 
 // normalizeFingerprint lower-cases and kebab-cases a fingerprint so the same

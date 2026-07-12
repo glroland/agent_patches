@@ -11,7 +11,10 @@ import (
 )
 
 const (
-	smartTrendAttrsKey    = "smart_trends"
+	// SmartTrendAttrsKey is the key within DiskTrendsDomain holding the
+	// SMART attribute trend map. Exported so other packages (e.g. status)
+	// can read the same key.
+	SmartTrendAttrsKey    = "smart_trends"
 	smartTrendMaxAge      = 30 * 24 * time.Hour
 	smartTrendMinInterval = 1 * time.Hour
 	smartTrendMinSamples  = 3
@@ -52,7 +55,7 @@ type SmartDeviceTrend struct {
 // skipped to avoid skewing trends during rapid re-runs.
 func RecordSmartSamples(mem *memory.Store, raw []RawSmartAttrs, now time.Time) (map[string]SmartDeviceTrend, error) {
 	trends := make(map[string]SmartDeviceTrend)
-	_ = mem.Attrs().Get(smartTrendAttrsKey, &trends)
+	_ = mem.Domain(DiskTrendsDomain).GetKey(SmartTrendAttrsKey, &trends)
 
 	for _, r := range raw {
 		if r.Device == "" || len(r.Attrs) == 0 {
@@ -105,7 +108,7 @@ func RecordSmartSamples(mem *memory.Store, raw []RawSmartAttrs, now time.Time) (
 		trends[key] = entry
 	}
 
-	if err := mem.Attrs().Set(smartTrendAttrsKey, trends); err != nil {
+	if err := mem.Domain(DiskTrendsDomain).SetKey(SmartTrendAttrsKey, trends); err != nil {
 		return trends, fmt.Errorf("check_drives: saving smart trends: %w", err)
 	}
 	return trends, nil

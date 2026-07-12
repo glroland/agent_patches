@@ -9,6 +9,10 @@ import (
 )
 
 const (
+	// networkDomain is the memory.Domain name holding all network-related
+	// state (connection history, rate baseline), so it surfaces as its own
+	// "Network" section rather than in the flat attrs bucket.
+	networkDomain       = "Network"
 	baselineAttrsKey    = "network_rate_baseline"
 	baselineMaxAge      = 7 * 24 * time.Hour
 	baselineMinInterval = 5 * time.Minute
@@ -40,7 +44,7 @@ type RateSample struct {
 // skipped (appended=false) when the newest existing one is less than
 // baselineMinInterval old, so frequent runs don't flood the window.
 func RecordSample(mem *memory.Store, downMBps, upMBps float64, now time.Time) (samples []RateSample, appended bool, err error) {
-	_ = mem.Attrs().Get(baselineAttrsKey, &samples)
+	_ = mem.Domain(networkDomain).GetKey(baselineAttrsKey, &samples)
 
 	if len(samples) == 0 || now.Sub(samples[len(samples)-1].Time) >= baselineMinInterval {
 		samples = append(samples, RateSample{Time: now, DownMBps: downMBps, UpMBps: upMBps})
@@ -54,7 +58,7 @@ func RecordSample(mem *memory.Store, downMBps, upMBps float64, now time.Time) (s
 	}
 	samples = samples[i:]
 
-	if err := mem.Attrs().Set(baselineAttrsKey, samples); err != nil {
+	if err := mem.Domain(networkDomain).SetKey(baselineAttrsKey, samples); err != nil {
 		return samples, appended, fmt.Errorf("analyze_network_utilization: saving rate baseline: %w", err)
 	}
 	return samples, appended, nil

@@ -107,6 +107,7 @@ central-ui/          React operator dashboard
 llm-gateway/         queuing LLM reverse proxy
 llmmodel/            shared model-name sentinel
 cli/                 patches-cli (one-shot A2A client)
+migrate-memory/      one-time memory-layout migration tool (see deploy/linux/migrate_memory.sh)
 config/              OS default responsibilities, system prompts, baseline ports
 deploy/              deploy scripts, systemd unit, Helm charts, ArgoCD app
 docs/                architecture, endpoint-server, central, llm-gateway,

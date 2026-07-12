@@ -11,6 +11,7 @@ import (
 	"agent_patches/endpoint-server/buildinfo"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/skills/capture_system_info"
+	"agent_patches/endpoint-server/skills/check_drives"
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
 	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/utils/config"
@@ -107,12 +108,12 @@ func (s *Service) build() Response {
 	}
 
 	var diskTrends json.RawMessage
-	if err := s.mem.Attrs().Get("disk_trends", &diskTrends); err != nil || string(diskTrends) == "null" {
+	if err := s.mem.Domain(check_drives.DiskTrendsDomain).GetKey(check_drives.TrendAttrsKey, &diskTrends); err != nil || string(diskTrends) == "null" {
 		diskTrends = nil
 	}
 
 	var smartTrends json.RawMessage
-	if err := s.mem.Attrs().Get("smart_trends", &smartTrends); err != nil || string(smartTrends) == "null" {
+	if err := s.mem.Domain(check_drives.DiskTrendsDomain).GetKey(check_drives.SmartTrendAttrsKey, &smartTrends); err != nil || string(smartTrends) == "null" {
 		smartTrends = nil
 	}
 

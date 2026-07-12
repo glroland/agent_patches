@@ -1,18 +1,18 @@
 // Package connmonitor provides a long-running background service that
 // periodically samples the host's active TCP/UDP connections and records a
-// durable history of connection open/close events in the agent's
-// AttrsStore, the same pattern loginmonitor uses for login history.
+// durable history of connection open/close events in the agent's "Network"
+// memory domain.
 //
-// Connections are stored under the "connection_history" key in attrs.json,
-// capped at a configurable number of entries. The check_network_connections
-// skill reads from this history instead of sampling connections on demand,
-// so it can report churn that happened between agent invocations — including
-// short-lived connections that would be invisible to a point-in-time check.
+// Connections are stored under the "connection_history" key of the
+// "Network" domain, capped at a configurable number of entries. The
+// check_network_connections skill reads from this history instead of
+// sampling connections on demand, so it can report churn that happened
+// between agent invocations — including short-lived connections that would
+// be invisible to a point-in-time check.
 package connmonitor
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -27,6 +27,10 @@ import (
 )
 
 const (
+	// networkDomain is the memory.Domain name holding all network-related
+	// state (connection history, rate baseline), so it surfaces as its own
+	// "Network" section rather than in the flat attrs bucket.
+	networkDomain       = "Network"
 	historyKey          = "connection_history"
 	defaultPollInterval = 10 * time.Second
 	defaultHistoryLimit = 2000
@@ -294,25 +298,17 @@ func (m *Monitor) appendEvents(events []ConnEvent) {
 	if len(history) > m.historyLimit {
 		history = history[len(history)-m.historyLimit:]
 	}
-	if err := m.mem.Attrs().Set(historyKey, history); err != nil {
+	if err := m.mem.Domain(networkDomain).SetKey(historyKey, history); err != nil {
 		slog.Warn("connmonitor: failed to write history", "error", err)
 	}
 }
 
-// ReadHistory returns the full connection event history from the AttrsStore.
-// Returns nil, nil if no history has been recorded yet.
+// ReadHistory returns the full connection event history from the "Network"
+// memory domain. Returns nil, nil if no history has been recorded yet.
 func ReadHistory(mem *memory.Store) ([]ConnEvent, error) {
-	raw, err := mem.Attrs().All()
-	if err != nil || raw == nil {
-		return nil, err
-	}
-	val, ok := raw[historyKey]
-	if !ok {
-		return nil, nil
-	}
 	var history []ConnEvent
-	if err := json.Unmarshal(val, &history); err != nil {
-		return nil, fmt.Errorf("connmonitor: parse history: %w", err)
+	if err := mem.Domain(networkDomain).GetKey(historyKey, &history); err != nil {
+		return nil, nil //nolint:nilerr
 	}
 	return history, nil
 }

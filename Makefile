@@ -1,8 +1,10 @@
-BINARY     := patches-endpoint-server
-CLI_BINARY := patches-cli
-SRC_DIR    := ./endpoint-server
-CLI_DIR    := ./cli
-TARGET_DIR := target
+BINARY         := patches-endpoint-server
+CLI_BINARY     := patches-cli
+MIGRATE_BINARY := migrate-memory
+SRC_DIR        := ./endpoint-server
+CLI_DIR        := ./cli
+MIGRATE_DIR    := ./migrate-memory
+TARGET_DIR     := target
 GO         := go
 BUILD_TIME := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -ldflags "-X agent_patches/endpoint-server/buildinfo.BuildTime=$(BUILD_TIME)"
@@ -38,12 +40,26 @@ CENTRAL_BACKEND_DIR := $(CURDIR)/central-backend
 INVENTORY_ROOT := $(CURDIR)/../home-utils/admin/agent_patches
 DEPLOY_SCRIPT  := $(CURDIR)/deploy/linux/deploy.sh
 RESTART_SCRIPT := $(CURDIR)/deploy/linux/restart.sh
+MIGRATE_MEMORY_SCRIPT := $(CURDIR)/deploy/linux/migrate_memory.sh
+
+# Set to 0 to skip per-host confirmation prompts during migrate-memory.
+# Override with: make migrate-memory MIGRATE_CONFIRM=0  (or use make migrate-memory-all)
+MIGRATE_CONFIRM ?= 1
+
+# Set to 1 to purge migrated keys from attrs.json after migrate-memory runs.
+# Off by default so the old copy survives as a backup on first pass.
+MIGRATE_PURGE ?= 0
+
+# Set to 1 to preview migrate-memory's changes without writing anything.
+MIGRATE_DRY_RUN ?= 0
 
 # OS-specific default responsibilities and system prompt files (in-repo).
 CONFIG_DIR := $(CURDIR)/config
 
-.PHONY: install build build-server build-cli release release-server release-cli \
-        test run run-cli run-central-ui run-central-backend deploy deploy-all restart clean fmt vet help
+.PHONY: install build build-server build-cli build-migrate-memory \
+        release release-server release-cli release-migrate-memory \
+        test run run-cli run-central-ui run-central-backend \
+        deploy deploy-all restart migrate-memory migrate-memory-all clean fmt vet help
 
 ## install: download and tidy all module dependencies
 install:
@@ -62,6 +78,11 @@ build-server:
 build-cli:
 	mkdir -p $(TARGET_DIR)
 	$(GO) build -o $(TARGET_DIR)/$(CLI_BINARY) $(CLI_DIR)
+
+## build-migrate-memory: compile the migrate-memory binary for the current platform
+build-migrate-memory:
+	mkdir -p $(TARGET_DIR)
+	$(GO) build -o $(TARGET_DIR)/$(MIGRATE_BINARY) $(MIGRATE_DIR)
 
 ## release: cross-compile both binaries for all target platforms
 release: clean release-server release-cli
@@ -83,6 +104,15 @@ release-cli:
 	GOOS=darwin  GOARCH=amd64 $(GO) build -o $(MAC_AMD64_DIR)/$(CLI_BINARY)         $(CLI_DIR)
 	GOOS=darwin  GOARCH=arm64 $(GO) build -o $(MAC_ARM64_DIR)/$(CLI_BINARY)         $(CLI_DIR)
 	GOOS=windows GOARCH=amd64 $(GO) build -o $(WINDOWS_AMD64_DIR)/$(CLI_BINARY).exe $(CLI_DIR)
+
+## release-migrate-memory: cross-compile migrate-memory for all target platforms
+release-migrate-memory:
+	mkdir -p $(LINUX_AMD64_DIR) $(LINUX_ARM64_DIR) $(MAC_AMD64_DIR) $(MAC_ARM64_DIR) $(WINDOWS_AMD64_DIR)
+	GOOS=linux   GOARCH=amd64 $(GO) build -o $(LINUX_AMD64_DIR)/$(MIGRATE_BINARY)       $(MIGRATE_DIR)
+	GOOS=linux   GOARCH=arm64 $(GO) build -o $(LINUX_ARM64_DIR)/$(MIGRATE_BINARY)       $(MIGRATE_DIR)
+	GOOS=darwin  GOARCH=amd64 $(GO) build -o $(MAC_AMD64_DIR)/$(MIGRATE_BINARY)         $(MIGRATE_DIR)
+	GOOS=darwin  GOARCH=arm64 $(GO) build -o $(MAC_ARM64_DIR)/$(MIGRATE_BINARY)         $(MIGRATE_DIR)
+	GOOS=windows GOARCH=amd64 $(GO) build -o $(WINDOWS_AMD64_DIR)/$(MIGRATE_BINARY).exe $(MIGRATE_DIR)
 
 ## test: run all unit tests
 test:
@@ -133,6 +163,23 @@ deploy-all: deploy
 restart:
 	$(RESTART_SCRIPT) \
 		$(INVENTORY_ROOT)/inventory.csv
+
+## migrate-memory: one-time migration of network/disk-trend/incident/skill-state data out of the
+## flat attrs bucket into their own memory domains, on every host in inventory.csv. Stops the
+## service, runs migrate-memory, restarts it. Requires `make release-migrate-memory` first.
+## Override with: make migrate-memory MIGRATE_PURGE=1 MIGRATE_DRY_RUN=1
+migrate-memory:
+	MIGRATE_CONFIRM=$(MIGRATE_CONFIRM) \
+	MIGRATE_PURGE=$(MIGRATE_PURGE) \
+	MIGRATE_DRY_RUN=$(MIGRATE_DRY_RUN) \
+	WINDOWS_BINARY=$(WINDOWS_AMD64_DIR)/$(MIGRATE_BINARY).exe \
+	$(MIGRATE_MEMORY_SCRIPT) \
+		$(INVENTORY_ROOT)/inventory.csv \
+		$(LINUX_AMD64_DIR)/$(MIGRATE_BINARY)
+
+## migrate-memory-all: migrate-memory without per-host confirmation
+migrate-memory-all: MIGRATE_CONFIRM=0
+migrate-memory-all: migrate-memory
 
 ## fmt: format all Go source files
 fmt:

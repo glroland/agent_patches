@@ -21,6 +21,7 @@ import (
 	"agent_patches/endpoint-server/a2a/tool"
 	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
@@ -30,8 +31,8 @@ const (
 	maxSummaryLen       = 300
 	startupJitterMaxMin = 30 // upper bound (inclusive) for the random startup delay in minutes
 
-	// AttrRunPrefix is the attrs key prefix for responsibility run state.
-	// Full key: AttrRunPrefix + responsibility name.
+	// AttrRunPrefix is the key prefix for responsibility run state within
+	// skillstate.Domain. Full key: AttrRunPrefix + responsibility name.
 	AttrRunPrefix = "responsibility_run:"
 )
 
@@ -252,7 +253,7 @@ func (l *Loop) persistRunState(r *Responsibility, result string, err error) {
 		Status:    status,
 		Summary:   summary,
 	}
-	if writeErr := l.mem.Attrs().Set(AttrRunPrefix+r.cfg.Name, state); writeErr != nil {
+	if writeErr := l.mem.Domain(skillstate.Domain).SetKey(AttrRunPrefix+r.cfg.Name, state); writeErr != nil {
 		slog.Warn("loop: failed to persist run state", "responsibility", r.cfg.Name, "error", writeErr)
 	}
 }

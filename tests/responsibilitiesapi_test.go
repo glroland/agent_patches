@@ -11,6 +11,7 @@ import (
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
 	"agent_patches/endpoint-server/responsibilitiesapi"
+	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/utils/config"
 )
 
@@ -95,7 +96,7 @@ func TestResponsibilitiesAPI_OverlaysPersistedRunState(t *testing.T) {
 		Status:    "ok",
 		Summary:   "all disks healthy",
 	}
-	if err := mem.Attrs().Set(loop.AttrRunPrefix+"disk-space-check", state); err != nil {
+	if err := mem.Domain(skillstate.Domain).SetKey(loop.AttrRunPrefix+"disk-space-check", state); err != nil {
 		t.Fatal(err)
 	}
 

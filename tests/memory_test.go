@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -117,6 +118,158 @@ func TestMemoryDomain_Snapshot_DataRoundtrips(t *testing.T) {
 	}
 	if out != in {
 		t.Errorf("roundtrip: got %+v, want %+v", out, in)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// DomainStore — key-mode access (SetKey/GetKey/AllKeys/Update)
+// ---------------------------------------------------------------------------
+
+func TestMemoryDomainKey_SetAndGet(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("network")
+
+	if err := d.SetKey("host", "server01"); err != nil {
+		t.Fatalf("SetKey: %v", err)
+	}
+
+	var got string
+	if err := d.GetKey("host", &got); err != nil {
+		t.Fatalf("GetKey: %v", err)
+	}
+	if got != "server01" {
+		t.Errorf("GetKey = %q, want %q", got, "server01")
+	}
+}
+
+func TestMemoryDomainKey_SetPreservesOtherKeys(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("network")
+
+	_ = d.SetKey("k1", "v1")
+	_ = d.SetKey("k2", "v2")
+
+	var v1, v2 string
+	_ = d.GetKey("k1", &v1)
+	_ = d.GetKey("k2", &v2)
+	if v1 != "v1" || v2 != "v2" {
+		t.Errorf("SetKey clobbered keys: k1=%q k2=%q", v1, v2)
+	}
+}
+
+func TestMemoryDomainKey_GetMissingKey_ReturnsError(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("network")
+	_ = d.SetKey("existing", 1)
+	var v int
+	if err := d.GetKey("missing", &v); err == nil {
+		t.Error("expected error for missing key, got nil")
+	}
+}
+
+func TestMemoryDomainKey_SetOverwritesValue(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("network")
+	_ = d.SetKey("x", 1)
+	_ = d.SetKey("x", 2)
+	var v int
+	if err := d.GetKey("x", &v); err != nil {
+		t.Fatalf("GetKey: %v", err)
+	}
+	if v != 2 {
+		t.Errorf("GetKey = %d, want 2", v)
+	}
+}
+
+func TestMemoryDomainKey_AllKeys(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("network")
+	_ = d.SetKey("k1", "v1")
+	_ = d.SetKey("k2", "v2")
+
+	all, err := d.AllKeys()
+	if err != nil {
+		t.Fatalf("AllKeys: %v", err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("AllKeys returned %d keys, want 2: %+v", len(all), all)
+	}
+}
+
+func TestMemoryDomainKey_AllKeys_Empty_ReturnsNil(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("empty-network")
+	all, err := d.AllKeys()
+	if err != nil {
+		t.Fatalf("AllKeys: %v", err)
+	}
+	if all != nil {
+		t.Errorf("AllKeys on empty domain = %+v, want nil", all)
+	}
+}
+
+func TestMemoryDomainKey_ConcurrentSetKey_NoLostUpdates(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("concurrent")
+
+	const n = 20
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			key := fmt.Sprintf("skill_state:%d", i)
+			_ = d.SetKey(key, i)
+		}(i)
+	}
+	wg.Wait()
+
+	all, err := d.AllKeys()
+	if err != nil {
+		t.Fatalf("AllKeys: %v", err)
+	}
+	if len(all) != n {
+		t.Errorf("AllKeys returned %d keys after %d concurrent SetKey calls, want %d (lost update)", len(all), n, n)
+	}
+}
+
+func TestMemoryDomainUpdate_MutatesExistingSnapshot(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	d := store.Domain("update")
+
+	type counter struct {
+		N int `json:"n"`
+	}
+	for i := 0; i < 3; i++ {
+		var c counter
+		if err := d.Update(&c, func() error {
+			c.N++
+			return nil
+		}); err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+	}
+
+	var final counter
+	if err := d.ReadCurrent(&final); err != nil {
+		t.Fatalf("ReadCurrent: %v", err)
+	}
+	if final.N != 3 {
+		t.Errorf("final.N = %d, want 3", final.N)
+	}
+}
+
+func TestMemoryDomainUpdate_NilStore_Noop(t *testing.T) {
+	var d *memory.DomainStore
+	called := false
+	if err := d.Update(new(int), func() error {
+		called = true
+		return nil
+	}); err != nil {
+		t.Errorf("nil DomainStore.Update returned error: %v", err)
+	}
+	if called {
+		t.Error("nil DomainStore.Update should not invoke mutate")
 	}
 }
 

@@ -177,6 +177,112 @@ func (d *DomainStore) Write(v any) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	return d.writeLocked(v)
+}
+
+// ReadCurrent unmarshals the most recent snapshot into v.
+// Returns an error if no snapshots exist.
+// A nil DomainStore always returns an error.
+func (d *DomainStore) ReadCurrent(v any) error {
+	if d == nil {
+		return fmt.Errorf("memory: nil DomainStore")
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.readCurrentLocked(v)
+}
+
+// Update atomically loads the domain's current snapshot into dst (leaving
+// dst at its existing/zero value if no snapshot exists yet), invokes mutate
+// to modify it, and persists the result as a new snapshot — all under one
+// lock, so concurrent Update calls on the same domain can't lose each
+// other's changes the way separate ReadCurrent+Write calls could.
+// A nil DomainStore is safe to call — Update is a no-op that does not
+// invoke mutate.
+func (d *DomainStore) Update(dst any, mutate func() error) error {
+	if d == nil {
+		return nil
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if err := d.readCurrentLocked(dst); err != nil {
+		// No snapshot yet (or unreadable) — proceed with dst at its current
+		// (typically zero) value, matching the Attrs Get-then-ignore-error
+		// pattern used throughout the codebase for optional prior state.
+		_ = err
+	}
+
+	if err := mutate(); err != nil {
+		return err
+	}
+
+	return d.writeLocked(dst)
+}
+
+// SetKey atomically merges key=value into the domain's current snapshot
+// (treated as a map[string]json.RawMessage), preserving any other keys
+// already present, and persists the result as a new snapshot. Mirrors
+// AttrsStore.Set, but scoped to one domain (with tiered history retention)
+// instead of the single global attrs file.
+func (d *DomainStore) SetKey(key string, value any) error {
+	val, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("memory: marshal value for key %q: %w", key, err)
+	}
+
+	var bucket map[string]json.RawMessage
+	return d.Update(&bucket, func() error {
+		if bucket == nil {
+			bucket = map[string]json.RawMessage{}
+		}
+		bucket[key] = val
+		return nil
+	})
+}
+
+// GetKey reads a single key out of the domain's current snapshot (map
+// mode). Returns an error if the domain has no snapshot yet or the key is
+// absent. Mirrors AttrsStore.Get. A nil DomainStore always returns an error.
+func (d *DomainStore) GetKey(key string, v any) error {
+	if d == nil {
+		return fmt.Errorf("memory: nil DomainStore")
+	}
+
+	var bucket map[string]json.RawMessage
+	if err := d.ReadCurrent(&bucket); err != nil {
+		return err
+	}
+
+	val, ok := bucket[key]
+	if !ok {
+		return fmt.Errorf("memory: key %q not found", key)
+	}
+	return json.Unmarshal(val, v)
+}
+
+// AllKeys returns every key/value pair in the domain's current snapshot
+// (map mode). Returns nil, nil if the domain has no snapshot yet. Mirrors
+// AttrsStore.All. A nil DomainStore returns nil, nil.
+func (d *DomainStore) AllKeys() (map[string]json.RawMessage, error) {
+	if d == nil {
+		return nil, nil
+	}
+
+	var bucket map[string]json.RawMessage
+	if err := d.ReadCurrent(&bucket); err != nil {
+		return nil, nil //nolint:nilerr
+	}
+	return bucket, nil
+}
+
+// writeLocked marshals v to JSON and stores it as a new timestamped
+// snapshot, then prunes the directory to the retention window. The write is
+// atomic (temp-file + rename). Caller must hold d.mu.
+func (d *DomainStore) writeLocked(v any) error {
 	now := d.Clock()
 
 	data, err := json.Marshal(v)
@@ -203,17 +309,9 @@ func (d *DomainStore) Write(v any) error {
 	return nil
 }
 
-// ReadCurrent unmarshals the most recent snapshot into v.
-// Returns an error if no snapshots exist.
-// A nil DomainStore always returns an error.
-func (d *DomainStore) ReadCurrent(v any) error {
-	if d == nil {
-		return fmt.Errorf("memory: nil DomainStore")
-	}
-
-	d.mu.Lock()
-	defer d.mu.Unlock()
-
+// readCurrentLocked unmarshals the most recent snapshot into v. Returns an
+// error if no snapshots exist. Caller must hold d.mu.
+func (d *DomainStore) readCurrentLocked(v any) error {
 	name, err := d.newestFile()
 	if err != nil {
 		return err

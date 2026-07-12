@@ -10,6 +10,7 @@ import (
 
 	"agent_patches/endpoint-server/loop"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
 )
 
 // Service serves the /responsibilities endpoint.
@@ -34,7 +35,7 @@ func (s *Service) handle(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	attrs, _ := s.mem.Attrs().All()
+	attrs, _ := s.mem.Domain(skillstate.Domain).AllKeys()
 
 	items := make([]ResponsibilityItem, 0, len(s.lp.Responsibilities()))
 	for _, resp := range s.lp.Responsibilities() {

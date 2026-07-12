@@ -23,7 +23,13 @@ const (
 	HealthCritical Health = "critical"
 )
 
-// keyPrefix namespaces skill-state entries within the shared attrs store.
+// Domain is the memory.Domain name holding skill-state and
+// responsibility-run entries, so they surface as their own "Skill States"
+// section rather than in the flat attrs bucket. loop.go also writes into
+// this domain for responsibility-run state.
+const Domain = "Skill States"
+
+// keyPrefix namespaces skill-state entries within the shared domain.
 const keyPrefix = "skill_state:"
 
 // State is the last known state recorded by a check/analyze skill.
@@ -40,7 +46,7 @@ func Save(mem *memory.Store, skill string, health Health, summary string) error 
 	if mem == nil {
 		return nil
 	}
-	return mem.Attrs().Set(keyPrefix+skill, State{
+	return mem.Domain(Domain).SetKey(keyPrefix+skill, State{
 		Skill:   skill,
 		Health:  health,
 		Summary: summary,
@@ -55,7 +61,7 @@ func LoadAll(mem *memory.Store) ([]State, error) {
 		return nil, nil
 	}
 
-	attrs, err := mem.Attrs().All()
+	attrs, err := mem.Domain(Domain).AllKeys()
 	if err != nil {
 		return nil, err
 	}

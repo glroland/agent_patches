@@ -11,7 +11,15 @@ import (
 )
 
 const (
-	trendAttrsKey     = "disk_trends"
+	// DiskTrendsDomain is the memory.Domain name holding all disk-trend
+	// state (usage trends, SMART trends), so it surfaces as its own
+	// "Disk Trends" section rather than in the flat attrs bucket. Exported
+	// so other packages (e.g. status) can read the same keys.
+	DiskTrendsDomain = "Disk Trends"
+
+	// TrendAttrsKey is the key within DiskTrendsDomain holding the disk
+	// usage trend map.
+	TrendAttrsKey     = "disk_trends"
 	trendMaxAge       = 7 * 24 * time.Hour
 	trendMinInterval  = 30 * time.Minute
 	trendMinSamples   = 3
@@ -45,7 +53,7 @@ type DiskTrend struct {
 // than the intended hourly cadence.
 func RecordSamples(mem *memory.Store, disks []DiskStat, now time.Time) (map[string]DiskTrend, error) {
 	trends := make(map[string]DiskTrend)
-	_ = mem.Attrs().Get(trendAttrsKey, &trends)
+	_ = mem.Domain(DiskTrendsDomain).GetKey(TrendAttrsKey, &trends)
 
 	for _, d := range disks {
 		key := sanitizeMount(d.Mount)
@@ -87,7 +95,7 @@ func RecordSamples(mem *memory.Store, disks []DiskStat, now time.Time) (map[stri
 		trends[key] = entry
 	}
 
-	if err := mem.Attrs().Set(trendAttrsKey, trends); err != nil {
+	if err := mem.Domain(DiskTrendsDomain).SetKey(TrendAttrsKey, trends); err != nil {
 		return trends, fmt.Errorf("check_drives: saving disk trends: %w", err)
 	}
 	return trends, nil

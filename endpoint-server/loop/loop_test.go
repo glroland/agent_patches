@@ -8,6 +8,7 @@ import (
 	tasks "agent_patches/endpoint-server/a2a/registry"
 	"agent_patches/endpoint-server/incidents"
 	"agent_patches/endpoint-server/memory"
+	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/utils/config"
 	"agent_patches/endpoint-server/utils/notifier"
 )
@@ -47,7 +48,7 @@ func TestExecute_PreCheckSkipsLLMWhenHealthy(t *testing.T) {
 	}
 
 	var state RunState
-	if err := mem.Attrs().Get(AttrRunPrefix+"test-resp", &state); err != nil {
+	if err := mem.Domain(skillstate.Domain).GetKey(AttrRunPrefix+"test-resp", &state); err != nil {
 		t.Fatalf("run state not persisted: %v", err)
 	}
 	if state.Status != "ok" || state.Summary != "all clear" {
@@ -76,7 +77,7 @@ func TestExecute_PreCheckErrorFailsOpen(t *testing.T) {
 	// through to the agent path, which fails against the zero-value Anthropic
 	// config and persists an error state — never the pre-check's summary.
 	var state RunState
-	if err := mem.Attrs().Get(AttrRunPrefix+"test-resp", &state); err != nil {
+	if err := mem.Domain(skillstate.Domain).GetKey(AttrRunPrefix+"test-resp", &state); err != nil {
 		t.Fatalf("run state not persisted: %v", err)
 	}
 	if state.Summary == "should be ignored" {

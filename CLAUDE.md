@@ -32,6 +32,7 @@ Most integration tests live in `tests/` and exercise packages cross-package; som
 - `llm-gateway/` — Go queuing reverse proxy in front of the shared LLM
 - `llmmodel/` — one shared constant: the `DEFAULT` model sentinel the gateway rewrites
 - `cli/` — one-shot A2A client
+- `migrate-memory/` — one-time CLI that moves data between memory layouts on a host's memory root (run via `deploy/linux/migrate_memory.sh`, not directly against a live agent)
 - `config/` — OS-default responsibilities, system prompts, and baseline-ports CSVs installed by deploy
 
 Full docs in `docs/` (architecture, endpoint-server, central, llm-gateway, memory, security). Keep them updated when changing behavior.
