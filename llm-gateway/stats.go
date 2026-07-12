@@ -27,6 +27,55 @@ type Tracker struct {
 	responsibilities map[string]*responsibilityStats
 	pendingMu        sync.RWMutex
 	pendingMap       map[string]*pendingDetail
+
+	// incomingErrors counts connections abandoned/timed out/cancelled/prematurely
+	// closed by the endpoint-server client talking to the gateway. outgoingErrors
+	// counts connection failures the gateway experiences talking to the upstream
+	// LLM. Both are gateway-wide (not attributed to a single endpoint).
+	incomingErrors *errorStats
+	outgoingErrors *errorStats
+}
+
+// errorStats tracks a single connection-error counter using the same
+// 25-hour sliding window approach as endpointStats/responsibilityStats.
+type errorStats struct {
+	mu     sync.Mutex
+	events []time.Time // sorted ascending by time; pruned to 25 h
+	total  int64
+}
+
+// record appends one error occurrence and prunes events older than 25 hours.
+func (e *errorStats) record(now time.Time) {
+	e.mu.Lock()
+	e.events = append(e.events, now)
+	e.total++
+	e.prune(now)
+	e.mu.Unlock()
+}
+
+// prune removes events older than 25 hours. Must be called with e.mu held.
+func (e *errorStats) prune(now time.Time) {
+	cutoff := now.Add(-25 * time.Hour)
+	i := 0
+	for i < len(e.events) && e.events[i].Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		e.events = e.events[i:]
+	}
+}
+
+// windowCount returns the number of events within the given window. Must be
+// called with e.mu held.
+func (e *errorStats) windowCount(now time.Time, window time.Duration) int64 {
+	var n int64
+	for i := len(e.events) - 1; i >= 0; i-- {
+		if now.Sub(e.events[i]) > window {
+			break
+		}
+		n++
+	}
+	return n
 }
 
 type endpointStats struct {
@@ -119,6 +168,15 @@ type GatewayStatsResponse struct {
 	UpstreamModel          string                        `json:"upstream_model,omitempty"`
 	Endpoints              []EndpointStatsSnapshot       `json:"endpoints"`
 	Responsibilities       []ResponsibilityStatsSnapshot `json:"responsibilities"`
+
+	// IncomingConnErrors count connections abandoned/timed out/cancelled/
+	// prematurely closed by endpoint-server clients talking to the gateway.
+	// OutgoingConnErrors count connection failures the gateway experiences
+	// talking to the upstream LLM (timeouts, network errors).
+	IncomingConnErrorsLastHour int64 `json:"incoming_conn_errors_last_hour"`
+	IncomingConnErrorsTotal    int64 `json:"incoming_conn_errors_total"`
+	OutgoingConnErrorsLastHour int64 `json:"outgoing_conn_errors_last_hour"`
+	OutgoingConnErrorsTotal    int64 `json:"outgoing_conn_errors_total"`
 }
 
 func NewTracker() *Tracker {
@@ -126,7 +184,23 @@ func NewTracker() *Tracker {
 		endpoints:        make(map[string]*endpointStats),
 		responsibilities: make(map[string]*responsibilityStats),
 		pendingMap:       make(map[string]*pendingDetail),
+		incomingErrors:   &errorStats{},
+		outgoingErrors:   &errorStats{},
 	}
+}
+
+// RecordIncomingConnError records one connection from an endpoint-server
+// client to the gateway that was abandoned, timed out, cancelled, or
+// prematurely closed (before dispatch, mid-flight to the upstream, or
+// mid-response).
+func (t *Tracker) RecordIncomingConnError() {
+	t.incomingErrors.record(time.Now())
+}
+
+// RecordOutgoingConnError records one failed or timed-out connection from
+// the gateway to the upstream LLM.
+func (t *Tracker) RecordOutgoingConnError() {
+	t.outgoingErrors.record(time.Now())
 }
 
 func (t *Tracker) get(host, name string) *endpointStats {
@@ -329,20 +403,35 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 	queued := max(0, len(g.queue)-ghostN)
 	priorityQueued := max(0, len(g.priorityQueue)-ghostP)
 	active := len(g.sem)
+
+	t.incomingErrors.mu.Lock()
+	incomingHour := t.incomingErrors.windowCount(now, time.Hour)
+	incomingTotal := t.incomingErrors.total
+	t.incomingErrors.mu.Unlock()
+
+	t.outgoingErrors.mu.Lock()
+	outgoingHour := t.outgoingErrors.windowCount(now, time.Hour)
+	outgoingTotal := t.outgoingErrors.total
+	t.outgoingErrors.mu.Unlock()
+
 	return GatewayStatsResponse{
-		GeneratedAt:            now,
-		TotalPending:           queued + priorityQueued + active,
-		ActiveRequests:         active,
-		QueuedRequests:         queued,
-		PriorityQueuedRequests: priorityQueued,
-		GhostRequests:          ghostN + ghostP,
-		MaxConcurrency:         cap(g.sem),
-		QueueCapacity:          cap(g.queue),
-		PriorityQueueCapacity:  cap(g.priorityQueue),
-		Upstream:               g.upstream.String(),
-		UpstreamModel:          g.upstreamModel,
-		Endpoints:              snaps,
-		Responsibilities:       respSnaps,
+		GeneratedAt:                now,
+		TotalPending:               queued + priorityQueued + active,
+		ActiveRequests:             active,
+		QueuedRequests:             queued,
+		PriorityQueuedRequests:     priorityQueued,
+		GhostRequests:              ghostN + ghostP,
+		MaxConcurrency:             cap(g.sem),
+		QueueCapacity:              cap(g.queue),
+		PriorityQueueCapacity:      cap(g.priorityQueue),
+		Upstream:                   g.upstream.String(),
+		UpstreamModel:              g.upstreamModel,
+		Endpoints:                  snaps,
+		Responsibilities:           respSnaps,
+		IncomingConnErrorsLastHour: incomingHour,
+		IncomingConnErrorsTotal:    incomingTotal,
+		OutgoingConnErrorsLastHour: outgoingHour,
+		OutgoingConnErrorsTotal:    outgoingTotal,
 	}
 }
 
@@ -429,6 +518,16 @@ func (t *Tracker) Reset() {
 		rs.lastSeen = time.Time{}
 		rs.mu.Unlock()
 	}
+
+	t.incomingErrors.mu.Lock()
+	t.incomingErrors.events = nil
+	t.incomingErrors.total = 0
+	t.incomingErrors.mu.Unlock()
+
+	t.outgoingErrors.mu.Lock()
+	t.outgoingErrors.events = nil
+	t.outgoingErrors.total = 0
+	t.outgoingErrors.mu.Unlock()
 }
 
 // extractTokens parses usage counters from a buffered response body.
@@ -557,10 +656,17 @@ func (lc *limitedCapture) Write(p []byte) (int, error) {
 const persistenceVersion = 1
 
 type persistedState struct {
-	Version          int                       `json:"version"`
-	SavedAt          time.Time                 `json:"saved_at"`
-	Endpoints        []persistedEndpoint       `json:"endpoints"`
-	Responsibilities []persistedResponsibility `json:"responsibilities"`
+	Version            int                       `json:"version"`
+	SavedAt            time.Time                 `json:"saved_at"`
+	Endpoints          []persistedEndpoint       `json:"endpoints"`
+	Responsibilities   []persistedResponsibility `json:"responsibilities"`
+	IncomingConnErrors persistedErrorStats       `json:"incoming_conn_errors,omitempty"`
+	OutgoingConnErrors persistedErrorStats       `json:"outgoing_conn_errors,omitempty"`
+}
+
+type persistedErrorStats struct {
+	Total  int64       `json:"total"`
+	Events []time.Time `json:"events"`
 }
 
 type persistedEndpoint struct {
@@ -638,6 +744,22 @@ func (t *Tracker) Load(path string) error {
 		t.responsibilities[pr.Name] = rs
 	}
 
+	incoming := &errorStats{total: state.IncomingConnErrors.Total}
+	for _, at := range state.IncomingConnErrors.Events {
+		if !at.Before(cutoff) {
+			incoming.events = append(incoming.events, at)
+		}
+	}
+	t.incomingErrors = incoming
+
+	outgoing := &errorStats{total: state.OutgoingConnErrors.Total}
+	for _, at := range state.OutgoingConnErrors.Events {
+		if !at.Before(cutoff) {
+			outgoing.events = append(outgoing.events, at)
+		}
+	}
+	t.outgoingErrors = outgoing
+
 	slog.Info("gateway: loaded persisted stats",
 		"path", path,
 		"endpoints", len(state.Endpoints),
@@ -709,6 +831,20 @@ func (t *Tracker) Save(path string) error {
 		rs.mu.Unlock()
 		state.Responsibilities = append(state.Responsibilities, pr)
 	}
+
+	t.incomingErrors.mu.Lock()
+	state.IncomingConnErrors = persistedErrorStats{
+		Total:  t.incomingErrors.total,
+		Events: append([]time.Time(nil), t.incomingErrors.events...),
+	}
+	t.incomingErrors.mu.Unlock()
+
+	t.outgoingErrors.mu.Lock()
+	state.OutgoingConnErrors = persistedErrorStats{
+		Total:  t.outgoingErrors.total,
+		Events: append([]time.Time(nil), t.outgoingErrors.events...),
+	}
+	t.outgoingErrors.mu.Unlock()
 
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

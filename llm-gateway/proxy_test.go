@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -277,5 +279,141 @@ func TestGateway_QueueFullReturns429(t *testing.T) {
 			t.Fatal("interactive request never queued despite free priority queue")
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// failingWriter is an http.ResponseWriter whose Write always fails, simulating
+// a client that disconnects while the gateway is streaming a response back to it.
+type failingWriter struct {
+	header http.Header
+}
+
+func (f *failingWriter) Header() http.Header {
+	if f.header == nil {
+		f.header = make(http.Header)
+	}
+	return f.header
+}
+func (f *failingWriter) WriteHeader(int) {}
+func (f *failingWriter) Write([]byte) (int, error) {
+	return 0, errors.New("broken pipe")
+}
+
+func newForwardPending(ctx context.Context, w http.ResponseWriter, host, id string) *pending {
+	return &pending{
+		ctx:    ctx,
+		method: http.MethodPost,
+		path:   "/v1/x",
+		w:      w,
+		done:   make(chan struct{}),
+		host:   host,
+		id:     id,
+	}
+}
+
+func TestGateway_Forward_IncomingConnError_PreDispatchCancel(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer upstream.Close()
+	g := newProxyGateway(t, upstream.URL, nil)
+
+	p := newForwardPending(context.Background(), httptest.NewRecorder(), "10.0.0.1", "req-1")
+	p.cancelled.Store(true)
+
+	g.forward(p)
+	<-p.done
+
+	snap := g.tracker.Snapshot(g)
+	if snap.IncomingConnErrorsTotal != 1 {
+		t.Errorf("IncomingConnErrorsTotal = %d, want 1", snap.IncomingConnErrorsTotal)
+	}
+	if snap.OutgoingConnErrorsTotal != 0 {
+		t.Errorf("OutgoingConnErrorsTotal = %d, want 0", snap.OutgoingConnErrorsTotal)
+	}
+}
+
+func TestGateway_Forward_IncomingConnError_MidFlightCancel(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer upstream.Close()
+	g := newProxyGateway(t, upstream.URL, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	p := newForwardPending(ctx, httptest.NewRecorder(), "10.0.0.2", "req-2")
+
+	g.forward(p)
+	<-p.done
+
+	snap := g.tracker.Snapshot(g)
+	if snap.IncomingConnErrorsTotal != 1 {
+		t.Errorf("IncomingConnErrorsTotal = %d, want 1", snap.IncomingConnErrorsTotal)
+	}
+	if snap.OutgoingConnErrorsTotal != 0 {
+		t.Errorf("OutgoingConnErrorsTotal = %d, want 0", snap.OutgoingConnErrorsTotal)
+	}
+}
+
+func TestGateway_Forward_OutgoingConnError_Timeout(t *testing.T) {
+	block := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-block
+	}))
+	defer upstream.Close()
+	defer close(block)
+
+	g := newProxyGateway(t, upstream.URL, func(c *Config) {
+		c.RequestTimeout = 20 * time.Millisecond
+	})
+	p := newForwardPending(context.Background(), httptest.NewRecorder(), "10.0.0.3", "req-3")
+
+	g.forward(p)
+	<-p.done
+
+	snap := g.tracker.Snapshot(g)
+	if snap.OutgoingConnErrorsTotal != 1 {
+		t.Errorf("OutgoingConnErrorsTotal = %d, want 1", snap.OutgoingConnErrorsTotal)
+	}
+	if snap.IncomingConnErrorsTotal != 0 {
+		t.Errorf("IncomingConnErrorsTotal = %d, want 0", snap.IncomingConnErrorsTotal)
+	}
+}
+
+func TestGateway_Forward_OutgoingConnError_NetworkFailure(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	upstreamURL := upstream.URL
+	upstream.Close() // nothing listening now — Do() will fail to connect
+
+	g := newProxyGateway(t, upstreamURL, nil)
+	p := newForwardPending(context.Background(), httptest.NewRecorder(), "10.0.0.4", "req-4")
+
+	g.forward(p)
+	<-p.done
+
+	snap := g.tracker.Snapshot(g)
+	if snap.OutgoingConnErrorsTotal != 1 {
+		t.Errorf("OutgoingConnErrorsTotal = %d, want 1", snap.OutgoingConnErrorsTotal)
+	}
+	if snap.IncomingConnErrorsTotal != 0 {
+		t.Errorf("IncomingConnErrorsTotal = %d, want 0", snap.IncomingConnErrorsTotal)
+	}
+}
+
+func TestGateway_Forward_IncomingConnError_MidResponseWriteFailure(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("some response body"))
+	}))
+	defer upstream.Close()
+	g := newProxyGateway(t, upstream.URL, nil)
+
+	p := newForwardPending(context.Background(), &failingWriter{}, "10.0.0.5", "req-5")
+
+	g.forward(p)
+	<-p.done
+
+	snap := g.tracker.Snapshot(g)
+	if snap.IncomingConnErrorsTotal != 1 {
+		t.Errorf("IncomingConnErrorsTotal = %d, want 1", snap.IncomingConnErrorsTotal)
+	}
+	if snap.OutgoingConnErrorsTotal != 0 {
+		t.Errorf("OutgoingConnErrorsTotal = %d, want 0", snap.OutgoingConnErrorsTotal)
 	}
 }

@@ -183,6 +183,8 @@ function TokenConsumptionTab({ onPendingClick }) {
   const totalReq       = endpoints.reduce((s, ep) => s + ep.requests_total, 0);
   const totalPending   = endpoints.reduce((s, ep) => s + Number(ep.pending_requests), 0);
 
+  const connErrorsHr = (stats?.incoming_conn_errors_last_hour ?? 0) + (stats?.outgoing_conn_errors_last_hour ?? 0);
+
   const tokenRates   = computeRates(history, 'sumTokens');
   const requestRates = computeRates(history, 'sumRequests');
 
@@ -255,7 +257,7 @@ function TokenConsumptionTab({ onPendingClick }) {
             <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-navy-400">
               Overview — All Endpoints
             </h2>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
               <StatCard
                 label="Pending"
                 value={totalPending}
@@ -270,6 +272,12 @@ function TokenConsumptionTab({ onPendingClick }) {
                 label="Endpoints"
                 value={endpoints.length}
                 hint={`${endpoints.filter((ep) => Number(ep.pending_requests) > 0).length} active`}
+              />
+              <StatCard
+                label="Conn Errors / hr"
+                value={fmtNum(connErrorsHr)}
+                hint={`${fmtNum(stats.incoming_conn_errors_last_hour)} in · ${fmtNum(stats.outgoing_conn_errors_last_hour)} out`}
+                tone={connErrorsHr > 0 ? 'warning' : 'default'}
               />
             </div>
           </section>

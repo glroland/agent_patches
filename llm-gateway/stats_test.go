@@ -280,3 +280,63 @@ func TestTracker_LoadMissingFileIsFreshStart(t *testing.T) {
 		t.Fatalf("Load of missing file: %v", err)
 	}
 }
+
+func TestTracker_ConnErrors(t *testing.T) {
+	g := newTestGateway(t)
+	tr := g.tracker
+
+	tr.RecordIncomingConnError()
+	tr.RecordIncomingConnError()
+	tr.RecordOutgoingConnError()
+
+	snap := tr.Snapshot(g)
+	if snap.IncomingConnErrorsLastHour != 2 || snap.IncomingConnErrorsTotal != 2 {
+		t.Errorf("incoming = (hour %d, total %d), want (2, 2)", snap.IncomingConnErrorsLastHour, snap.IncomingConnErrorsTotal)
+	}
+	if snap.OutgoingConnErrorsLastHour != 1 || snap.OutgoingConnErrorsTotal != 1 {
+		t.Errorf("outgoing = (hour %d, total %d), want (1, 1)", snap.OutgoingConnErrorsLastHour, snap.OutgoingConnErrorsTotal)
+	}
+}
+
+func TestTracker_ConnErrors_Reset(t *testing.T) {
+	g := newTestGateway(t)
+	tr := g.tracker
+
+	tr.RecordIncomingConnError()
+	tr.RecordOutgoingConnError()
+	tr.Reset()
+
+	snap := tr.Snapshot(g)
+	if snap.IncomingConnErrorsTotal != 0 || snap.OutgoingConnErrorsTotal != 0 {
+		t.Errorf("conn errors not zeroed: incoming=%d outgoing=%d", snap.IncomingConnErrorsTotal, snap.OutgoingConnErrorsTotal)
+	}
+}
+
+func TestTracker_ConnErrors_SaveLoadRoundtrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.json")
+
+	tr := NewTracker()
+	tr.RecordIncomingConnError()
+	tr.RecordIncomingConnError()
+	tr.RecordOutgoingConnError()
+	if err := tr.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded := NewTracker()
+	if err := loaded.Load(path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	g := newTestGateway(t)
+	g.tracker = loaded
+	snap := loaded.Snapshot(g)
+	if snap.IncomingConnErrorsTotal != 2 || snap.OutgoingConnErrorsTotal != 1 {
+		t.Errorf("loaded conn errors = incoming %d, outgoing %d, want (2, 1)",
+			snap.IncomingConnErrorsTotal, snap.OutgoingConnErrorsTotal)
+	}
+	if snap.IncomingConnErrorsLastHour != 2 || snap.OutgoingConnErrorsLastHour != 1 {
+		t.Errorf("loaded conn errors last hour = incoming %d, outgoing %d, want (2, 1)",
+			snap.IncomingConnErrorsLastHour, snap.OutgoingConnErrorsLastHour)
+	}
+}

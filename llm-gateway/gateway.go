@@ -354,6 +354,7 @@ func (g *Gateway) forward(p *pending) {
 	if wasAlreadyCancelled {
 		slog.Info("gateway: request abandoned before dispatch — client disconnected",
 			"agent", p.name, "responsibility", p.responsibility, "host", p.host)
+		g.tracker.RecordIncomingConnError()
 		return
 	}
 
@@ -401,12 +402,15 @@ func (g *Gateway) forward(p *pending) {
 		case errors.Is(err, context.DeadlineExceeded):
 			slog.Warn("gateway: upstream request timed out", "path", p.path, "timeout", g.timeout)
 			http.Error(p.w, "gateway: upstream timed out", http.StatusGatewayTimeout)
+			g.tracker.RecordOutgoingConnError()
 		case errors.Is(err, context.Canceled):
 			slog.Info("gateway: upstream request cancelled — client disconnected while queued or in-flight",
 				"path", p.path, "agent", p.name, "responsibility", p.responsibility, "host", p.host)
+			g.tracker.RecordIncomingConnError()
 		default:
 			slog.Error("gateway: upstream request failed", "path", p.path, "error", err)
 			http.Error(p.w, "gateway: upstream error: "+err.Error(), http.StatusBadGateway)
+			g.tracker.RecordOutgoingConnError()
 		}
 		return
 	}
@@ -446,6 +450,7 @@ func (g *Gateway) forward(p *pending) {
 			if _, writeErr := p.w.Write(buf[:n]); writeErr != nil {
 				slog.Info("gateway: client disconnected mid-response",
 					"path", p.path, "agent", p.name, "responsibility", p.responsibility)
+				g.tracker.RecordIncomingConnError()
 				// capBuf still has partial data — extract what we can.
 				capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
 				slog.Info("gateway: llm response (partial — client disconnected)",
