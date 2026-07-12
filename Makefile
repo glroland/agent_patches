@@ -40,6 +40,7 @@ CENTRAL_BACKEND_DIR := $(CURDIR)/central-backend
 INVENTORY_ROOT := $(CURDIR)/../home-utils/admin/agent_patches
 DEPLOY_SCRIPT  := $(CURDIR)/deploy/linux/deploy.sh
 RESTART_SCRIPT := $(CURDIR)/deploy/linux/restart.sh
+STOP_SCRIPT    := $(CURDIR)/deploy/linux/stop_agents.sh
 MIGRATE_MEMORY_SCRIPT := $(CURDIR)/deploy/linux/migrate_memory.sh
 
 # Set to 0 to skip per-host confirmation prompts during migrate-memory.
@@ -48,7 +49,7 @@ MIGRATE_CONFIRM ?= 1
 
 # Set to 1 to purge migrated keys from attrs.json after migrate-memory runs.
 # Off by default so the old copy survives as a backup on first pass.
-MIGRATE_PURGE ?= 0
+MIGRATE_PURGE ?= 1
 
 # Set to 1 to preview migrate-memory's changes without writing anything.
 MIGRATE_DRY_RUN ?= 0
@@ -59,7 +60,7 @@ CONFIG_DIR := $(CURDIR)/config
 .PHONY: install build build-server build-cli build-migrate-memory \
         release release-server release-cli release-migrate-memory \
         test run run-cli run-central-ui run-central-backend \
-        deploy deploy-all restart migrate-memory migrate-memory-all clean fmt vet help
+        deploy deploy-all restart stop migrate-memory migrate-memory-all clean fmt vet help
 
 ## install: download and tidy all module dependencies
 install:
@@ -162,6 +163,11 @@ deploy-all: deploy
 ## restart: restart the agent_patches daemon on all hosts in inventory.csv (no binary/config changes, no prompts)
 restart:
 	$(RESTART_SCRIPT) \
+		$(INVENTORY_ROOT)/inventory.csv
+
+## stop: stop the agent_patches daemon on all hosts in inventory.csv (no binary/config changes)
+stop:
+	$(STOP_SCRIPT) \
 		$(INVENTORY_ROOT)/inventory.csv
 
 ## migrate-memory: one-time migration of network/disk-trend/incident/skill-state data out of the

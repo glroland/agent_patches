@@ -4,12 +4,13 @@
 # into their own memory domains ("Network", "Disk Trends", "Incidents",
 # "Skill States"), on every host in inventory.csv.
 #
-# Stops the agent_patches service before migrating and restarts it
-# afterwards: the migrate-memory tool and a live agent both read-modify-write
-# attrs.json, and running them concurrently risks a lost update. Safe to
-# re-run — migrate-memory is idempotent, and by default it leaves the old
-# attrs.json keys in place as a backup (pass MIGRATE_PURGE=1 to remove them
-# once you've verified the new domains look right on a host).
+# Stops the agent_patches service before migrating: the migrate-memory tool
+# and a live agent both read-modify-write attrs.json, and running them
+# concurrently risks a lost update. The service is left stopped afterwards —
+# restart it manually (e.g. after verifying the migration) once you're ready.
+# Safe to re-run — migrate-memory is idempotent, and by default it leaves the
+# old attrs.json keys in place as a backup (pass MIGRATE_PURGE=1 to remove
+# them once you've verified the new domains look right on a host).
 #
 # Usage:
 #   migrate_memory.sh <inventory.csv> <linux-binary>
@@ -223,10 +224,7 @@ echo "  → running migrate-memory ${FLAGS[*]:-}..."
 rc=0
 /tmp/migrate-memory -root "$ROOT" ${FLAGS[@]+"${FLAGS[@]}"} || rc=$?
 
-echo "  → starting agent_patches..."
-systemctl start agent_patches 2>&1
-sleep 1
-echo "    service is $(systemctl is-active agent_patches 2>&1)"
+echo "  → leaving agent_patches stopped (restart manually when ready)"
 
 rm -f /tmp/migrate-memory
 exit $rc
@@ -280,10 +278,7 @@ Write-Output "  -> running migrate-memory $flags..."
 & "C:\Windows\Temp\migrate-memory.exe" -root "$Root" @flags
 $rc = $LASTEXITCODE
 
-Write-Output "  -> starting $ServiceName..."
-Start-Service -Name $ServiceName
-Start-Sleep -Seconds 1
-Write-Output "     service is $((Get-Service -Name $ServiceName).Status)"
+Write-Output "  -> leaving $ServiceName stopped (restart manually when ready)"
 
 Remove-Item -Path "C:\Windows\Temp\migrate-memory.exe" -Force -ErrorAction SilentlyContinue
 exit $rc
@@ -316,7 +311,7 @@ migrate_host() {
     "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
         "[ \"$bin_base\" = migrate-memory ] || mv /tmp/$bin_base /tmp/migrate-memory" 2>/dev/null || true
 
-    echo "│  Running migration (stops + restarts agent_patches)..."
+    echo "│  Running migration (stops agent_patches, leaves it stopped)..."
     local rc=0
     local remote_cmd="bash /tmp/$setup_base '$MEMORY_ROOT' '$MIGRATE_DRY_RUN' '$MIGRATE_PURGE'"
     if [[ "$host_user" == "root" ]]; then
@@ -377,7 +372,7 @@ migrate_host_windows() {
             2>/dev/null || true
     fi
 
-    echo "│  Running migration (stops + restarts agent_patches)..."
+    echo "│  Running migration (stops agent_patches, leaves it stopped)..."
     local rc=0
     "${SSH_CMD[@]}" "${SSH_BASE_OPTS[@]}" "${host_user}@${host}" \
         "powershell -NoProfile -ExecutionPolicy Bypass \
