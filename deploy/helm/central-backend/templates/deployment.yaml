@@ -116,15 +116,22 @@ spec:
             httpGet:
               path: /api/health/ready
               port: http
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
             timeoutSeconds: 6
           livenessProbe:
             httpGet:
               path: /api/health
               port: http
-            initialDelaySeconds: 5
+            initialDelaySeconds: 15
             periodSeconds: 15
+            # Default timeoutSeconds (1s) is too tight for this pod's 100m CPU
+            # limit combined with its startup burst (tracing init, poller,
+            # intelligence restore, first briefing generation) — that combo
+            # was intermittently missing the 1s window and getting SIGKILLed
+            # by kubelet as a false-positive liveness failure.
+            timeoutSeconds: 5
+            failureThreshold: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

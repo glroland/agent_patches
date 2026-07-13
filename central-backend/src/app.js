@@ -22,10 +22,12 @@ export function createApp() {
   // a llm-gateway outage should not cause Kubernetes to restart this pod.
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
 
-  // Readiness: this process is up AND its llm-gateway dependency is ready
-  // (which in turn confirms the configured upstream LLM model is reachable).
-  // Used as the readinessProbe so this pod only receives traffic once the
-  // gateway is actually usable.
+  // Readiness: this process is up AND its llm-gateway dependency is up.
+  // Deliberately checks llm-gateway's plain /health (process reachability
+  // only) rather than /health/ready (which would also verify the upstream
+  // LLM model) — see gatewayService.getHealth for why. Used as the
+  // readinessProbe so this pod only receives traffic once the gateway is
+  // actually reachable.
   app.get('/api/health/ready', async (_req, res) => {
     try {
       const gateway = await gatewayService.getHealth();

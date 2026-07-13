@@ -62,18 +62,26 @@ spec:
               mountPath: {{ .Values.persistence.mountPath | quote }}
           {{- end }}
           readinessProbe:
+            # Deliberately the plain liveness path, not /health/ready: that
+            # path makes the gateway call the upstream's GET /v1/models,
+            # which can queue/contend behind real inference traffic on
+            # single-request upstream LLM servers. Gating this pod's own
+            # Service readiness on that would make it flap out of rotation
+            # under normal load. /health/ready still exists for manual/
+            # monitoring use to confirm the configured model is reachable.
             httpGet:
-              path: /health/ready
+              path: /health
               port: http
             initialDelaySeconds: 3
             periodSeconds: 10
-            timeoutSeconds: 6
+            timeoutSeconds: 5
           livenessProbe:
             httpGet:
               path: /health
               port: http
             initialDelaySeconds: 5
             periodSeconds: 30
+            timeoutSeconds: 5
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       {{- if .Values.persistence.enabled }}
