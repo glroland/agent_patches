@@ -265,6 +265,12 @@ function TokenConsumptionTab({ onPendingClick }) {
                 tone={totalPending > 10 ? 'warning' : 'default'}
                 onClick={onPendingClick}
               />
+              <StatCard
+                label="Conn Errors / hr"
+                value={fmtNum(connErrorsHr)}
+                hint={`${fmtNum(stats.incoming_conn_errors_last_hour)} in · ${fmtNum(stats.outgoing_conn_errors_last_hour)} out`}
+                tone={connErrorsHr > 0 ? 'warning' : 'default'}
+              />
               <StatCard label="Tokens / hr"   value={fmtNum(totalTokensHr)}  hint={`${fmtNum(totalReqHr)} requests`} />
               <StatCard label="Tokens / day"  value={fmtNum(totalTokensDay)} hint={`${fmtNum(totalReqDay)} requests`} />
               <StatCard label="Avg tok / req" value={fmtAvg(totalTokens, totalReq)} hint="lifetime" />
@@ -272,12 +278,6 @@ function TokenConsumptionTab({ onPendingClick }) {
                 label="Endpoints"
                 value={endpoints.length}
                 hint={`${endpoints.filter((ep) => Number(ep.pending_requests) > 0).length} active`}
-              />
-              <StatCard
-                label="Conn Errors / hr"
-                value={fmtNum(connErrorsHr)}
-                hint={`${fmtNum(stats.incoming_conn_errors_last_hour)} in · ${fmtNum(stats.outgoing_conn_errors_last_hour)} out`}
-                tone={connErrorsHr > 0 ? 'warning' : 'default'}
               />
             </div>
           </section>
