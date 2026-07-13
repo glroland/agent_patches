@@ -44,6 +44,26 @@ http {
             try_files $uri $uri/ /index.html;
         }
 
+        # Liveness: nginx itself is serving. Must never depend on downstream
+        # services — a central-backend outage should not cause Kubernetes to
+        # restart this pod.
+        location = /health {
+            default_type text/plain;
+            return 200 'ok';
+        }
+
+        # Readiness: nginx is up AND central-backend is ready (which in turn
+        # confirms llm-gateway is ready). Proxied over the in-cluster
+        # ClusterIP address (BACKEND_INTERNAL_URL) rather than the external
+        # Route so readiness checks don't leave the cluster. Short timeouts so
+        # a hung backend fails this probe quickly instead of piling up checks.
+        location = /health/ready {
+            proxy_pass ${BACKEND_INTERNAL_URL}/api/health/ready;
+            proxy_set_header Host $proxy_host;
+            proxy_connect_timeout 5s;
+            proxy_read_timeout 5s;
+        }
+
         location /api {
 
             proxy_pass ${BACKEND_URL}/api;

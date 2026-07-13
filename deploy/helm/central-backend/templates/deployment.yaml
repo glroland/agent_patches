@@ -112,6 +112,19 @@ spec:
             - name: CHAT_DATA_DIR
               value: /data/chats
             {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /api/health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 6
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:

@@ -11,12 +11,18 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
 
 	"agent_patches/llmmodel"
 )
+
+// modelCheckInterval is how often the gateway re-verifies the upstream LLM
+// is reachable and serving the configured model. Cached rather than checked
+// per-probe so GET /health/ready stays cheap regardless of probe frequency.
+const modelCheckInterval = 15 * time.Second
 
 // nextPendingID is a monotonically-incrementing counter used to assign a unique
 // ID to each pending request so it can be tracked in the live pending registry.
@@ -58,6 +64,23 @@ type Gateway struct {
 	// accurate effective queue depths in /stats.
 	ghostNormal   atomic.Int64
 	ghostPriority atomic.Int64
+
+	// healthClient is a dedicated short-timeout client for the upstream
+	// GET /v1/models readiness check — kept separate from client (whose
+	// timeout is scaled to cfg.RequestTimeout) so a slow/down upstream
+	// can't stall readiness checks for cfg.RequestTimeout's duration.
+	healthClient *http.Client
+	// modelStatus caches the result of the last upstream model check so
+	// GET /health/ready never itself blocks on an upstream call.
+	modelStatus atomic.Pointer[modelCheckStatus]
+}
+
+// modelCheckStatus is the cached result of the periodic upstream readiness
+// check performed by checkUpstreamModel.
+type modelCheckStatus struct {
+	ok      bool
+	checked time.Time
+	err     string
 }
 
 // pending carries everything needed to proxy one request. It is enqueued
@@ -118,6 +141,7 @@ func NewGateway(cfg Config) (*Gateway, error) {
 		dataFile:      cfg.DataFile,
 		saveInterval:  cfg.SaveInterval,
 		tracker:       NewTracker(),
+		healthClient:  &http.Client{Timeout: 5 * time.Second},
 		// ghostNormal and ghostPriority are zero-value atomic.Int64; no init needed.
 	}
 	if cfg.DataFile != "" {
@@ -162,13 +186,84 @@ func (g *Gateway) StartPersistence(ctx context.Context) {
 	}()
 }
 
-// ServeHTTP satisfies http.Handler. GET /health and GET /stats are answered
-// inline; all other requests are queued for the dispatcher.
+// StartModelCheck performs an immediate upstream readiness check and then
+// begins a background goroutine that repeats it every modelCheckInterval
+// until ctx is cancelled. The result backs GET /health/ready.
+func (g *Gateway) StartModelCheck(ctx context.Context) {
+	g.checkUpstreamModel(ctx)
+	go func() {
+		ticker := time.NewTicker(modelCheckInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				g.checkUpstreamModel(ctx)
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+}
+
+// checkUpstreamModel calls the upstream's OpenAI-compatible GET /v1/models
+// and, when GATEWAY_UPSTREAM_MODEL is configured, verifies the configured
+// model is present in the response. The result is cached in g.modelStatus.
+func (g *Gateway) checkUpstreamModel(ctx context.Context) {
+	status := &modelCheckStatus{checked: time.Now()}
+	defer func() { g.modelStatus.Store(status) }()
+
+	reqCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
+	modelsURL := *g.upstream
+	modelsURL.Path = strings.TrimSuffix(modelsURL.Path, "/") + "/v1/models"
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, modelsURL.String(), nil)
+	if err != nil {
+		status.err = fmt.Sprintf("build upstream models request: %v", err)
+		return
+	}
+	resp, err := g.healthClient.Do(req)
+	if err != nil {
+		status.err = fmt.Sprintf("upstream models request failed: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		status.err = fmt.Sprintf("upstream models request returned %d", resp.StatusCode)
+		return
+	}
+
+	var parsed struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&parsed); err != nil {
+		status.err = fmt.Sprintf("decode upstream models response: %v", err)
+		return
+	}
+	ids := make([]string, 0, len(parsed.Data))
+	for _, m := range parsed.Data {
+		ids = append(ids, m.ID)
+	}
+	if g.upstreamModel != "" && !slices.Contains(ids, g.upstreamModel) {
+		status.err = fmt.Sprintf("configured model %q not found in upstream /v1/models %v", g.upstreamModel, ids)
+		return
+	}
+	status.ok = true
+}
+
+// ServeHTTP satisfies http.Handler. GET /health, GET /health/ready and
+// GET /stats are answered inline; all other requests are queued for the
+// dispatcher.
 func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		switch r.URL.Path {
 		case "/health":
 			g.health(w)
+			return
+		case "/health/ready":
+			g.ready(w)
 			return
 		case "/stats":
 			g.tracker.statsHandler(g)(w, r)
@@ -505,6 +600,11 @@ func (g *Gateway) resetStats(w http.ResponseWriter) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"status": "reset"})
 }
 
+// health answers GET /health — a liveness check that only reports on the
+// gateway process's own internal state (queues, concurrency). It never
+// makes a network call, so it stays fast and is safe to use as a
+// livenessProbe: an upstream LLM outage must not cause the gateway pod
+// itself to be restarted.
 func (g *Gateway) health(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(healthResponse{
@@ -518,6 +618,46 @@ func (g *Gateway) health(w http.ResponseWriter) {
 		Upstream:              g.upstream.String(),
 		GhostRequests:         int(g.ghostNormal.Load() + g.ghostPriority.Load()),
 	})
+}
+
+// readyResponse is the body returned by GET /health/ready.
+type readyResponse struct {
+	Status        string `json:"status"`
+	Upstream      string `json:"upstream"`
+	UpstreamModel string `json:"upstream_model,omitempty"`
+	CheckedAt     string `json:"checked_at,omitempty"`
+	Error         string `json:"error,omitempty"`
+}
+
+// ready answers GET /health/ready — a readiness check reflecting the last
+// cached upstream GET /v1/models result (see checkUpstreamModel). Intended
+// as a readinessProbe: callers such as central-backend that depend on this
+// gateway should poll this path so they only route traffic here once the
+// configured upstream model is actually reachable.
+func (g *Gateway) ready(w http.ResponseWriter) {
+	status := g.modelStatus.Load()
+	w.Header().Set("Content-Type", "application/json")
+
+	if status == nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(readyResponse{Status: "checking", Upstream: g.upstream.String()})
+		return
+	}
+
+	resp := readyResponse{
+		Upstream:      g.upstream.String(),
+		UpstreamModel: g.upstreamModel,
+		CheckedAt:     status.checked.Format(time.RFC3339),
+	}
+	if !status.ok {
+		resp.Status = "unhealthy"
+		resp.Error = status.err
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_ = json.NewEncoder(w).Encode(resp)
+		return
+	}
+	resp.Status = "ok"
+	_ = json.NewEncoder(w).Encode(resp)
 }
 
 // truncateForLog returns b as a UTF-8 string, capped at maxLen bytes. If the

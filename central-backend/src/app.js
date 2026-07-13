@@ -6,6 +6,7 @@ import { requireAuth } from './middleware/auth.js';
 import { notFoundHandler, errorHandler } from './middleware/errorHandler.js';
 import authRouter from './routes/auth.js';
 import apiRouter from './routes/index.js';
+import * as gatewayService from './services/gatewayService.js';
 
 export function createApp() {
   const app = express();
@@ -16,7 +17,26 @@ export function createApp() {
 
   // Public endpoints — no auth required.
   app.use('/api/auth', authRouter);
+
+  // Liveness: this process is up. Must never depend on downstream services —
+  // a llm-gateway outage should not cause Kubernetes to restart this pod.
   app.get('/api/health', (_req, res) => res.json({ status: 'ok' }));
+
+  // Readiness: this process is up AND its llm-gateway dependency is ready
+  // (which in turn confirms the configured upstream LLM model is reachable).
+  // Used as the readinessProbe so this pod only receives traffic once the
+  // gateway is actually usable.
+  app.get('/api/health/ready', async (_req, res) => {
+    try {
+      const gateway = await gatewayService.getHealth();
+      if (gateway && !gateway.ok) {
+        return res.status(503).json({ status: 'unhealthy', gateway });
+      }
+      res.json({ status: 'ok', gateway: gateway || { configured: false } });
+    } catch (err) {
+      res.status(503).json({ status: 'unhealthy', error: err.message });
+    }
+  });
 
   // All other /api routes require a valid OpenShift bearer token.
   app.use('/api', requireAuth, apiRouter);

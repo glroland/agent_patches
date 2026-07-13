@@ -51,6 +51,7 @@ func main() {
 	defer stop()
 
 	gw.StartPersistence(ctx)
+	gw.StartModelCheck(ctx)
 
 	srv := &http.Server{
 		Addr:    cfg.ListenAddr,
@@ -78,14 +79,15 @@ func main() {
 }
 
 // requireBearer is an HTTP middleware that enforces bearer token authentication
-// on all routes except GET /health, which must remain open for Kubernetes
-// liveness and readiness probes. When token is empty the middleware is a
-// no-op (all requests pass through), allowing unauthenticated deployments
-// during development.
+// on all routes except GET /health and GET /health/ready, which must remain
+// open for Kubernetes liveness and readiness probes (and for dependents such
+// as central-backend polling this gateway's readiness). When token is empty
+// the middleware is a no-op (all requests pass through), allowing
+// unauthenticated deployments during development.
 func requireBearer(token string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// /health must always be reachable by Kubernetes probes.
-		if r.Method == http.MethodGet && r.URL.Path == "/health" {
+		// /health and /health/ready must always be reachable by Kubernetes probes.
+		if r.Method == http.MethodGet && (r.URL.Path == "/health" || r.URL.Path == "/health/ready") {
 			next.ServeHTTP(w, r)
 			return
 		}

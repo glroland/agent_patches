@@ -5,6 +5,13 @@ echo "Current Working Directory: $current_dir"
 
 echo "Backend URL: $BACKEND_URL"
 
+# In-cluster ClusterIP address of central-backend, used only by the
+# /health/ready location so readiness checks stay inside the cluster instead
+# of round-tripping through the external Route. Defaults to the Helm chart's
+# service name so this still works if the var is left unset.
+export BACKEND_INTERNAL_URL="${BACKEND_INTERNAL_URL:-http://central-backend:8080}"
+echo "Backend internal URL: $BACKEND_INTERNAL_URL"
+
 # Same env var name used by central-backend/endpoint-server. Default to a
 # loopback placeholder when unset so nginx always has a syntactically valid
 # proxy_pass target for /v1/traces — tracing simply stays unreachable
@@ -23,8 +30,8 @@ cat > /usr/share/nginx/html/otel-config.js <<EOF
 window.__OTEL_SERVICE_NAME__ = "${OTEL_SERVICE_NAME}";
 EOF
 
-echo "Substituting BACKEND_URL and OTEL_EXPORTER_OTLP_ENDPOINT variables into /tmp/nginx-custom.conf"
-envsubst '$BACKEND_URL:$OTEL_EXPORTER_OTLP_ENDPOINT' < /nginx.conf.template > /tmp/nginx-custom.conf
+echo "Substituting BACKEND_URL, BACKEND_INTERNAL_URL and OTEL_EXPORTER_OTLP_ENDPOINT variables into /tmp/nginx-custom.conf"
+envsubst '$BACKEND_URL:$BACKEND_INTERNAL_URL:$OTEL_EXPORTER_OTLP_ENDPOINT' < /nginx.conf.template > /tmp/nginx-custom.conf
 
 echo "Starting nginx"
 nginx -g 'daemon off;' -c /tmp/nginx-custom.conf
