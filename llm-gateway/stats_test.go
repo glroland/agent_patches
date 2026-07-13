@@ -312,6 +312,64 @@ func TestTracker_ConnErrors_Reset(t *testing.T) {
 	}
 }
 
+func TestTracker_RecordDuration(t *testing.T) {
+	g := newTestGateway(t)
+	tr := g.tracker
+
+	now := time.Now()
+	tr.RecordDuration(now.Add(-300*time.Millisecond), now.Add(-200*time.Millisecond), now) // wait=100ms, inference=200ms
+	tr.RecordDuration(now.Add(-100*time.Millisecond), now.Add(-80*time.Millisecond), now)   // wait=20ms, inference=80ms
+
+	snap := tr.Snapshot(g)
+	if snap.AvgWaitDurationMsLastHour != 60 {
+		t.Errorf("AvgWaitDurationMsLastHour = %d, want 60", snap.AvgWaitDurationMsLastHour)
+	}
+	if snap.AvgInferenceDurationMsLastHour != 140 {
+		t.Errorf("AvgInferenceDurationMsLastHour = %d, want 140", snap.AvgInferenceDurationMsLastHour)
+	}
+	if snap.AvgTotalDurationMsLastHour != 200 {
+		t.Errorf("AvgTotalDurationMsLastHour = %d, want 200", snap.AvgTotalDurationMsLastHour)
+	}
+}
+
+func TestTracker_RecordDuration_Reset(t *testing.T) {
+	g := newTestGateway(t)
+	tr := g.tracker
+
+	now := time.Now()
+	tr.RecordDuration(now.Add(-time.Second), now.Add(-500*time.Millisecond), now)
+	tr.Reset()
+
+	snap := tr.Snapshot(g)
+	if snap.AvgTotalDurationMsLastHour != 0 || snap.AvgWaitDurationMsLastHour != 0 || snap.AvgInferenceDurationMsLastHour != 0 {
+		t.Errorf("durations not zeroed: %+v", snap)
+	}
+}
+
+func TestTracker_RecordDuration_SaveLoadRoundtrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.json")
+
+	now := time.Now()
+	tr := NewTracker()
+	tr.RecordDuration(now.Add(-300*time.Millisecond), now.Add(-200*time.Millisecond), now)
+	if err := tr.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded := NewTracker()
+	if err := loaded.Load(path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	g := newTestGateway(t)
+	g.tracker = loaded
+	snap := loaded.Snapshot(g)
+	if snap.AvgWaitDurationMsLastHour != 100 || snap.AvgInferenceDurationMsLastHour != 200 {
+		t.Errorf("loaded durations = wait %d, inference %d, want (100, 200)",
+			snap.AvgWaitDurationMsLastHour, snap.AvgInferenceDurationMsLastHour)
+	}
+}
+
 func TestTracker_ConnErrors_SaveLoadRoundtrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "stats.json")
 

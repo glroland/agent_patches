@@ -141,6 +141,12 @@ function fmtAvg(tokens, requests) {
   return avg >= 1000 ? `${(avg / 1000).toFixed(1)}k` : avg.toFixed(0);
 }
 
+function fmtMs(ms) {
+  if (ms == null) return '—';
+  if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
+  return `${Math.round(ms)}ms`;
+}
+
 function computeRates(history, key) {
   if (history.length < 2) return [];
   return history.slice(1).map((curr, i) => {
@@ -266,6 +272,11 @@ function TokenConsumptionTab({ onPendingClick }) {
                 onClick={onPendingClick}
               />
               <StatCard
+                label="Avg Request Duration"
+                value={fmtMs(stats.avg_total_duration_ms_last_hour)}
+                hint={`wait ${fmtMs(stats.avg_wait_duration_ms_last_hour)} · inference ${fmtMs(stats.avg_inference_duration_ms_last_hour)}`}
+              />
+              <StatCard
                 label="Conn Errors / hr"
                 value={fmtNum(connErrorsHr)}
                 hint={`${fmtNum(stats.incoming_conn_errors_last_hour)} in · ${fmtNum(stats.outgoing_conn_errors_last_hour)} out`}
@@ -274,11 +285,6 @@ function TokenConsumptionTab({ onPendingClick }) {
               <StatCard label="Tokens / hr"   value={fmtNum(totalTokensHr)}  hint={`${fmtNum(totalReqHr)} requests`} />
               <StatCard label="Tokens / day"  value={fmtNum(totalTokensDay)} hint={`${fmtNum(totalReqDay)} requests`} />
               <StatCard label="Avg tok / req" value={fmtAvg(totalTokens, totalReq)} hint="lifetime" />
-              <StatCard
-                label="Endpoints"
-                value={endpoints.length}
-                hint={`${endpoints.filter((ep) => Number(ep.pending_requests) > 0).length} active`}
-              />
             </div>
           </section>
 

@@ -148,6 +148,10 @@ func TestGateway_ForwardsAndRecordsStats(t *testing.T) {
 	if snap.Endpoints[0].PendingRequests != 0 {
 		t.Errorf("pending after completion = %d, want 0", snap.Endpoints[0].PendingRequests)
 	}
+	if snap.AvgTotalDurationMsLastHour != snap.AvgWaitDurationMsLastHour+snap.AvgInferenceDurationMsLastHour {
+		t.Errorf("AvgTotalDurationMsLastHour = %d, want wait(%d)+inference(%d)",
+			snap.AvgTotalDurationMsLastHour, snap.AvgWaitDurationMsLastHour, snap.AvgInferenceDurationMsLastHour)
+	}
 }
 
 func TestGateway_HealthAndStatsEndpoints(t *testing.T) {

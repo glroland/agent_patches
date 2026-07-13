@@ -396,6 +396,7 @@ func (g *Gateway) forward(p *pending) {
 		"body", truncateForLog(p.body, 4096),
 	)
 
+	inferenceStart := time.Now()
 	resp, err := g.client.Do(upReq)
 	if err != nil {
 		switch {
@@ -476,6 +477,7 @@ func (g *Gateway) forward(p *pending) {
 	}
 
 	capturedTokens = extractTokens(resp.Header.Get("Content-Type"), capBuf.Bytes())
+	g.tracker.RecordDuration(p.submittedAt, inferenceStart, time.Now())
 	slog.Info("gateway: llm response",
 		"status", resp.StatusCode,
 		"agent", p.name,

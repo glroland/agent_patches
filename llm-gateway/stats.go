@@ -34,6 +34,11 @@ type Tracker struct {
 	// LLM. Both are gateway-wide (not attributed to a single endpoint).
 	incomingErrors *errorStats
 	outgoingErrors *errorStats
+
+	// durations records, for each successfully completed request, the time spent
+	// queued (wait) versus the time spent waiting on the upstream LLM (inference).
+	// Gateway-wide, like the error counters above.
+	durations *durationStats
 }
 
 // errorStats tracks a single connection-error counter using the same
@@ -76,6 +81,62 @@ func (e *errorStats) windowCount(now time.Time, window time.Duration) int64 {
 		n++
 	}
 	return n
+}
+
+// durationEvent is one completed request's timing breakdown: wait is the time
+// spent queued before the dispatcher handed it to forward(); inference is the
+// time spent waiting on the upstream LLM once the request was actually sent.
+type durationEvent struct {
+	at        time.Time
+	wait      time.Duration
+	inference time.Duration
+}
+
+// durationStats tracks request timing samples using the same 25-hour sliding
+// window approach as errorStats.
+type durationStats struct {
+	mu     sync.Mutex
+	events []durationEvent // sorted ascending by at; pruned to 25 h
+}
+
+// record appends one completed request's timing and prunes events older than 25 hours.
+func (d *durationStats) record(now time.Time, wait, inference time.Duration) {
+	d.mu.Lock()
+	d.events = append(d.events, durationEvent{at: now, wait: wait, inference: inference})
+	d.prune(now)
+	d.mu.Unlock()
+}
+
+// prune removes events older than 25 hours. Must be called with d.mu held.
+func (d *durationStats) prune(now time.Time) {
+	cutoff := now.Add(-25 * time.Hour)
+	i := 0
+	for i < len(d.events) && d.events[i].at.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		d.events = d.events[i:]
+	}
+}
+
+// windowAvg returns the average wait and inference durations for events within
+// the given window. Must be called with d.mu held.
+func (d *durationStats) windowAvg(now time.Time, window time.Duration) (avgWait, avgInference time.Duration) {
+	var sumWait, sumInference time.Duration
+	var count int64
+	for i := len(d.events) - 1; i >= 0; i-- {
+		if now.Sub(d.events[i].at) > window {
+			break
+		}
+		sumWait += d.events[i].wait
+		sumInference += d.events[i].inference
+		count++
+	}
+	if count > 0 {
+		avgWait = sumWait / time.Duration(count)
+		avgInference = sumInference / time.Duration(count)
+	}
+	return
 }
 
 type endpointStats struct {
@@ -177,6 +238,15 @@ type GatewayStatsResponse struct {
 	IncomingConnErrorsTotal    int64 `json:"incoming_conn_errors_total"`
 	OutgoingConnErrorsLastHour int64 `json:"outgoing_conn_errors_last_hour"`
 	OutgoingConnErrorsTotal    int64 `json:"outgoing_conn_errors_total"`
+
+	// Avg*DurationMsLastHour break down the average time a completed request
+	// took, in milliseconds, over the last hour: AvgWait is time spent queued
+	// before the dispatcher sent it upstream; AvgInference is time spent
+	// waiting on the LLM once the request was actually sent; AvgTotal is their
+	// sum (client request received → inference completed).
+	AvgTotalDurationMsLastHour     int64 `json:"avg_total_duration_ms_last_hour"`
+	AvgWaitDurationMsLastHour      int64 `json:"avg_wait_duration_ms_last_hour"`
+	AvgInferenceDurationMsLastHour int64 `json:"avg_inference_duration_ms_last_hour"`
 }
 
 func NewTracker() *Tracker {
@@ -186,6 +256,7 @@ func NewTracker() *Tracker {
 		pendingMap:       make(map[string]*pendingDetail),
 		incomingErrors:   &errorStats{},
 		outgoingErrors:   &errorStats{},
+		durations:        &durationStats{},
 	}
 }
 
@@ -201,6 +272,16 @@ func (t *Tracker) RecordIncomingConnError() {
 // the gateway to the upstream LLM.
 func (t *Tracker) RecordOutgoingConnError() {
 	t.outgoingErrors.record(time.Now())
+}
+
+// RecordDuration records the timing breakdown of one successfully completed
+// request: submittedAt is when the client's request reached the gateway,
+// inferenceStart is when the gateway sent it to the upstream LLM, and
+// completedAt is when the full response had been received.
+func (t *Tracker) RecordDuration(submittedAt, inferenceStart, completedAt time.Time) {
+	wait := inferenceStart.Sub(submittedAt)
+	inference := completedAt.Sub(inferenceStart)
+	t.durations.record(completedAt, wait, inference)
 }
 
 func (t *Tracker) get(host, name string) *endpointStats {
@@ -414,24 +495,31 @@ func (t *Tracker) Snapshot(g *Gateway) GatewayStatsResponse {
 	outgoingTotal := t.outgoingErrors.total
 	t.outgoingErrors.mu.Unlock()
 
+	t.durations.mu.Lock()
+	avgWait, avgInference := t.durations.windowAvg(now, time.Hour)
+	t.durations.mu.Unlock()
+
 	return GatewayStatsResponse{
-		GeneratedAt:                now,
-		TotalPending:               queued + priorityQueued + active,
-		ActiveRequests:             active,
-		QueuedRequests:             queued,
-		PriorityQueuedRequests:     priorityQueued,
-		GhostRequests:              ghostN + ghostP,
-		MaxConcurrency:             cap(g.sem),
-		QueueCapacity:              cap(g.queue),
-		PriorityQueueCapacity:      cap(g.priorityQueue),
-		Upstream:                   g.upstream.String(),
-		UpstreamModel:              g.upstreamModel,
-		Endpoints:                  snaps,
-		Responsibilities:           respSnaps,
-		IncomingConnErrorsLastHour: incomingHour,
-		IncomingConnErrorsTotal:    incomingTotal,
-		OutgoingConnErrorsLastHour: outgoingHour,
-		OutgoingConnErrorsTotal:    outgoingTotal,
+		GeneratedAt:                    now,
+		TotalPending:                   queued + priorityQueued + active,
+		ActiveRequests:                 active,
+		QueuedRequests:                 queued,
+		PriorityQueuedRequests:         priorityQueued,
+		GhostRequests:                  ghostN + ghostP,
+		MaxConcurrency:                 cap(g.sem),
+		QueueCapacity:                  cap(g.queue),
+		PriorityQueueCapacity:          cap(g.priorityQueue),
+		Upstream:                       g.upstream.String(),
+		UpstreamModel:                  g.upstreamModel,
+		Endpoints:                      snaps,
+		Responsibilities:               respSnaps,
+		IncomingConnErrorsLastHour:     incomingHour,
+		IncomingConnErrorsTotal:        incomingTotal,
+		OutgoingConnErrorsLastHour:     outgoingHour,
+		OutgoingConnErrorsTotal:        outgoingTotal,
+		AvgTotalDurationMsLastHour:     (avgWait + avgInference).Milliseconds(),
+		AvgWaitDurationMsLastHour:      avgWait.Milliseconds(),
+		AvgInferenceDurationMsLastHour: avgInference.Milliseconds(),
 	}
 }
 
@@ -528,6 +616,10 @@ func (t *Tracker) Reset() {
 	t.outgoingErrors.events = nil
 	t.outgoingErrors.total = 0
 	t.outgoingErrors.mu.Unlock()
+
+	t.durations.mu.Lock()
+	t.durations.events = nil
+	t.durations.mu.Unlock()
 }
 
 // extractTokens parses usage counters from a buffered response body.
@@ -662,11 +754,18 @@ type persistedState struct {
 	Responsibilities   []persistedResponsibility `json:"responsibilities"`
 	IncomingConnErrors persistedErrorStats       `json:"incoming_conn_errors,omitempty"`
 	OutgoingConnErrors persistedErrorStats       `json:"outgoing_conn_errors,omitempty"`
+	Durations          []persistedDuration       `json:"durations,omitempty"`
 }
 
 type persistedErrorStats struct {
 	Total  int64       `json:"total"`
 	Events []time.Time `json:"events"`
+}
+
+type persistedDuration struct {
+	At        time.Time     `json:"at"`
+	Wait      time.Duration `json:"wait_ns"`
+	Inference time.Duration `json:"inference_ns"`
 }
 
 type persistedEndpoint struct {
@@ -760,6 +859,14 @@ func (t *Tracker) Load(path string) error {
 	}
 	t.outgoingErrors = outgoing
 
+	durations := &durationStats{}
+	for _, d := range state.Durations {
+		if !d.At.Before(cutoff) {
+			durations.events = append(durations.events, durationEvent{at: d.At, wait: d.Wait, inference: d.Inference})
+		}
+	}
+	t.durations = durations
+
 	slog.Info("gateway: loaded persisted stats",
 		"path", path,
 		"endpoints", len(state.Endpoints),
@@ -845,6 +952,13 @@ func (t *Tracker) Save(path string) error {
 		Events: append([]time.Time(nil), t.outgoingErrors.events...),
 	}
 	t.outgoingErrors.mu.Unlock()
+
+	t.durations.mu.Lock()
+	state.Durations = make([]persistedDuration, len(t.durations.events))
+	for i, d := range t.durations.events {
+		state.Durations[i] = persistedDuration{At: d.at, Wait: d.wait, Inference: d.inference}
+	}
+	t.durations.mu.Unlock()
 
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

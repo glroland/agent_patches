@@ -11,6 +11,7 @@
 - **Token/request statistics** — the response body is teed into a bounded capture buffer (256 KB) and token usage extracted (OpenAI JSON, SSE streams, and Ollama formats). Stats are tracked per endpoint host and per responsibility over a 25-hour sliding window, optionally persisted to `GATEWAY_DATA_FILE` (atomic temp+rename) so they survive pod restarts.
 - **Ghost tracking** — requests whose client disconnects while queued are marked cancelled (the upstream call is skipped when dispatched) and counted as "ghosts" so `/stats` reports effective queue depths.
 - **Connection error tracking** — abandoned/timed out/cancelled/prematurely closed connections are counted gateway-wide over the same 25-hour sliding window (last hour / total surfaced via `/stats`), split by direction: **incoming** (the endpoint-server client gave up — disconnected before dispatch, cancelled mid-flight, or dropped mid-response) and **outgoing** (the gateway failed to reach or got no timely response from the upstream LLM — timeout or network error). central-ui shows the combined per-hour count as a box in the Activity page's overview bar.
+- **Request duration tracking** — for each successfully completed request, the gateway records how long it sat queued (`wait`) versus how long the upstream LLM took to respond once dispatched (`inference`), averaged over the last hour and surfaced via `/stats`. central-ui shows the average total (wait + inference) as a box in the overview bar, with the wait/inference breakdown in smaller text underneath.
 - **Streaming passthrough** — response bytes are flushed to the caller in real time; capture never delays the stream.
 
 ## Request headers from endpoint-server
@@ -30,7 +31,7 @@ endpoint-server sets `X-Priority: interactive` on chat requests arriving through
 | Endpoint | Method | Auth | Description |
 |---|---|---|---|
 | `/health` | GET | none (K8s probes) | Queue depths, capacities, active requests, ghost count |
-| `/stats` | GET | bearer | Full stats: per-endpoint and per-responsibility token/request counts (last hour / last day / total), queue state, upstream info, incoming/outgoing connection error counts (last hour / total) |
+| `/stats` | GET | bearer | Full stats: per-endpoint and per-responsibility token/request counts (last hour / last day / total), queue state, upstream info, incoming/outgoing connection error counts (last hour / total), average wait/inference/total request duration (last hour) |
 | `/stats` | DELETE | bearer | Reset all accumulated statistics (also overwrites the persisted file) |
 | `/pending` | GET | bearer | Live registry of queued + in-flight requests: host, agent, responsibility, extracted prompt, age, priority flag |
 | _anything else_ | any | bearer | Queued and proxied verbatim to the upstream |
