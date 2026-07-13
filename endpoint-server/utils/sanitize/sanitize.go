@@ -26,9 +26,11 @@ import (
 
 const (
 	// maxOutputBytes caps a single tool output before it is added to the LLM
-	// context. 64 KB covers all realistic sysadmin tool responses; anything
-	// larger is almost certainly context flooding.
-	maxOutputBytes = 64 * 1024
+	// context. 16 KB (~4-5k tokens) covers realistic sysadmin tool responses
+	// while guaranteeing a multi-iteration run fits the upstream model's
+	// 32768-token context window; anything larger is almost certainly
+	// context flooding.
+	maxOutputBytes = 16 * 1024
 
 	redactionMarker = "[REDACTED: potential prompt injection]"
 )

@@ -318,7 +318,7 @@ func TestTracker_RecordDuration(t *testing.T) {
 
 	now := time.Now()
 	tr.RecordDuration(now.Add(-300*time.Millisecond), now.Add(-200*time.Millisecond), now) // wait=100ms, inference=200ms
-	tr.RecordDuration(now.Add(-100*time.Millisecond), now.Add(-80*time.Millisecond), now)   // wait=20ms, inference=80ms
+	tr.RecordDuration(now.Add(-100*time.Millisecond), now.Add(-80*time.Millisecond), now)  // wait=20ms, inference=80ms
 
 	snap := tr.Snapshot(g)
 	if snap.AvgWaitDurationMsLastHour != 60 {

@@ -126,12 +126,17 @@ export async function chat(message, history = []) {
   const fleetContext = buildFleetContext(agents);
   const systemContent = `${BASE_SYSTEM_PROMPT}\n\n## Current Fleet State\n\n${fleetContext}`;
 
-  // Build LLM messages from conversation history.
+  // Build LLM messages from conversation history. Only the most recent turns
+  // are replayed: chat threads persist up to chat.maxMessages (200) messages,
+  // which would overflow the upstream model's 32768-token context window if
+  // sent wholesale alongside the system prompt and fleet state.
+  const MAX_HISTORY_MESSAGES = 20;
   const llmMessages = [{ role: 'system', content: systemContent }];
-  for (const h of history) {
-    if (h.role === 'user' || h.role === 'assistant') {
-      llmMessages.push({ role: h.role, content: h.text });
-    }
+  const recent = history
+    .filter((h) => h.role === 'user' || h.role === 'assistant')
+    .slice(-MAX_HISTORY_MESSAGES);
+  for (const h of recent) {
+    llmMessages.push({ role: h.role, content: h.text });
   }
   llmMessages.push({ role: 'user', content: message });
 
