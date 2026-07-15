@@ -265,8 +265,8 @@ agent:
   # model: <optional> — omit to use the DEFAULT sentinel, which llm-gateway
   # rewrites to its own GATEWAY_UPSTREAM_MODEL; set only when this agent
   # should use a different model than the fleet default
-  max_tokens: 4096
-  responsibility_max_tokens: 4096  # optional; caps completion tokens for scheduled runs only
+  max_tokens: 6144
+  responsibility_max_tokens: 6144  # optional; caps completion tokens for scheduled runs only
   max_iterations: 10
   api_key: <optional, defaults to OPENAI_API_KEY env var>
   base_url: <points at llm-gateway, or any OpenAI-compatible server>

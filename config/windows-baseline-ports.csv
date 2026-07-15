@@ -21,6 +21,7 @@
 # Any listening port matching no row at all is reported as an unclassified
 # deviation from baseline, at a default severity of "warning".
 port,protocol,severity,description
+22,tcp,baseline,SSH remote administration (OpenSSH Server feature)
 135,tcp,baseline,RPC endpoint mapper
 445,tcp,baseline,SMB file sharing
 3389,tcp,baseline,RDP remote desktop

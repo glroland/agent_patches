@@ -389,7 +389,7 @@ async function doAnalyse() {
   try {
     const response = await _client.chat.completions.create({
       model: config.intelligence.model,
-      max_tokens: 4096,
+      max_tokens: 6144,
       messages: [
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContent },
