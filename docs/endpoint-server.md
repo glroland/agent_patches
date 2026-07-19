@@ -208,6 +208,8 @@ A `PreCheck` is deterministic, non-LLM logic attached to a responsibility by nam
 
 Pre-checks are registered for: `nfs-health-check`, `temperature-health-check`, `container-health-check`, `cpu-utilization-check`, `memory-utilization-check`, `disk-space-check`, `network-utilization-check`, and `keep-system-up-to-date`. The key must match the responsibility name in config — a renamed responsibility simply runs without its pre-check (every tick pays for an LLM run again). New scheduled responsibilities should ship with a pre-check.
 
+**The deliberate exception — `system-insights`:** pre-checks only send the model in when something is already wrong, so on a healthy fleet the LLM never looks at the system at all and the operator's only interaction becomes patch approvals. The once-daily `system-insights` responsibility (in both OS responsibility files) is intentionally registered with **no** pre-check: it always reaches the model with an open-ended mandate to find improvements, inefficiencies, risks, and tuning opportunities. It rotates through one focus area per day (keyed on day-of-year mod 10) to stay inside the per-request context budget, uses read-only tools plus `report_findings`, and notifies `always`. Its cost is bounded at one LLM run per host per day — do not gate it behind a pre-check or a problem condition; being un-gated is its purpose.
+
 ## Responsibilities Scheduling
 
 `loop/responsibility.go` — two schedule modes:

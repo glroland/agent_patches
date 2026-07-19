@@ -93,3 +93,5 @@ Two flows (see `docs/architecture.md`): `request_approval` blocks polling AttrsS
 ## LLM capacity
 
 All agents share one LLM through `llm-gateway` (bounded concurrency + queue). Token budget is tight: prefer deterministic pre-checks over new LLM calls, and give any new scheduled responsibility a `PreCheck` so healthy ticks skip the LLM entirely.
+
+Deliberate exception: the once-daily `system-insights` responsibility has no pre-check on purpose — it is the only run guaranteed to put a *healthy* system in front of the model for open-ended observations and recommendations (pre-checks otherwise mean the LLM only ever sees broken systems). Do not add a pre-check to it or scope it to detected problems.

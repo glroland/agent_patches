@@ -237,3 +237,60 @@ responsibilities:
       - check_for_pending_system_patches
       - report_findings
     when_to_notify: "always"
+
+  # system-insights intentionally has NO pre-check. Every health
+  # responsibility above only reaches the LLM when something is already
+  # wrong, so on a healthy fleet the model never looks at the system at all
+  # and the operator only ever hears about pending patches. This is the one
+  # scheduled run guaranteed to put a healthy system in front of the model
+  # with an open-ended mandate. Do not "optimize" it behind a pre-check or a
+  # problem gate — its cost is bounded at one LLM run per host per day.
+  - name: system-insights
+    time: "16:00"
+    instruction: |
+      This is your daily open-ended review. Nothing is known to be wrong —
+      your job is to find the insight a skilled human administrator would
+      spot anyway: an improvement, an inefficiency, a growing risk, a tuning
+      opportunity, or something genuinely interesting about how this host is
+      behaving. "Everything is healthy" is not an acceptable conclusion for
+      this run.
+      To stay fresh and within token budget, examine ONE focus area per day.
+      First run (date +%j) via run_diagnostic_command, take the day number
+      modulo 10, and work the matching area:
+        0. Services — failed or degraded units, suspicious restart counts
+           (systemctl --failed; systemctl list-units --state=running | head -30)
+        1. Log hygiene — journal disk usage, noisiest units, rotation gaps
+           (journalctl --disk-usage; journalctl --since -24h -p warning --no-pager | tail -30)
+        2. Scheduled work — cron jobs and systemd timers that are failing,
+           stale, or surprising (systemctl list-timers --all | head -20; ls /etc/cron.*)
+        3. Performance tuning — swap and iowait behaviour, sysctl or limit
+           mismatches for this host's purpose (vmstat 1 3; swapon --show)
+        4. Storage layout — growth trends (compare_to_baseline, domain
+           check_drives), inode headroom (df -i | head -10), mount options
+        5. Package hygiene — old kernels, orphaned or unused packages,
+           repository errors
+        6. Network — interface errors and drops (ip -s link), DNS health,
+           listening services versus this host's stated purpose (ss -tlnp | head -20)
+        7. Resilience — uptime versus pending reboot, services still running
+           pre-upgrade binaries, core dumps present, time sync status
+        8. Hardening — sshd_config highlights, firewall presence and state,
+           automatic-update configuration
+        9. Resource fit — steady-state top consumers versus installed
+           RAM/CPU: is this host over- or under-provisioned for its purpose?
+      Investigate with run_diagnostic_command. Keep every command's output
+      small — always bound it with head/tail/-n; never dump whole files or
+      recursive listings. Use compare_to_baseline or read_agent_memory when
+      history would strengthen the story.
+      Then record 1-3 findings via report_findings (type=recommendation or
+      observation, severity usually info) — concrete, specific to this host,
+      with the evidence and the why. Prefer one sharp insight over a survey.
+      If a previous run already raised something in this area (it will appear
+      in the open-incidents list, or be obviously still true), find something
+      new rather than repeating it. Do not propose or execute remediation
+      commands from this run — recommendations only.
+    tools:
+      - run_diagnostic_command
+      - compare_to_baseline
+      - read_agent_memory
+      - report_findings
+    when_to_notify: "always"
