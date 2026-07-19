@@ -18,9 +18,9 @@ agent:
   # default model (GATEWAY_UPSTREAM_MODEL). Set this only when this agent
   # should use a different model than the gateway default.
   max_tokens: 6144
-  # responsibility_max_tokens: 2048  # optional tighter completion cap for
-  # scheduled responsibility runs only; their reports are short, and a tight
-  # cap bounds how long a runaway generation can hold an LLM concurrency slot.
+  responsibility_max_tokens: 6144  # completion cap for scheduled responsibility
+  # runs; keeps prompt+completion within the upstream's 16k per-slot context and
+  # bounds how long a runaway generation can hold an LLM concurrency slot.
   max_iterations: 10
   system_prompt: |
     You are agent_patches, an AI agent that handles server administration tasks.
