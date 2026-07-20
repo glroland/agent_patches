@@ -130,7 +130,9 @@ export default function Agents() {
                 ))}
               </div>
 
-              <p className="mt-4 text-xs text-navy-500">Last polled {relativeTime(agent.lastPoll)}</p>
+              <p className="mt-4 text-xs text-navy-500">
+                Last successfully polled {agent.lastPoll ? relativeTime(agent.lastPoll) : 'never'}
+              </p>
             </Card>
           </Link>
         ))}

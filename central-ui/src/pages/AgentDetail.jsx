@@ -59,7 +59,7 @@ export default function AgentDetail() {
             <p className="mt-1 text-sm text-navy-500">
               {agent.role} &middot; {agent.os}
               {agent.buildTime && <> &middot; built {agent.buildTime}</>}
-              {' '}&middot; last polled {relativeTime(agent.lastPoll)}
+              {' '}&middot; last successfully polled {agent.lastPoll ? relativeTime(agent.lastPoll) : 'never'}
             </p>
             {agent.purpose && (
               <p className="mt-1 text-sm italic text-navy-500">Purpose: {agent.purpose}</p>

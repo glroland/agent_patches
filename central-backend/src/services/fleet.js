@@ -16,6 +16,13 @@ function shortHost(fqdn) {
   return fqdn.split('.')[0].toLowerCase();
 }
 
+// Tracks, per agent id, the last time central-backend itself successfully
+// reached that agent's /status endpoint. Kept separate from the per-poll
+// fleet cache so the timestamp survives a poll that comes back offline —
+// otherwise an agent that just dropped off the network would show no last-
+// polled time at all instead of when it was last actually seen.
+const lastSuccessfulPollById = new Map();
+
 // Builds a human-readable attention summary from the timeline so the operator
 // knows exactly what needs review without opening the agent detail page.
 function attentionDescription(timeline) {
@@ -71,13 +78,24 @@ async function toFleetAgent(inventoryAgent) {
   const data = await client.getStatus();
 
   const agentInfo = data?.agent ?? {};
-  const statusBlock = data?.status ?? { state: 'offline', lastPoll: null, currentTask: null };
+  const statusBlock = data?.status ?? { state: 'offline', currentTask: null };
   const timeline = data?.timeline ?? [];
   const state = data ? statusBlock.state : 'offline';
   const statusMeta = STATUS_META[state] ?? STATUS_META.offline;
   const statusDescription = state === 'attention'
     ? (data?.statusDescription || attentionDescription(timeline))
     : statusMeta.description;
+
+  // The endpoint's own "lastPoll" is just its clock at response time, so a
+  // healthy agent always reports "just now" — useless for telling operators
+  // when it was last actually reached. Track that here instead, keyed off
+  // whether *this* poll succeeded, and keep the previous value when it didn't
+  // so an offline agent still shows when it was last seen rather than never.
+  let lastSuccessfulPoll = lastSuccessfulPollById.get(id) ?? null;
+  if (data) {
+    lastSuccessfulPoll = new Date().toISOString();
+    lastSuccessfulPollById.set(id, lastSuccessfulPoll);
+  }
 
   return {
     id,
@@ -91,7 +109,7 @@ async function toFleetAgent(inventoryAgent) {
     status: state,
     statusLabel: statusMeta.label,
     statusDescription,
-    lastPoll: statusBlock.lastPoll ?? null,
+    lastPoll: lastSuccessfulPoll,
     currentTask: statusBlock.currentTask ?? null,
     lastPatchedAt: data?.lastPatchedAt ?? null,
     buildTime: agentInfo.buildTime ?? null,

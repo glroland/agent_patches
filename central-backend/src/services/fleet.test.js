@@ -94,6 +94,35 @@ describe('fleet.listFleet', () => {
     assert.equal(build01.role, 'Endpoint agent');
   });
 
+  test('keeps the last successful poll time once an agent goes offline', async (t) => {
+    t.after(() => {
+      AgentClient.prototype.getStatus = originalGetStatus;
+    });
+
+    AgentClient.prototype.getStatus = async function () {
+      if (this.baseUrl === 'http://web01.prod.internal:8080') {
+        return { agent: {}, status: { state: 'idle' }, timeline: [] };
+      }
+      return null;
+    };
+
+    setFleet(null);
+    const firstPoll = await listFleet();
+    const seenLastPoll = firstPoll.find((a) => a.id === 'web01').lastPoll;
+    assert.ok(seenLastPoll);
+
+    AgentClient.prototype.getStatus = async () => null;
+
+    setFleet(null);
+    const secondPoll = await listFleet();
+    const web01AfterDrop = secondPoll.find((a) => a.id === 'web01');
+
+    assert.equal(web01AfterDrop.status, 'offline');
+    // lastPoll should still reflect the earlier successful poll, not null —
+    // otherwise an agent that just went offline looks like it was never seen.
+    assert.equal(web01AfterDrop.lastPoll, seenLastPoll);
+  });
+
   test('returns fleet from cache without calling agents when cache is populated', async (t) => {
     t.after(() => {
       AgentClient.prototype.getStatus = originalGetStatus;
