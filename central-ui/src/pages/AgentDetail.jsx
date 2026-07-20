@@ -744,7 +744,7 @@ function InteractiveLoginsTab({ agentId }) {
   return (
     <div className="space-y-4">
       <Card
-        title="Active sessions"
+        title="Interactive User Sessions"
         subtitle={
           data.live
             ? 'Live snapshot — the background login monitor has not recorded any history yet'
