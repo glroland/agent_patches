@@ -11,15 +11,18 @@ import { relativeTime } from '../utils/time';
 
 const SEVERITIES = ['all', 'critical', 'warning', 'info'];
 
-// Synthetic "agent is offline" concerns (see central-backend/services/activity.js)
-// aren't real timeline findings — there's nothing to resolve on the agent side,
-// they clear on their own once the agent is reachable again.
-const isDismissable = (item) => !item.id.endsWith('-offline');
+// Synthetic concerns — "agent is offline" (central-backend/services/activity.js)
+// and skill health snapshots (endpoint-server/status/status.go, id prefix
+// "skillstate:") — aren't real timeline findings. They're recomputed fresh on
+// every GET /status rather than stored, so there's nothing on the agent side
+// for a resolve call to find; they clear on their own once the underlying
+// condition (agent reachable, skill healthy) recovers.
+const isDismissable = (item) => !item.id.endsWith('-offline') && !item.id.startsWith('skillstate:');
 
 export default function Issues() {
   const { data, loading, error } = useApi(fetchIssues, []);
   const [severity, setSeverity] = useState('all');
-  // Per-item UI state for the resolve action: id -> { loading, error }
+  // Per-item UI state for the resolve action: id -> { error }
   const [resolving, setResolving] = useState({});
   const [resolvedIds, setResolvedIds] = useState(() => new Set());
 
@@ -29,13 +32,21 @@ export default function Issues() {
 
   const { items, counts } = data;
 
+  // Optimistic: hide the item the instant it's clicked rather than making the
+  // operator wait on a live round-trip to the remote agent host. Only put it
+  // back (with an error) if the call actually fails.
   const resolve = async (item) => {
-    setResolving((prev) => ({ ...prev, [item.id]: { loading: true, error: null } }));
+    setResolvedIds((prev) => new Set(prev).add(item.id));
+    setResolving((prev) => ({ ...prev, [item.id]: { error: null } }));
     try {
       await resolveIssue(item.id, item.agentId);
-      setResolvedIds((prev) => new Set(prev).add(item.id));
     } catch (err) {
-      setResolving((prev) => ({ ...prev, [item.id]: { loading: false, error: err.message } }));
+      setResolvedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(item.id);
+        return next;
+      });
+      setResolving((prev) => ({ ...prev, [item.id]: { error: err.message } }));
     }
   };
 
@@ -99,9 +110,8 @@ export default function Issues() {
                     {isDismissable(item) && (
                       <button
                         onClick={() => resolve(item)}
-                        disabled={state?.loading}
                         title="Mark resolved"
-                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-semibold text-navy-700 hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-navy-300 px-3 py-1.5 text-xs font-semibold text-navy-700 hover:border-emerald-400 hover:text-emerald-700"
                       >
                         <CheckIcon className="h-3.5 w-3.5" /> Resolve
                       </button>
