@@ -55,6 +55,7 @@ import (
 	"agent_patches/endpoint-server/skills/read_agent_memory"
 	"agent_patches/endpoint-server/skills/report_findings"
 	"agent_patches/endpoint-server/skills/request_approval"
+	"agent_patches/endpoint-server/skills/request_manual_run"
 	"agent_patches/endpoint-server/skills/run_approved_command"
 	"agent_patches/endpoint-server/skills/run_diagnostic_command"
 	"agent_patches/endpoint-server/status"
@@ -438,6 +439,7 @@ func runServer(ctx context.Context) {
 	failedLoginMon.Start(ctx)
 	connMon.Start(ctx)
 	request_approval.StartExpirySweeper(ctx, mem, notify)
+	request_manual_run.StartRetentionSweeper(ctx, mem)
 	lp.Start(ctx)
 
 	go func() {

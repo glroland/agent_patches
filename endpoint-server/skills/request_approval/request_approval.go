@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
 	"time"
 
@@ -34,6 +35,17 @@ const (
 	pollInterval    = 5 * time.Second
 	approvalTimeout = 24 * time.Hour
 	maxEntries      = 50
+
+	// attrsRetention bounds how long a decided (non-pending) approval's attrs
+	// record is kept — mirrors incidents.go's resolvedRetention pattern.
+	// Without this, attrs.json (and the GET /memory payload central-backend
+	// reads to build fleet-intelligence prompts) grows without bound for the
+	// life of the host.
+	attrsRetention = 30 * 24 * time.Hour
+	// maxAttrsEntries hard-caps the number of decided approval records kept,
+	// dropping the oldest first, in case retention alone isn't enough (e.g. a
+	// burst of approvals within the retention window).
+	maxAttrsEntries = 200
 )
 
 // ApprovalEntry is the durable state stored in AttrsStore under the key
@@ -354,7 +366,9 @@ func StartExpirySweeper(ctx context.Context, mem *memory.Store, notify *notifier
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				ExpirePending(ctx, mem, notify, time.Now())
+				now := time.Now()
+				ExpirePending(ctx, mem, notify, now)
+				pruneAttrs(mem, now)
 			}
 		}
 	}()
@@ -401,6 +415,66 @@ func ExpirePending(ctx context.Context, mem *memory.Store, notify *notifier.Noti
 		}
 	}
 	return expired
+}
+
+// pruneAttrs deletes decided (non-pending) approval attrs entries older than
+// attrsRetention, then enforces maxAttrsEntries by dropping the oldest
+// decided entries first. Pending entries are never touched here — only
+// ExpirePending or an operator decision can end a pending approval's life.
+// Returns the number of entries deleted.
+func pruneAttrs(mem *memory.Store, now time.Time) int {
+	attrs, err := mem.Attrs().All()
+	if err != nil {
+		slog.Warn("request_approval: prune sweep read failed", "error", err)
+		return 0
+	}
+
+	type decided struct {
+		key  string
+		when time.Time
+	}
+	var candidates []decided
+	cutoff := now.Add(-attrsRetention)
+
+	for key, raw := range attrs {
+		if !strings.HasPrefix(key, "approval:") {
+			continue
+		}
+		var entry ApprovalEntry
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			continue
+		}
+		if entry.Status == "pending" {
+			continue
+		}
+		when := entry.RequestedAt
+		if entry.DecidedAt != nil {
+			when = *entry.DecidedAt
+		}
+		candidates = append(candidates, decided{key: key, when: when})
+	}
+
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].when.Before(candidates[j].when) })
+
+	deleted := 0
+	keep := len(candidates)
+	for _, c := range candidates {
+		expired := c.when.Before(cutoff)
+		overCap := keep > maxAttrsEntries
+		if !expired && !overCap {
+			break
+		}
+		if err := mem.Attrs().Delete(c.key); err != nil {
+			slog.Warn("request_approval: prune delete failed", "key", c.key, "error", err)
+			continue
+		}
+		deleted++
+		keep--
+	}
+	if deleted > 0 {
+		slog.Info("request_approval: pruned decided approval records", "count", deleted)
+	}
+	return deleted
 }
 
 // newUUID generates a random UUID v4.

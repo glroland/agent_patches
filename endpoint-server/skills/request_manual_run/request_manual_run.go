@@ -10,8 +10,11 @@ package request_manual_run
 import (
 	"context"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"sort"
+	"strings"
 	"time"
 
 	"agent_patches/endpoint-server/memory"
@@ -23,6 +26,17 @@ const (
 	pollInterval  = 5 * time.Second
 	manualTimeout = 24 * time.Hour
 	maxEntries    = 50
+
+	// attrsRetention bounds how long a decided (non-pending) manual-run
+	// attrs record is kept — mirrors request_approval's pruning and
+	// incidents.go's resolvedRetention pattern, so attrs.json doesn't grow
+	// without bound for the life of the host.
+	attrsRetention = 30 * 24 * time.Hour
+	// maxAttrsEntries hard-caps the number of decided manual-run records
+	// kept, dropping the oldest first.
+	maxAttrsEntries = 200
+	// sweepInterval is how often the retention sweeper prunes old entries.
+	sweepInterval = time.Minute
 )
 
 // ManualRunEntry is the durable state stored in AttrsStore under the key
@@ -197,6 +211,84 @@ func patchAttrs(mem *memory.Store, key, newStatus, output string) error {
 		entry.CompletedAt = &now
 	}
 	return mem.Attrs().Set(key, entry)
+}
+
+// StartRetentionSweeper launches a background goroutine that prunes decided
+// (non-pending) manual-run attrs entries older than attrsRetention, plus
+// enforces maxAttrsEntries. Unlike request_approval, there is no
+// pending-expiry sweep here: each RequestManualRun call enforces its own
+// timeout in-process via manualTimeout. It exits when ctx is cancelled.
+func StartRetentionSweeper(ctx context.Context, mem *memory.Store) {
+	go func() {
+		ticker := time.NewTicker(sweepInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				pruneAttrs(mem, time.Now())
+			}
+		}
+	}()
+}
+
+// pruneAttrs deletes decided (non-pending) manual-run attrs entries older
+// than attrsRetention, then enforces maxAttrsEntries by dropping the oldest
+// decided entries first. Returns the number of entries deleted.
+func pruneAttrs(mem *memory.Store, now time.Time) int {
+	attrs, err := mem.Attrs().All()
+	if err != nil {
+		slog.Warn("request_manual_run: prune sweep read failed", "error", err)
+		return 0
+	}
+
+	type decided struct {
+		key  string
+		when time.Time
+	}
+	var candidates []decided
+	cutoff := now.Add(-attrsRetention)
+
+	for key, raw := range attrs {
+		if !strings.HasPrefix(key, "manual_run:") {
+			continue
+		}
+		var entry ManualRunEntry
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			continue
+		}
+		if entry.Status == "pending" {
+			continue
+		}
+		when := entry.RequestedAt
+		if entry.CompletedAt != nil {
+			when = *entry.CompletedAt
+		}
+		candidates = append(candidates, decided{key: key, when: when})
+	}
+
+	sort.Slice(candidates, func(i, j int) bool { return candidates[i].when.Before(candidates[j].when) })
+
+	deleted := 0
+	keep := len(candidates)
+	for _, c := range candidates {
+		expired := c.when.Before(cutoff)
+		overCap := keep > maxAttrsEntries
+		if !expired && !overCap {
+			break
+		}
+		if err := mem.Attrs().Delete(c.key); err != nil {
+			slog.Warn("request_manual_run: prune delete failed", "key", c.key, "error", err)
+			continue
+		}
+		deleted++
+		keep--
+	}
+	if deleted > 0 {
+		slog.Info("request_manual_run: pruned decided manual-run records", "count", deleted)
+	}
+	return deleted
 }
 
 func newUUID() string {
