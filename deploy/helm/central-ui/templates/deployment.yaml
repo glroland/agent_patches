@@ -30,6 +30,8 @@ spec:
             # through the external Route.
             - name: BACKEND_INTERNAL_URL
               value: {{ printf "http://%s:%v" .Values.backend.serviceName .Values.backend.servicePort | quote }}
+            - name: PROXY_READ_TIMEOUT
+              value: {{ .Values.route.proxyReadTimeout | quote }}
             {{- if .Values.global.otelExporterOtlpEndpoint }}
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: {{ .Values.global.otelExporterOtlpEndpoint | quote }}

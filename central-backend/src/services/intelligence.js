@@ -106,6 +106,14 @@ function serializeFleet(agents) {
 // Approval history serialisation
 // ---------------------------------------------------------------------------
 
+// Detail lines are capped per agent so the prompt stays bounded as approval
+// history accumulates over the agent's lifetime — without this, a long-lived
+// fleet eventually produces a prompt that exceeds the model's context window
+// and every analysis run fails (see incident: 34021 tokens vs 32768 limit,
+// which left intelligence retrying every 60s and stalling the event loop
+// under this pod's CPU limit until liveness probes started timing out).
+const RECENT_APPROVALS_PER_AGENT = 15;
+
 function serializeApprovalHistory(agentDetails) {
   const hasAny = agentDetails.some(({ memory }) => {
     if (!memory?.attrs) return false;
@@ -113,7 +121,7 @@ function serializeApprovalHistory(agentDetails) {
   });
   if (!hasAny) return null;
 
-  const lines = ['## Approval History (full lifetime of agent memory)'];
+  const lines = ['## Approval History (recent, per agent — totals cover full lifetime)'];
 
   for (const { hostname, memory } of agentDetails) {
     if (!memory?.attrs) continue;
@@ -141,7 +149,12 @@ function serializeApprovalHistory(agentDetails) {
       `${timedOut.length} timed out, ${cancelled.length} cancelled, ${pending.length} pending`
     );
 
-    for (const a of approvals) {
+    const recentApprovals = approvals.slice(-RECENT_APPROVALS_PER_AGENT);
+    if (recentApprovals.length < approvals.length) {
+      lines.push(`- Showing ${recentApprovals.length} most recent of ${approvals.length} total`);
+    }
+
+    for (const a of recentApprovals) {
       const requestedAgo = a.requested_at
         ? Math.round((Date.now() - new Date(a.requested_at).getTime()) / 3600000) + 'h ago'
         : null;

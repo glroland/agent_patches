@@ -12,6 +12,13 @@ echo "Backend URL: $BACKEND_URL"
 export BACKEND_INTERNAL_URL="${BACKEND_INTERNAL_URL:-http://central-backend:8080}"
 echo "Backend internal URL: $BACKEND_INTERNAL_URL"
 
+# How long nginx waits on a response from central-backend for /api requests
+# (agent chat, tool-use loops with operator approval can take minutes). Must
+# stay below the central-ui Route's own haproxy timeout (route.timeout) or
+# nginx will cut the connection before the Route would.
+export PROXY_READ_TIMEOUT="${PROXY_READ_TIMEOUT:-60s}"
+echo "Proxy read timeout: $PROXY_READ_TIMEOUT"
+
 # Same env var name used by central-backend/endpoint-server. Default to a
 # loopback placeholder when unset so nginx always has a syntactically valid
 # proxy_pass target for /v1/traces — tracing simply stays unreachable
@@ -30,8 +37,8 @@ cat > /usr/share/nginx/html/otel-config.js <<EOF
 window.__OTEL_SERVICE_NAME__ = "${OTEL_SERVICE_NAME}";
 EOF
 
-echo "Substituting BACKEND_URL, BACKEND_INTERNAL_URL and OTEL_EXPORTER_OTLP_ENDPOINT variables into /tmp/nginx-custom.conf"
-envsubst '$BACKEND_URL:$BACKEND_INTERNAL_URL:$OTEL_EXPORTER_OTLP_ENDPOINT' < /nginx.conf.template > /tmp/nginx-custom.conf
+echo "Substituting BACKEND_URL, BACKEND_INTERNAL_URL, OTEL_EXPORTER_OTLP_ENDPOINT and PROXY_READ_TIMEOUT variables into /tmp/nginx-custom.conf"
+envsubst '$BACKEND_URL:$BACKEND_INTERNAL_URL:$OTEL_EXPORTER_OTLP_ENDPOINT:$PROXY_READ_TIMEOUT' < /nginx.conf.template > /tmp/nginx-custom.conf
 
 echo "Starting nginx"
 nginx -g 'daemon off;' -c /tmp/nginx-custom.conf
