@@ -19,9 +19,11 @@ agent:
   # should use a different model than the gateway default.
   max_tokens: 6144
   responsibility_max_tokens: 6144  # completion cap for scheduled responsibility
-  # runs; keeps prompt+completion within the upstream's 16k per-slot context and
-  # bounds how long a runaway generation can hold an LLM concurrency slot.
-  max_iterations: 10
+  # runs; bounds how long a runaway generation can hold an LLM concurrency slot
+  # (the upstream's ~128k-token per-slot context has ample room for this).
+  max_iterations: 20  # upstream context is ~128k/slot; plenty of headroom for
+  # multi-step tool chains (patching, check_containers, check_nfs) to run
+  # longer before hitting this cap.
   system_prompt: |
     You are agent_patches, an AI agent that handles server administration tasks.
     Use the available tools to carry out the user's request. Be concise and direct.

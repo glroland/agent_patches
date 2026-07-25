@@ -269,7 +269,7 @@ agent:
   # should use a different model than the fleet default
   max_tokens: 6144
   responsibility_max_tokens: 6144  # optional; caps completion tokens for scheduled runs only
-  max_iterations: 10
+  max_iterations: 20
   api_key: <optional, defaults to OPENAI_API_KEY env var>
   base_url: <points at llm-gateway, or any OpenAI-compatible server>
   request_timeout: "6m"  # per-LLM-call HTTP timeout; set just above the gateway's GATEWAY_REQUEST_TIMEOUT

@@ -51,8 +51,10 @@ llm-gateway:
     # Display-only label shown in central-ui alongside the upstream URL. Purely
     # informational — leave blank to hide the "Model Name" line in the UI.
     upstreamModel: "Qwen3-Coder-Next-GGUF"
-    # Must not exceed the upstream llama.cpp server's --parallel slot count;
-    # each slot gets --ctx-size / --parallel tokens of context.
-    maxConcurrency: "4"
+    # Must not exceed the upstream llama.cpp server's --parallel slot count
+    # (currently 4); each slot gets --ctx-size / --parallel tokens of context.
+    # Kept one below --parallel (3) as a safety margin rather than saturating
+    # every slot exactly.
+    maxConcurrency: "3"
     maxQueueDepth: "100"
     requestTimeout: "20m"

@@ -60,7 +60,7 @@ function serializeFleet(agents) {
     // Up to 8 recent non-approval timeline entries with full detail.
     const entries = (agent.timeline || [])
       .filter((e) => e.type !== 'approval')
-      .slice(0, 8);
+      .slice(0, 20);
 
     if (entries.length > 0) {
       lines.push('- Recent activity:');
@@ -70,7 +70,7 @@ function serializeFleet(agents) {
           : null;
         lines.push(`  • [${e.type}] ${e.title}${ageH != null ? ` (${ageH}h ago)` : ''}`);
         if (e.detail) {
-          const detail = e.detail.length > 300 ? e.detail.slice(0, 297) + '…' : e.detail;
+          const detail = e.detail.length > 600 ? e.detail.slice(0, 597) + '…' : e.detail;
           lines.push(`    ${detail}`);
         }
       }
@@ -85,7 +85,7 @@ function serializeFleet(agents) {
         : null;
       lines.push(`- [${(a.risk || 'unknown').toUpperCase()} RISK] ${a.hostname}: ${a.title}${ageH != null ? ` (waiting ${ageH}h)` : ''}`);
       if (a.detail) {
-        const detail = a.detail.length > 200 ? a.detail.slice(0, 197) + '…' : a.detail;
+        const detail = a.detail.length > 400 ? a.detail.slice(0, 397) + '…' : a.detail;
         lines.push(`  ${detail}`);
       }
     }
@@ -112,7 +112,10 @@ function serializeFleet(agents) {
 // and every analysis run fails (see incident: 34021 tokens vs 32768 limit,
 // which left intelligence retrying every 60s and stalling the event loop
 // under this pod's CPU limit until liveness probes started timing out).
-const RECENT_APPROVALS_PER_AGENT = 15;
+// Upstream context is ~128k/slot now (was 32768), so these caps have been
+// raised, but kept well short of removing them entirely — a growing fleet
+// will eventually erode any fixed budget again.
+const RECENT_APPROVALS_PER_AGENT = 30;
 
 function serializeApprovalHistory(agentDetails) {
   const hasAny = agentDetails.some(({ memory }) => {
@@ -164,7 +167,7 @@ function serializeApprovalHistory(agentDetails) {
 
       lines.push(`- [${(a.status ?? 'unknown').toUpperCase()}] [${(a.risk ?? '?').toUpperCase()} RISK] ${a.title}`);
       if (a.proposed_action) {
-        const pa = a.proposed_action.length > 200 ? a.proposed_action.slice(0, 197) + '…' : a.proposed_action;
+        const pa = a.proposed_action.length > 400 ? a.proposed_action.slice(0, 397) + '…' : a.proposed_action;
         lines.push(`  - Proposed action: ${pa}`);
       }
       if (requestedAgo) lines.push(`  - Requested: ${requestedAgo}`);
@@ -224,7 +227,7 @@ function serializeTokenStats(gatewayStats, agentDetails) {
       for (const r of responsibilities) {
         lines.push(`- **${r.name}** — ${r.schedule}`);
         lines.push(`  - Tools: ${r.tools?.join(', ') || 'none'}`);
-        lines.push(`  - Instruction: ${r.instruction?.slice(0, 200) ?? '(none)'}${r.instruction?.length > 200 ? '…' : ''}`);
+        lines.push(`  - Instruction: ${r.instruction?.slice(0, 400) ?? '(none)'}${r.instruction?.length > 400 ? '…' : ''}`);
         lines.push(`  - Status: ${r.status}${r.lastRunAt ? ` (last run: ${r.lastRunAt})` : ''}`);
         if (r.nextRunAt) lines.push(`  - Next run: ${r.nextRunAt}`);
         if (r.summary) {

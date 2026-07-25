@@ -150,7 +150,7 @@ Matched content is replaced with `[REDACTED: potential prompt injection]`. The p
 
 **3. Truncation**
 
-Outputs longer than 16KB are truncated with a marker. This prevents context-flooding attacks that bury the system prompt by filling the context window with data.
+Outputs longer than 64KB are truncated with a marker. This prevents context-flooding attacks that bury the system prompt by filling the context window with data.
 
 ### Observability
 
