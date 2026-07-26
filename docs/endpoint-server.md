@@ -158,7 +158,7 @@ The `policy` package stores operator-created policies in AttrsStore under `appro
 
 - On **approve** (`POST /approvals/:id/decision`), the approvalapi handler launches `run_approved_command.ExecuteOnApproval` in a detached goroutine: it runs the command (same sudo / manual-run escalation path), records the output on the approval entry (`Output`) and as an `action` timeline entry, notifies the operator of the result, and counts the approval for standing-policy promotion.
 - On **reject**, nothing executes.
-- Pending async approvals **survive agent restarts** (there is no waiting goroutine to cancel) and are expired by a background sweeper (`request_approval.StartExpirySweeper`, every minute) after 24 hours, with an "action NOT taken" notification.
+- Pending async approvals **survive agent restarts** (there is no waiting goroutine to cancel) and are expired by a background sweeper (`request_approval.StartExpirySweeper`, every minute) after 24 hours (48 hours if `risk="high"`), with an "action NOT taken" notification. The same sweeper sends a one-time reminder notification for high-importance/high-risk approvals still pending halfway through their timeout window.
 
 Because the run finishes immediately, a pending approval no longer parks the responsibility's `Running` flag — monitoring continues at full cadence while approvals wait.
 

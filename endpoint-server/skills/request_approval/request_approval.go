@@ -10,9 +10,12 @@
 // it is to act — e.g. CVE severity) and risk (how likely the action itself is
 // to disrupt the host if something goes wrong). High-importance or high-risk
 // approvals trigger an immediate out-of-band notification so the operator
-// does not need to monitor the dashboard. If no decision arrives within
-// approvalTimeout the request is permanently cancelled — not retried — and
-// the operator is notified that the action was NOT taken.
+// does not need to monitor the dashboard, plus a reminder halfway through the
+// timeout window if still pending. High-risk approvals (more likely to need
+// a maintenance window before an operator can act) get a longer timeout —
+// see highRiskApprovalTimeout. If no decision arrives within that window the
+// request is permanently cancelled — not retried — and the operator is
+// notified that the action was NOT taken.
 package request_approval
 
 import (
@@ -32,9 +35,17 @@ import (
 )
 
 const (
-	pollInterval    = 5 * time.Second
+	pollInterval = 5 * time.Second
+	// approvalTimeout is the default window a pending approval waits for an
+	// operator decision before being cancelled.
 	approvalTimeout = 24 * time.Hour
-	maxEntries      = 50
+	// highRiskApprovalTimeout applies instead of approvalTimeout when the
+	// action itself is high risk (e.g. a patch requiring a reboot). Those
+	// actions are more likely to need a maintenance window or a second
+	// opinion before an operator can act, so they get more time before being
+	// auto-cancelled.
+	highRiskApprovalTimeout = 48 * time.Hour
+	maxEntries              = 50
 
 	// attrsRetention bounds how long a decided (non-pending) approval's attrs
 	// record is kept — mirrors incidents.go's resolvedRetention pattern.
@@ -81,10 +92,28 @@ type ApprovalEntry struct {
 	ExecReason string `json:"exec_reason,omitempty"`
 	// Output is the command output recorded after an async execution.
 	Output string `json:"output,omitempty"`
+
+	// Escalated marks that the reminder notification has already fired for
+	// this approval, so it is not sent more than once.
+	Escalated bool `json:"escalated,omitempty"`
 }
 
 // AttrsKey returns the AttrsStore key for the given approval ID.
 func AttrsKey(id string) string { return "approval:" + id }
+
+// timeoutFor returns how long a pending approval with the given risk level
+// waits for an operator decision before being cancelled.
+func timeoutFor(risk string) time.Duration {
+	if strings.EqualFold(risk, "high") {
+		return highRiskApprovalTimeout
+	}
+	return approvalTimeout
+}
+
+// formatHours renders a duration as a whole number of hours, e.g. "48h".
+func formatHours(d time.Duration) string {
+	return fmt.Sprintf("%dh", int(d.Hours()))
+}
 
 type requestApprovalInput struct {
 	Title          string `json:"title" jsonschema_description:"Short one-line description of what requires approval."`
@@ -102,12 +131,15 @@ type requestApprovalInput struct {
 // disrupt the host if something goes wrong. For high-importance or high-risk
 // actions, the notifier fires immediately when the request is created so the
 // operator receives an out-of-band alert without needing to monitor the
-// dashboard.
+// dashboard, and again halfway through the timeout window if still pending.
 //
-// If no decision arrives within approvalTimeout, the request is permanently
-// cancelled — not retried — and the notifier fires again so the operator knows
-// the action was not taken. Returns "approved", "rejected", or "timed_out".
-// Returns an error only on context cancellation.
+// The timeout window is approvalTimeout (24h) by default, or
+// highRiskApprovalTimeout (48h) when risk is "high" — high-risk actions are
+// more likely to need a maintenance window or a second opinion before an
+// operator can act. If no decision arrives within that window, the request is
+// permanently cancelled — not retried — and the notifier fires again so the
+// operator knows the action was not taken. Returns "approved", "rejected", or
+// "timed_out". Returns an error only on context cancellation.
 func RequestApproval(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, title, detail, proposedAction, importance, risk string) (string, error) {
 	id := newUUID()
 	result, err := requestApprovalOnce(ctx, mem, notify, id, title, detail, proposedAction, importance, risk)
@@ -161,8 +193,8 @@ func createPending(ctx context.Context, mem *memory.Store, notify *notifier.Noti
 		notify.Notify(ctx,
 			fmt.Sprintf("[Approval Required] %s", title),
 			fmt.Sprintf(
-				"An action requiring prompt attention needs your approval.\n\nAction: %s\n\nDetail: %s\n\nImportance: %s\nRisk: %s\n\nApprove or reject via the central dashboard. If no decision is made within 24 hours the action will be automatically cancelled.",
-				proposedAction, detail, importance, risk,
+				"An action requiring prompt attention needs your approval.\n\nAction: %s\n\nDetail: %s\n\nImportance: %s\nRisk: %s\n\nApprove or reject via the central dashboard. If no decision is made within %s the action will be automatically cancelled.",
+				proposedAction, detail, importance, risk, formatHours(timeoutFor(risk)),
 			),
 		)
 	}
@@ -209,12 +241,25 @@ func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifie
 		return "", err
 	}
 
-	slog.Info("request_approval: waiting for operator decision", "id", id, "title", title, "importance", importance, "risk", risk)
+	timeout := timeoutFor(risk)
+	slog.Info("request_approval: waiting for operator decision", "id", id, "title", title, "importance", importance, "risk", risk, "timeout", timeout)
 
 	ticker := time.NewTicker(pollInterval)
-	timer := time.NewTimer(approvalTimeout)
+	timer := time.NewTimer(timeout)
 	defer ticker.Stop()
 	defer timer.Stop()
+
+	// High-importance/high-risk approvals get a single reminder notification
+	// halfway through the timeout window if they are still pending, so an
+	// operator who missed the initial alert gets a second chance before the
+	// action is auto-cancelled. escalationCh stays nil (and so never fires)
+	// for approvals that don't qualify.
+	var escalationCh <-chan time.Time
+	if strings.EqualFold(importance, "high") || strings.EqualFold(risk, "high") {
+		escalationTimer := time.NewTimer(timeout / 2)
+		defer escalationTimer.Stop()
+		escalationCh = escalationTimer.C
+	}
 
 	for {
 		select {
@@ -234,6 +279,9 @@ func requestApprovalOnce(ctx context.Context, mem *memory.Store, notify *notifie
 			_ = PatchTimeline(mem, id, "timed_out")
 			slog.Warn("request_approval: timed out waiting for decision", "id", id, "title", title)
 			return "timed_out", nil
+
+		case <-escalationCh:
+			markEscalated(ctx, mem, attrKey, notify, id, title, detail, proposedAction, importance, risk, timeout)
 
 		case <-ticker.C:
 			var current ApprovalEntry
@@ -262,9 +310,10 @@ func NewRequestApprovalTool(mem *memory.Store, notify *notifier.Notifier) (tool.
 			"risk is how likely the action itself is to disrupt the host if something goes wrong. "+
 			"Do not use risk as a stand-in for importance — an urgent security fix can be low risk "+
 			"to apply, and a routine but disruptive action can be high risk but low importance. "+
-			"High-importance or high-risk requests trigger an immediate out-of-band notification. "+
-			"If no decision arrives within 24 hours the request is permanently cancelled and the "+
-			"operator is notified — it is NOT retried and the action is NOT taken. Returns "+
+			"High-importance or high-risk requests trigger an immediate out-of-band notification, plus "+
+			"a reminder halfway through the timeout window if still pending. If no decision arrives "+
+			"within 24 hours (48 hours for high-risk requests) the request is permanently cancelled and "+
+			"the operator is notified — it is NOT retried and the action is NOT taken. Returns "+
 			"\"approved\", \"rejected\", or \"timed_out\". Always use this before actions that "+
 			"modify system state, remove data, restart services, or carry medium-to-high risk.",
 		func(ctx context.Context, in requestApprovalInput) (string, error) {
@@ -337,6 +386,36 @@ func RemoveFromTimeline(mem *memory.Store, id string) error {
 	return d.Write(filtered)
 }
 
+// markEscalated sends the halfway-point reminder notification for a still-
+// pending approval and records that it fired, so it is never sent twice for
+// the same approval — the async expiry sweeper (see EscalatePending) walks
+// the same pending entries and must not duplicate a reminder this in-process
+// waiter already sent, and vice versa.
+func markEscalated(ctx context.Context, mem *memory.Store, key string, notify *notifier.Notifier, id, title, detail, proposedAction, importance, risk string, timeout time.Duration) {
+	var entry ApprovalEntry
+	if err := mem.Attrs().Get(key, &entry); err != nil {
+		slog.Warn("request_approval: escalation read failed", "id", id, "error", err)
+		return
+	}
+	if entry.Status != "pending" || entry.Escalated {
+		return
+	}
+	entry.Escalated = true
+	if err := mem.Attrs().Set(key, entry); err != nil {
+		slog.Warn("request_approval: escalation write failed", "id", id, "error", err)
+		return
+	}
+
+	notify.Notify(ctx,
+		fmt.Sprintf("[Approval Reminder] %s", title),
+		fmt.Sprintf(
+			"This request is still awaiting your decision.\n\nAction: %s\n\nDetail: %s\n\nImportance: %s\nRisk: %s\n\nApprove or reject via the central dashboard. It will be automatically cancelled if no decision is made within %s of the original request.",
+			proposedAction, detail, importance, risk, formatHours(timeout),
+		),
+	)
+	slog.Info("request_approval: sent escalation reminder", "id", id, "title", title)
+}
+
 // patchAttrs updates the status fields on an existing approval attrs entry.
 func patchAttrs(mem *memory.Store, key, newStatus, reason string, decidedAt *time.Time) error {
 	var entry ApprovalEntry
@@ -367,11 +446,52 @@ func StartExpirySweeper(ctx context.Context, mem *memory.Store, notify *notifier
 				return
 			case <-ticker.C:
 				now := time.Now()
+				EscalatePending(ctx, mem, notify, now)
 				ExpirePending(ctx, mem, notify, now)
 				pruneAttrs(mem, now)
 			}
 		}
 	}()
+}
+
+// EscalatePending sends the halfway-point reminder notification for every
+// high-importance/high-risk pending approval that hasn't already received
+// one. This covers async (AutoExecute) approvals, which have no in-process
+// waiter of their own — the blocking RequestApproval flow sends its own
+// reminder via markEscalated, and both paths set Escalated so an approval
+// never gets a duplicate. Returns the number of reminders sent. Exported for
+// the sweeper and for tests.
+func EscalatePending(ctx context.Context, mem *memory.Store, notify *notifier.Notifier, now time.Time) int {
+	attrs, err := mem.Attrs().All()
+	if err != nil {
+		slog.Warn("request_approval: escalation sweep read failed", "error", err)
+		return 0
+	}
+
+	sent := 0
+	for key, raw := range attrs {
+		if !strings.HasPrefix(key, "approval:") {
+			continue
+		}
+		var entry ApprovalEntry
+		if err := json.Unmarshal(raw, &entry); err != nil {
+			continue
+		}
+		if entry.Status != "pending" || entry.Escalated {
+			continue
+		}
+		if !strings.EqualFold(entry.Importance, "high") && !strings.EqualFold(entry.Risk, "high") {
+			continue
+		}
+		timeout := timeoutFor(entry.Risk)
+		if now.Sub(entry.RequestedAt) < timeout/2 {
+			continue
+		}
+
+		markEscalated(ctx, mem, key, notify, entry.ID, entry.Title, entry.Detail, entry.ProposedAction, entry.Importance, entry.Risk, timeout)
+		sent++
+	}
+	return sent
 }
 
 // ExpirePending marks every pending approval older than the approval timeout
@@ -395,7 +515,7 @@ func ExpirePending(ctx context.Context, mem *memory.Store, notify *notifier.Noti
 		if err := json.Unmarshal(raw, &entry); err != nil {
 			continue
 		}
-		if entry.Status != "pending" || now.Sub(entry.RequestedAt) <= approvalTimeout {
+		if entry.Status != "pending" || now.Sub(entry.RequestedAt) <= timeoutFor(entry.Risk) {
 			continue
 		}
 

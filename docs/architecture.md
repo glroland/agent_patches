@@ -143,11 +143,13 @@ Operator sees pending approval in central-ui (via WS broadcast)
                           │   entry, notifies the operator of the result
                           └─► rejected: nothing executes
 
-Expiry sweeper (every 1m): pending approvals older than 24h → timed_out
+Expiry sweeper (every 1m): pending approvals older than the timeout → timed_out
   └─► timeline patched + "action NOT taken" notification
 ```
 
-The blocking variant (`request_approval` tool, used by the patch pipeline) still polls AttrsStore in-process every 5s until decided or timed out.
+Timeout is 24h by default, 48h when the action's **risk** is high (e.g. a patch requiring a reboot) — high-risk actions are more likely to need a maintenance window before an operator can act. High-importance/high-risk approvals also get a one-time escalation reminder (agent-side notifier.Notify, and a separate central-backend email) halfway through their timeout window if still pending.
+
+The blocking variant (`request_approval` tool, used by the patch pipeline) still polls AttrsStore in-process every 5s until decided or timed out, using the same risk-based timeout and halfway-point escalation reminder.
 
 ## HTTP API Surface (endpoint-server)
 

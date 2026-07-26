@@ -17,6 +17,7 @@ import (
 	reqapproval "agent_patches/endpoint-server/skills/request_approval"
 	"agent_patches/endpoint-server/skills/run_approved_command"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/notifier"
 )
 
 // run_approved_command must file the approval and return immediately — the
@@ -216,5 +217,122 @@ func TestExpirePending_TimesOutStaleApprovals(t *testing.T) {
 	}
 	if got.Status != "pending" {
 		t.Errorf("fresh status = %q, want still pending", got.Status)
+	}
+}
+
+// High-risk approvals (e.g. patches requiring a reboot) get a 48h timeout
+// instead of the 24h default, since they're more likely to need a
+// maintenance window before an operator can act.
+func TestExpirePending_HighRiskGetsLongerTimeout(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+
+	pastDefaultNotHighRisk := reqapproval.ApprovalEntry{
+		ID:          "high-risk-30h",
+		Title:       "past 24h default, still within 48h",
+		Risk:        "high",
+		Status:      "pending",
+		RequestedAt: time.Now().Add(-30 * time.Hour),
+	}
+	pastHighRiskTimeout := reqapproval.ApprovalEntry{
+		ID:          "high-risk-49h",
+		Title:       "past the 48h high-risk timeout",
+		Risk:        "high",
+		Status:      "pending",
+		RequestedAt: time.Now().Add(-49 * time.Hour),
+	}
+	if err := mem.Attrs().Set(reqapproval.AttrsKey(pastDefaultNotHighRisk.ID), pastDefaultNotHighRisk); err != nil {
+		t.Fatalf("seed pastDefaultNotHighRisk: %v", err)
+	}
+	if err := mem.Attrs().Set(reqapproval.AttrsKey(pastHighRiskTimeout.ID), pastHighRiskTimeout); err != nil {
+		t.Fatalf("seed pastHighRiskTimeout: %v", err)
+	}
+
+	expired := reqapproval.ExpirePending(context.Background(), mem, nil, time.Now())
+	if expired != 1 {
+		t.Errorf("ExpirePending = %d, want 1", expired)
+	}
+
+	var got reqapproval.ApprovalEntry
+	if err := mem.Attrs().Get(reqapproval.AttrsKey(pastDefaultNotHighRisk.ID), &got); err != nil {
+		t.Fatalf("read pastDefaultNotHighRisk: %v", err)
+	}
+	if got.Status != "pending" {
+		t.Errorf("30h-old high-risk status = %q, want still pending (48h timeout)", got.Status)
+	}
+	if err := mem.Attrs().Get(reqapproval.AttrsKey(pastHighRiskTimeout.ID), &got); err != nil {
+		t.Fatalf("read pastHighRiskTimeout: %v", err)
+	}
+	if got.Status != "timed_out" {
+		t.Errorf("49h-old high-risk status = %q, want timed_out", got.Status)
+	}
+}
+
+// EscalatePending must send a single reminder for high-importance/high-risk
+// approvals once they pass the halfway point of their timeout window, and
+// never send it twice for the same approval.
+func TestEscalatePending_SendsReminderOnceAtHalfway(t *testing.T) {
+	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
+	notify := notifier.New(mem)
+
+	tooEarly := reqapproval.ApprovalEntry{
+		ID:          "too-early",
+		Title:       "not yet halfway",
+		Risk:        "high",
+		Status:      "pending",
+		RequestedAt: time.Now().Add(-1 * time.Hour), // 48h timeout, halfway = 24h
+	}
+	pastHalfway := reqapproval.ApprovalEntry{
+		ID:          "past-halfway",
+		Title:       "past halfway",
+		Risk:        "high",
+		Status:      "pending",
+		RequestedAt: time.Now().Add(-25 * time.Hour),
+	}
+	lowRisk := reqapproval.ApprovalEntry{
+		ID:          "low-risk-old",
+		Title:       "low importance/risk, never escalates",
+		Importance:  "low",
+		Risk:        "low",
+		Status:      "pending",
+		RequestedAt: time.Now().Add(-20 * time.Hour), // past its own 12h halfway
+	}
+	for _, e := range []reqapproval.ApprovalEntry{tooEarly, pastHalfway, lowRisk} {
+		if err := mem.Attrs().Set(reqapproval.AttrsKey(e.ID), e); err != nil {
+			t.Fatalf("seed %s: %v", e.ID, err)
+		}
+	}
+
+	sent := reqapproval.EscalatePending(context.Background(), mem, notify, time.Now())
+	if sent != 1 {
+		t.Fatalf("EscalatePending = %d, want 1", sent)
+	}
+
+	var gotPastHalfway reqapproval.ApprovalEntry
+	if err := mem.Attrs().Get(reqapproval.AttrsKey(pastHalfway.ID), &gotPastHalfway); err != nil {
+		t.Fatalf("read past-halfway: %v", err)
+	}
+	if !gotPastHalfway.Escalated || gotPastHalfway.Status != "pending" {
+		t.Errorf("past-halfway entry = %+v, want Escalated=true and still pending", gotPastHalfway)
+	}
+
+	var gotTooEarly reqapproval.ApprovalEntry
+	if err := mem.Attrs().Get(reqapproval.AttrsKey(tooEarly.ID), &gotTooEarly); err != nil {
+		t.Fatalf("read too-early: %v", err)
+	}
+	if gotTooEarly.Escalated {
+		t.Error("too-early entry was escalated before reaching the halfway point")
+	}
+
+	var gotLowRisk reqapproval.ApprovalEntry
+	if err := mem.Attrs().Get(reqapproval.AttrsKey(lowRisk.ID), &gotLowRisk); err != nil {
+		t.Fatalf("read low-risk: %v", err)
+	}
+	if gotLowRisk.Escalated {
+		t.Error("low importance/risk entry should never escalate")
+	}
+
+	// A second sweep must not send a duplicate reminder for the same approval.
+	if sent := reqapproval.EscalatePending(context.Background(), mem, notify, time.Now()); sent != 0 {
+		t.Errorf("second EscalatePending sweep = %d, want 0 (already escalated)", sent)
 	}
 }

@@ -169,14 +169,14 @@ Flow:
 1. Agent calls `request_approval` with `title`, `detail`, `proposedAction`, and `risk`
 2. An `ApprovalEntry` is written to `AttrsStore` (durable, survives restarts)
 3. A `TimelineEntry` (type=`approval`, status=`pending`) is written to the `timeline` domain
-4. If `risk="high"`: `notifier.Notify` fires immediately — operator gets an out-of-band alert without needing to check the dashboard
+4. If `importance="high"` or `risk="high"`: `notifier.Notify` fires immediately — operator gets an out-of-band alert without needing to check the dashboard
 5. The tool blocks, polling `AttrsStore` every 5 seconds
 6. Operator sees the pending approval in central-ui (via WebSocket push), reviews the proposed action, and submits a decision
 7. central-backend forwards the decision to `POST /approvals/:id/decision` on the agent
 8. The approval handler updates the `ApprovalEntry` status in `AttrsStore`
 9. The polling loop detects the status change and returns `"approved"`, `"rejected"`, or `"timed_out"`
 
-**No retry on timeout.** The approval window is 24 hours. If no decision is received, the entry transitions to `timed_out`, a second notification fires (confirming the action was NOT taken), and the approval is permanently cancelled. The agent continues and the run reports the timeout in its output.
+**No retry on timeout.** The approval window is 24 hours by default, extended to 48 hours when `risk="high"` (e.g. a patch requiring a reboot) — high-risk actions are more likely to need a maintenance window before an operator can respond. If no decision is received, the entry transitions to `timed_out`, a second notification fires (confirming the action was NOT taken), and the approval is permanently cancelled. The agent continues and the run reports the timeout in its output. High-importance/high-risk approvals also get a one-time reminder notification (and central-backend escalation email) halfway through their timeout window if still pending, so a missed initial alert gets a second chance.
 
 **`run_approved_command` does not re-verify** the approval at execution time beyond checking that its linked approval ID is in `approved` state. The approval ID is passed through the tool call chain, not re-fetched from a separate approval request.
 
@@ -185,7 +185,7 @@ Flow:
 `endpoint-server/utils/notifier/notifier.go` — writes to the `notifications` memory domain. The endpoint-server itself does not send email; it stores notifications in memory where central-backend reads them during polling and forwards them through its `emailer` service.
 
 Notification triggers:
-- `request_approval`: high-risk approval created (immediate), approval timeout (post-expiry)
+- `request_approval`: high-importance/high-risk approval created (immediate), halfway-through-timeout reminder (if still pending), approval timeout (post-expiry)
 - `loop.maybeNotify`: responsibility run completion (`when_to_notify=always`) or failure (`on_error`)
 - Login monitors: unexpected source IP, failed login threshold exceeded
 
