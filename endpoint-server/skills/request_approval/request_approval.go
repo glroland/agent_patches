@@ -38,13 +38,13 @@ const (
 	pollInterval = 5 * time.Second
 	// approvalTimeout is the default window a pending approval waits for an
 	// operator decision before being cancelled.
-	approvalTimeout = 24 * time.Hour
+	approvalTimeout = 48 * time.Hour
 	// highRiskApprovalTimeout applies instead of approvalTimeout when the
 	// action itself is high risk (e.g. a patch requiring a reboot). Those
 	// actions are more likely to need a maintenance window or a second
 	// opinion before an operator can act, so they get more time before being
 	// auto-cancelled.
-	highRiskApprovalTimeout = 48 * time.Hour
+	highRiskApprovalTimeout = 96 * time.Hour
 	maxEntries              = 50
 
 	// attrsRetention bounds how long a decided (non-pending) approval's attrs
@@ -133,8 +133,8 @@ type requestApprovalInput struct {
 // operator receives an out-of-band alert without needing to monitor the
 // dashboard, and again halfway through the timeout window if still pending.
 //
-// The timeout window is approvalTimeout (24h) by default, or
-// highRiskApprovalTimeout (48h) when risk is "high" — high-risk actions are
+// The timeout window is approvalTimeout (48h) by default, or
+// highRiskApprovalTimeout (96h) when risk is "high" — high-risk actions are
 // more likely to need a maintenance window or a second opinion before an
 // operator can act. If no decision arrives within that window, the request is
 // permanently cancelled — not retried — and the notifier fires again so the
