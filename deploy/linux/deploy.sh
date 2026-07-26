@@ -498,6 +498,16 @@ Step "Setting directory ACL on $InstallDir..."
 icacls $InstallDir /inheritance:r /grant "SYSTEM:(OI)(CI)F" /grant "Administrators:(OI)(CI)F" | Out-Null
 OK "ACL set -- only SYSTEM and Administrators can access $InstallDir"
 
+# The subdirectories were created (above) before the ACL reset just above,
+# so their inherited ACEs are a stale copy from before /inheritance:r ran and
+# will not track future parent ACL changes on their own -- reset each one so
+# it re-inherits live from $InstallDir instead of drifting.
+Step "Resetting subdirectory ACLs to inherit from $InstallDir..."
+foreach ($d in $BinDir, $ConfigDir, "$InstallDir\data", "$InstallDir\logs") {
+    icacls $d /reset /T /C | Out-Null
+}
+OK "subdirectory ACLs reset -- bin, config, data, logs now inherit from $InstallDir"
+
 Step "Stopping existing service/process..."
 $svc = Get-Service -Name $ServiceName -ErrorAction SilentlyContinue
 if ($svc -and $svc.Status -ne "Stopped") {
