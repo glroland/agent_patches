@@ -6,7 +6,7 @@ import StatCard from '../components/StatCard';
 import TimelineEntry from '../components/TimelineEntry';
 import AsyncState from '../components/AsyncState';
 import { useFleetSocket } from '../hooks/useFleetSocket';
-import { fetchGatewayStats, fetchGatewayPending } from '../api/client';
+import { fetchGatewayStats, fetchGatewayPending, fetchGatewayHistory } from '../api/client';
 import { relativeTime } from '../utils/time';
 
 // ─── Gateway stats hook ──────────────────────────────────────────────────────
@@ -47,6 +47,38 @@ function useGatewayStats() {
   }, []);
 
   return { stats, history, error, lastUpdated };
+}
+
+// ─── Gateway request history hook ────────────────────────────────────────────
+// Polls GET /gateway/stats/history, which returns every request outcome the
+// gateway currently retains (up to 25 hours — see llm-gateway/stats.go). A
+// longer interval than the live-stats poll since each response carries the
+// full retained event list rather than a delta.
+
+const HISTORY_POLL_INTERVAL = 15000;
+
+function useGatewayHistory() {
+  const [events, setEvents] = useState(null); // null = not yet loaded
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const data = await fetchGatewayHistory();
+        if (cancelled) return;
+        setEvents(data.events ?? []);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) setError(err);
+      }
+    };
+    poll();
+    const id = setInterval(poll, HISTORY_POLL_INTERVAL);
+    return () => { cancelled = true; clearInterval(id); };
+  }, []);
+
+  return { events, error };
 }
 
 // ─── SVG / chart helpers ─────────────────────────────────────────────────────
@@ -117,6 +149,183 @@ function HBar({ value, max, color }) {
   );
 }
 
+// ─── Requests-over-time chart ────────────────────────────────────────────────
+
+const HISTORY_BUCKET_MS = 15 * 60 * 1000;
+const HISTORY_BAR_W = 14;
+const HISTORY_GAP = 4;
+const HISTORY_STEP = HISTORY_BAR_W + HISTORY_GAP;
+const HISTORY_CHART_H = 140;
+const HISTORY_LABEL_EVERY = Math.round(60 * 60 * 1000 / HISTORY_BUCKET_MS); // hourly
+
+const COLOR_SUCCESS = '#0ca30c';
+const COLOR_ERROR = '#d03b3b';
+
+function bucketRequestHistory(events, bucketMs) {
+  if (!events || events.length === 0) return [];
+  const sorted = [...events].sort((a, b) => new Date(a.at) - new Date(b.at));
+  const firstBucket = Math.floor(new Date(sorted[0].at).getTime() / bucketMs) * bucketMs;
+  const lastBucket = Math.floor(Date.now() / bucketMs) * bucketMs;
+
+  const buckets = new Map();
+  for (let t = firstBucket; t <= lastBucket; t += bucketMs) {
+    buckets.set(t, { start: t, success: 0, error: 0 });
+  }
+  for (const e of sorted) {
+    const t = Math.floor(new Date(e.at).getTime() / bucketMs) * bucketMs;
+    const b = buckets.get(t);
+    if (b) {
+      if (e.success) b.success += 1; else b.error += 1;
+    }
+  }
+  return [...buckets.values()];
+}
+
+function fmtHourLabel(ms) {
+  return new Date(ms).toLocaleTimeString([], { hour: 'numeric' });
+}
+
+function fmtBucketRange(startMs, bucketMs) {
+  const fmt = (d) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return `${fmt(new Date(startMs))} – ${fmt(new Date(startMs + bucketMs))}`;
+}
+
+function RequestHistoryChart({ events, error }) {
+  const scrollRef = useRef(null);
+  const didInitialScroll = useRef(false);
+
+  const buckets = events ? bucketRequestHistory(events, HISTORY_BUCKET_MS) : [];
+  const yMax = Math.max(...buckets.map((b) => b.success + b.error), 1);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || buckets.length === 0) return;
+    const distanceFromRight = el.scrollWidth - el.scrollLeft - el.clientWidth;
+    const wasNearRight = distanceFromRight < HISTORY_STEP * 2;
+    if (wasNearRight || !didInitialScroll.current) {
+      el.scrollLeft = el.scrollWidth;
+    }
+    didInitialScroll.current = true;
+  }, [buckets.length]);
+
+  if (error) {
+    return (
+      <div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+        {/503|configured/i.test(error.message)
+          ? 'Gateway stats unavailable — set GATEWAY_STATS_URL on central-backend.'
+          : `Error: ${error.message}`}
+      </div>
+    );
+  }
+
+  if (events === null) {
+    return (
+      <div className="flex h-[180px] items-center justify-center rounded-xl border border-navy-200 bg-white shadow-sm shadow-black/20">
+        <span className="text-xs text-navy-400">Loading request history…</span>
+      </div>
+    );
+  }
+
+  if (buckets.length === 0) {
+    return (
+      <div className="flex h-[180px] items-center justify-center rounded-xl border border-navy-200 bg-white shadow-sm shadow-black/20">
+        <span className="text-xs text-navy-400">No requests recorded yet — this fills in as the gateway handles traffic.</span>
+      </div>
+    );
+  }
+
+  const labels = buckets.reduce((acc, b, i) => {
+    const x = i * HISTORY_STEP + HISTORY_BAR_W / 2;
+    if (i % HISTORY_LABEL_EVERY !== 0) {
+      acc.list.push({ start: b.start, text: null, x });
+      return acc;
+    }
+    const day = new Date(b.start).toDateString();
+    const showDay = day !== acc.lastDay;
+    const text = `${showDay ? `${new Date(b.start).toLocaleDateString([], { month: 'short', day: 'numeric' })} ` : ''}${fmtHourLabel(b.start)}`;
+    acc.list.push({ start: b.start, text, x });
+    return { list: acc.list, lastDay: day };
+  }, { list: [], lastDay: null }).list;
+
+  return (
+    <div className="rounded-xl border border-navy-200 bg-white p-4 shadow-sm shadow-black/20">
+      <div className="mb-3 flex items-center justify-between">
+        <div className="flex items-center gap-4 text-xs text-navy-500">
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: COLOR_SUCCESS }} />
+            Successful
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="h-2.5 w-2.5 rounded-sm" style={{ backgroundColor: COLOR_ERROR }} />
+            Errors
+          </span>
+        </div>
+        <span className="text-[11px] text-navy-400">Scroll to see earlier history</span>
+      </div>
+
+      <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden">
+        <div className="flex items-end gap-1" style={{ paddingTop: 80, width: buckets.length * HISTORY_STEP }}>
+          {buckets.map((b) => {
+            const total = b.success + b.error;
+            const successH = total > 0 ? Math.max(b.success > 0 ? 2 : 0, (b.success / yMax) * HISTORY_CHART_H) : 0;
+            const errorH = total > 0 ? Math.max(b.error > 0 ? 2 : 0, (b.error / yMax) * HISTORY_CHART_H) : 0;
+            const errorOnTop = b.error > 0;
+            return (
+              <div
+                key={b.start}
+                tabIndex={0}
+                className="group relative flex shrink-0 flex-col justify-end focus:outline-none"
+                style={{ height: HISTORY_CHART_H, width: HISTORY_BAR_W }}
+              >
+                {/* Tooltip */}
+                <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 w-max -translate-x-1/2 whitespace-nowrap rounded-lg border border-navy-200 bg-white px-2.5 py-1.5 text-[11px] opacity-0 shadow-lg shadow-black/20 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+                  <div className="font-semibold text-navy-800">{fmtBucketRange(b.start, HISTORY_BUCKET_MS)}</div>
+                  <div className="mt-0.5" style={{ color: COLOR_SUCCESS }}>
+                    <span className="font-semibold">{b.success}</span> successful
+                  </div>
+                  <div style={{ color: COLOR_ERROR }}>
+                    <span className="font-semibold">{b.error}</span> errors
+                  </div>
+                </div>
+
+                {total === 0 ? (
+                  <div className="h-0.5 w-full rounded-full bg-navy-100" />
+                ) : (
+                  <>
+                    {errorOnTop && (
+                      <div
+                        className="w-full rounded-t-[4px]"
+                        style={{ height: errorH, backgroundColor: COLOR_ERROR, marginBottom: 2 }}
+                      />
+                    )}
+                    <div
+                      className={`w-full ${errorOnTop ? '' : 'rounded-t-[4px]'}`}
+                      style={{ height: successH, backgroundColor: COLOR_SUCCESS }}
+                    />
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        <div className="relative flex gap-1" style={{ width: buckets.length * HISTORY_STEP, height: 18 }}>
+          {labels.map((l) => (
+            l.text === null ? null : (
+              <span
+                key={l.start}
+                className="absolute top-1 whitespace-nowrap text-[10px] text-navy-400"
+                style={{ left: l.x, transform: 'translateX(-50%)' }}
+              >
+                {l.text}
+              </span>
+            )
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
 function fmtNum(n) {
@@ -168,6 +377,7 @@ function patchTone(lastPatchedAt) {
 
 function TokenConsumptionTab({ onPendingClick }) {
   const { stats, history, error, lastUpdated } = useGatewayStats();
+  const { events: historyEvents, error: historyError } = useGatewayHistory();
 
   const endpoints = stats?.endpoints ?? [];
   const sorted = [...endpoints].sort((a, b) => b.tokens_last_hour - a.tokens_last_hour);
@@ -297,6 +507,14 @@ function TokenConsumptionTab({ onPendingClick }) {
               <RateChart title="Token Rate"   values={tokenRates}   color="#6366f1" gradId="tok-rate" unit="tok / min" />
               <RateChart title="Request Rate" values={requestRates} color="#0ea5e9" gradId="req-rate" unit="req / min" />
             </div>
+          </section>
+
+          {/* Requests over time */}
+          <section>
+            <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-navy-400">
+              Requests Over Time — Full Retained History
+            </h2>
+            <RequestHistoryChart events={historyEvents} error={historyError} />
           </section>
 
           {/* Tokens / hr by endpoint */}

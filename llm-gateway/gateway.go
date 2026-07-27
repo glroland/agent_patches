@@ -108,6 +108,11 @@ type pending struct {
 	// submittedAt is when the request was placed on the queue.
 	id          string
 	submittedAt time.Time
+
+	// success tracks the outcome for the requests-over-time history graph
+	// (GET /stats/history). Starts true; forward() flips it to false on any
+	// cancellation, upstream connection failure, or non-2xx upstream status.
+	success bool
 }
 
 type healthResponse struct {
@@ -268,6 +273,9 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "/stats":
 			g.tracker.statsHandler(g)(w, r)
 			return
+		case "/stats/history":
+			g.tracker.historyHandler()(w, r)
+			return
 		case "/pending":
 			g.tracker.pendingHandler()(w, r)
 			return
@@ -303,6 +311,7 @@ func (g *Gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		interactive:    interactive,
 		id:             fmt.Sprintf("req-%d", nextPendingID.Add(1)),
 		submittedAt:    time.Now(),
+		success:        true,
 	}
 
 	// Interactive (UI-initiated) requests go to the priority queue; background
@@ -426,6 +435,7 @@ func (g *Gateway) forward(p *pending) {
 
 	var capturedTokens int64
 	defer func() {
+		g.tracker.RecordOutcome(p.success)
 		// Skip Record for pre-dispatch cancellations — the client is gone and
 		// capturedTokens will always be 0, so counting the request is misleading.
 		if !wasAlreadyCancelled {
@@ -449,6 +459,7 @@ func (g *Gateway) forward(p *pending) {
 	if wasAlreadyCancelled {
 		slog.Info("gateway: request abandoned before dispatch — client disconnected",
 			"agent", p.name, "responsibility", p.responsibility, "host", p.host)
+		p.success = false
 		g.tracker.RecordIncomingConnError()
 		return
 	}
@@ -494,6 +505,7 @@ func (g *Gateway) forward(p *pending) {
 	inferenceStart := time.Now()
 	resp, err := g.client.Do(upReq)
 	if err != nil {
+		p.success = false
 		switch {
 		case errors.Is(err, context.DeadlineExceeded):
 			slog.Warn("gateway: upstream request timed out", "path", p.path, "timeout", g.timeout)
@@ -512,6 +524,9 @@ func (g *Gateway) forward(p *pending) {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= http.StatusBadRequest {
+		p.success = false
+	}
 	if resp.StatusCode == http.StatusTooManyRequests {
 		slog.Error("gateway: LLM returned 429 Too Many Requests — rate limit hit",
 			"agent", p.name,

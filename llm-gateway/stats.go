@@ -39,6 +39,10 @@ type Tracker struct {
 	// queued (wait) versus the time spent waiting on the upstream LLM (inference).
 	// Gateway-wide, like the error counters above.
 	durations *durationStats
+
+	// outcomes records the success/failure of every request the gateway
+	// handles, gateway-wide, backing the requests-over-time history graph.
+	outcomes *outcomeStats
 }
 
 // errorStats tracks a single connection-error counter using the same
@@ -139,6 +143,41 @@ func (d *durationStats) windowAvg(now time.Time, window time.Duration) (avgWait,
 	return
 }
 
+// outcomeEvent records one completed request's success/failure outcome,
+// gateway-wide, using the same 25-hour sliding window as errorStats. Backs
+// the requests-over-time history graph (GET /stats/history).
+type outcomeEvent struct {
+	at      time.Time
+	success bool
+}
+
+// outcomeStats tracks the outcome event log using the same 25-hour sliding
+// window approach as errorStats.
+type outcomeStats struct {
+	mu     sync.Mutex
+	events []outcomeEvent // sorted ascending by at; pruned to 25 h
+}
+
+// record appends one outcome event and prunes events older than 25 hours.
+func (o *outcomeStats) record(now time.Time, success bool) {
+	o.mu.Lock()
+	o.events = append(o.events, outcomeEvent{at: now, success: success})
+	o.prune(now)
+	o.mu.Unlock()
+}
+
+// prune removes events older than 25 hours. Must be called with o.mu held.
+func (o *outcomeStats) prune(now time.Time) {
+	cutoff := now.Add(-25 * time.Hour)
+	i := 0
+	for i < len(o.events) && o.events[i].at.Before(cutoff) {
+		i++
+	}
+	if i > 0 {
+		o.events = o.events[i:]
+	}
+}
+
 type endpointStats struct {
 	mu       sync.Mutex
 	host     string
@@ -203,6 +242,19 @@ type pendingDetail struct {
 	priority       bool
 }
 
+// RequestHistoryEvent is the JSON-serialisable view of one completed
+// request's outcome, used by GET /stats/history.
+type RequestHistoryEvent struct {
+	At      time.Time `json:"at"`
+	Success bool      `json:"success"`
+}
+
+// RequestHistoryResponse is the top-level payload returned by GET /stats/history.
+type RequestHistoryResponse struct {
+	GeneratedAt time.Time             `json:"generated_at"`
+	Events      []RequestHistoryEvent `json:"events"`
+}
+
 // PendingRequestSnapshot is the JSON-serialisable view of one pending request.
 type PendingRequestSnapshot struct {
 	ID             string    `json:"id"`
@@ -257,6 +309,7 @@ func NewTracker() *Tracker {
 		incomingErrors:   &errorStats{},
 		outgoingErrors:   &errorStats{},
 		durations:        &durationStats{},
+		outcomes:         &outcomeStats{},
 	}
 }
 
@@ -282,6 +335,13 @@ func (t *Tracker) RecordDuration(submittedAt, inferenceStart, completedAt time.T
 	wait := inferenceStart.Sub(submittedAt)
 	inference := completedAt.Sub(inferenceStart)
 	t.durations.record(completedAt, wait, inference)
+}
+
+// RecordOutcome records the success/failure of one completed request for the
+// requests-over-time history graph (GET /stats/history). Called for every
+// request the gateway handles, including requests cancelled before dispatch.
+func (t *Tracker) RecordOutcome(success bool) {
+	t.outcomes.record(time.Now(), success)
 }
 
 func (t *Tracker) get(host, name string) *endpointStats {
@@ -546,6 +606,33 @@ func (t *Tracker) PendingSnapshot() []PendingRequestSnapshot {
 	return snaps
 }
 
+// HistorySnapshot returns a copy of every outcome event currently retained
+// (up to 25 hours), sorted ascending by time. The returned slice is a copy;
+// the caller may freely mutate it.
+func (t *Tracker) HistorySnapshot() []RequestHistoryEvent {
+	t.outcomes.mu.Lock()
+	defer t.outcomes.mu.Unlock()
+	snaps := make([]RequestHistoryEvent, len(t.outcomes.events))
+	for i, e := range t.outcomes.events {
+		snaps[i] = RequestHistoryEvent{At: e.at, Success: e.success}
+	}
+	return snaps
+}
+
+// historyHandler is the http.HandlerFunc for GET /stats/history.
+func (t *Tracker) historyHandler() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		resp := RequestHistoryResponse{
+			GeneratedAt: time.Now(),
+			Events:      t.HistorySnapshot(),
+		}
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			slog.Warn("gateway: write history response", "error", err)
+		}
+	}
+}
+
 // pendingHandler is the http.HandlerFunc for GET /pending.
 func (t *Tracker) pendingHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -620,6 +707,10 @@ func (t *Tracker) Reset() {
 	t.durations.mu.Lock()
 	t.durations.events = nil
 	t.durations.mu.Unlock()
+
+	t.outcomes.mu.Lock()
+	t.outcomes.events = nil
+	t.outcomes.mu.Unlock()
 }
 
 // extractTokens parses usage counters from a buffered response body.
@@ -755,6 +846,7 @@ type persistedState struct {
 	IncomingConnErrors persistedErrorStats       `json:"incoming_conn_errors,omitempty"`
 	OutgoingConnErrors persistedErrorStats       `json:"outgoing_conn_errors,omitempty"`
 	Durations          []persistedDuration       `json:"durations,omitempty"`
+	Outcomes           []persistedOutcome        `json:"outcomes,omitempty"`
 }
 
 type persistedErrorStats struct {
@@ -788,6 +880,11 @@ type persistedResponsibility struct {
 type persistedEvent struct {
 	At     time.Time `json:"at"`
 	Tokens int64     `json:"tokens"`
+}
+
+type persistedOutcome struct {
+	At      time.Time `json:"at"`
+	Success bool      `json:"success"`
 }
 
 // Load reads the persisted stats file at path and populates the Tracker.
@@ -866,6 +963,14 @@ func (t *Tracker) Load(path string) error {
 		}
 	}
 	t.durations = durations
+
+	outcomes := &outcomeStats{}
+	for _, o := range state.Outcomes {
+		if !o.At.Before(cutoff) {
+			outcomes.events = append(outcomes.events, outcomeEvent{at: o.At, success: o.Success})
+		}
+	}
+	t.outcomes = outcomes
 
 	slog.Info("gateway: loaded persisted stats",
 		"path", path,
@@ -959,6 +1064,13 @@ func (t *Tracker) Save(path string) error {
 		state.Durations[i] = persistedDuration{At: d.at, Wait: d.wait, Inference: d.inference}
 	}
 	t.durations.mu.Unlock()
+
+	t.outcomes.mu.Lock()
+	state.Outcomes = make([]persistedOutcome, len(t.outcomes.events))
+	for i, o := range t.outcomes.events {
+		state.Outcomes[i] = persistedOutcome{At: o.at, Success: o.success}
+	}
+	t.outcomes.mu.Unlock()
 
 	data, err := json.MarshalIndent(state, "", "  ")
 	if err != nil {

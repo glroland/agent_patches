@@ -370,6 +370,71 @@ func TestTracker_RecordDuration_SaveLoadRoundtrip(t *testing.T) {
 	}
 }
 
+func TestTracker_RecordOutcome(t *testing.T) {
+	tr := NewTracker()
+
+	tr.RecordOutcome(true)
+	tr.RecordOutcome(false)
+	tr.RecordOutcome(true)
+
+	events := tr.HistorySnapshot()
+	if len(events) != 3 {
+		t.Fatalf("events = %d, want 3", len(events))
+	}
+	successes := 0
+	for _, e := range events {
+		if e.Success {
+			successes++
+		}
+	}
+	if successes != 2 {
+		t.Errorf("successes = %d, want 2", successes)
+	}
+}
+
+func TestTracker_RecordOutcome_Reset(t *testing.T) {
+	tr := NewTracker()
+
+	tr.RecordOutcome(true)
+	tr.RecordOutcome(false)
+	tr.Reset()
+
+	if events := tr.HistorySnapshot(); len(events) != 0 {
+		t.Errorf("events after reset = %d, want 0", len(events))
+	}
+}
+
+func TestTracker_RecordOutcome_SaveLoadRoundtrip(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "stats.json")
+
+	tr := NewTracker()
+	tr.RecordOutcome(true)
+	tr.RecordOutcome(false)
+	tr.RecordOutcome(true)
+	if err := tr.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	loaded := NewTracker()
+	if err := loaded.Load(path); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	events := loaded.HistorySnapshot()
+	if len(events) != 3 {
+		t.Fatalf("loaded events = %d, want 3", len(events))
+	}
+	successes := 0
+	for _, e := range events {
+		if e.Success {
+			successes++
+		}
+	}
+	if successes != 2 {
+		t.Errorf("loaded successes = %d, want 2", successes)
+	}
+}
+
 func TestTracker_ConnErrors_SaveLoadRoundtrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "stats.json")
 

@@ -36,6 +36,20 @@ export async function getPending() {
   return resp.json();
 }
 
+export async function getHistory() {
+  if (!config.gateway.statsUrl) {
+    return null;
+  }
+  const resp = await fetch(`${config.gateway.statsUrl}/stats/history`, {
+    headers: gatewayHeaders(),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!resp.ok) {
+    throw new Error(`gateway history responded ${resp.status}`);
+  }
+  return resp.json();
+}
+
 // Polls the gateway's plain liveness check (GET /health) — confirms the
 // gateway process itself is up and responding. Deliberately does NOT use
 // GET /health/ready, which makes the gateway perform an upstream

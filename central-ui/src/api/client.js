@@ -188,3 +188,9 @@ export function fetchGatewayStats() {
 export function fetchGatewayPending() {
   return getJSON('/gateway/pending');
 }
+
+// Per-request success/failure history from the gateway, covering whatever
+// window it currently retains (up to 25 hours).
+export function fetchGatewayHistory() {
+  return getJSON('/gateway/stats/history');
+}
