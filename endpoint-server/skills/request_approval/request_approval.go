@@ -312,7 +312,7 @@ func NewRequestApprovalTool(mem *memory.Store, notify *notifier.Notifier) (tool.
 			"to apply, and a routine but disruptive action can be high risk but low importance. "+
 			"High-importance or high-risk requests trigger an immediate out-of-band notification, plus "+
 			"a reminder halfway through the timeout window if still pending. If no decision arrives "+
-			"within 24 hours (48 hours for high-risk requests) the request is permanently cancelled and "+
+			"within 48 hours (96 hours for high-risk requests) the request is permanently cancelled and "+
 			"the operator is notified — it is NOT retried and the action is NOT taken. Returns "+
 			"\"approved\", \"rejected\", or \"timed_out\". Always use this before actions that "+
 			"modify system state, remove data, restart services, or carry medium-to-high risk.",

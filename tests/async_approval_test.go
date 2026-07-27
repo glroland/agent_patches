@@ -183,7 +183,7 @@ func TestExpirePending_TimesOutStaleApprovals(t *testing.T) {
 		ProposedAction: "systemctl restart foo",
 		Risk:           "low",
 		Status:         "pending",
-		RequestedAt:    time.Now().Add(-25 * time.Hour),
+		RequestedAt:    time.Now().Add(-50 * time.Hour),
 		AutoExecute:    true,
 	}
 	fresh := reqapproval.ApprovalEntry{
@@ -227,18 +227,18 @@ func TestExpirePending_HighRiskGetsLongerTimeout(t *testing.T) {
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
 
 	pastDefaultNotHighRisk := reqapproval.ApprovalEntry{
-		ID:          "high-risk-30h",
-		Title:       "past 24h default, still within 48h",
+		ID:          "high-risk-60h",
+		Title:       "past 48h default, still within 96h",
 		Risk:        "high",
 		Status:      "pending",
-		RequestedAt: time.Now().Add(-30 * time.Hour),
+		RequestedAt: time.Now().Add(-60 * time.Hour),
 	}
 	pastHighRiskTimeout := reqapproval.ApprovalEntry{
-		ID:          "high-risk-49h",
-		Title:       "past the 48h high-risk timeout",
+		ID:          "high-risk-100h",
+		Title:       "past the 96h high-risk timeout",
 		Risk:        "high",
 		Status:      "pending",
-		RequestedAt: time.Now().Add(-49 * time.Hour),
+		RequestedAt: time.Now().Add(-100 * time.Hour),
 	}
 	if err := mem.Attrs().Set(reqapproval.AttrsKey(pastDefaultNotHighRisk.ID), pastDefaultNotHighRisk); err != nil {
 		t.Fatalf("seed pastDefaultNotHighRisk: %v", err)
@@ -257,13 +257,13 @@ func TestExpirePending_HighRiskGetsLongerTimeout(t *testing.T) {
 		t.Fatalf("read pastDefaultNotHighRisk: %v", err)
 	}
 	if got.Status != "pending" {
-		t.Errorf("30h-old high-risk status = %q, want still pending (48h timeout)", got.Status)
+		t.Errorf("60h-old high-risk status = %q, want still pending (96h timeout)", got.Status)
 	}
 	if err := mem.Attrs().Get(reqapproval.AttrsKey(pastHighRiskTimeout.ID), &got); err != nil {
 		t.Fatalf("read pastHighRiskTimeout: %v", err)
 	}
 	if got.Status != "timed_out" {
-		t.Errorf("49h-old high-risk status = %q, want timed_out", got.Status)
+		t.Errorf("100h-old high-risk status = %q, want timed_out", got.Status)
 	}
 }
 
@@ -279,14 +279,14 @@ func TestEscalatePending_SendsReminderOnceAtHalfway(t *testing.T) {
 		Title:       "not yet halfway",
 		Risk:        "high",
 		Status:      "pending",
-		RequestedAt: time.Now().Add(-1 * time.Hour), // 48h timeout, halfway = 24h
+		RequestedAt: time.Now().Add(-1 * time.Hour), // 96h timeout, halfway = 48h
 	}
 	pastHalfway := reqapproval.ApprovalEntry{
 		ID:          "past-halfway",
 		Title:       "past halfway",
 		Risk:        "high",
 		Status:      "pending",
-		RequestedAt: time.Now().Add(-25 * time.Hour),
+		RequestedAt: time.Now().Add(-50 * time.Hour),
 	}
 	lowRisk := reqapproval.ApprovalEntry{
 		ID:          "low-risk-old",
@@ -294,7 +294,7 @@ func TestEscalatePending_SendsReminderOnceAtHalfway(t *testing.T) {
 		Importance:  "low",
 		Risk:        "low",
 		Status:      "pending",
-		RequestedAt: time.Now().Add(-20 * time.Hour), // past its own 12h halfway
+		RequestedAt: time.Now().Add(-30 * time.Hour), // past its own 24h halfway (48h default timeout)
 	}
 	for _, e := range []reqapproval.ApprovalEntry{tooEarly, pastHalfway, lowRisk} {
 		if err := mem.Attrs().Set(reqapproval.AttrsKey(e.ID), e); err != nil {
