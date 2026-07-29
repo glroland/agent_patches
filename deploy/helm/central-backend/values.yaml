@@ -15,11 +15,11 @@ service:
 
 resources:
   limits:
-    cpu: 100m
-    memory: 128Mi
+    cpu: 1000m
+    memory: 512Mi
   requests:
-    cpu: 50m
-    memory: 64Mi
+    cpu: 500m
+    memory: 256Mi
 
 # Name of the pre-existing Secret that holds sensitive credentials.
 # Create it manually before first sync:
