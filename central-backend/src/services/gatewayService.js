@@ -1,4 +1,5 @@
 import { config } from '../config/index.js';
+import { logger } from '../utils/logger.js';
 
 function gatewayHeaders() {
   const headers = {};
@@ -8,15 +9,28 @@ function gatewayHeaders() {
   return headers;
 }
 
+// Wraps a gateway fetch so a network error or timeout is logged with the
+// target URL before it propagates — without this, callers only ever see a
+// generic "fetch failed"/"aborted" message with no indication which gateway
+// endpoint or host was involved.
+async function gatewayFetch(path, options) {
+  const url = `${config.gateway.statsUrl}${path}`;
+  try {
+    return await fetch(url, { headers: gatewayHeaders(), signal: AbortSignal.timeout(5000), ...options });
+  } catch (err) {
+    const reason = err.name === 'TimeoutError' ? 'timed out after 5000ms' : err.message;
+    logger.warn(`gatewayService: request to ${url} failed — ${reason}`);
+    throw err;
+  }
+}
+
 export async function getStats() {
   if (!config.gateway.statsUrl) {
     return null;
   }
-  const resp = await fetch(`${config.gateway.statsUrl}/stats`, {
-    headers: gatewayHeaders(),
-    signal: AbortSignal.timeout(5000),
-  });
+  const resp = await gatewayFetch('/stats');
   if (!resp.ok) {
+    logger.warn(`gatewayService: GET /stats responded ${resp.status}`);
     throw new Error(`gateway stats responded ${resp.status}`);
   }
   return resp.json();
@@ -26,11 +40,9 @@ export async function getPending() {
   if (!config.gateway.statsUrl) {
     return null;
   }
-  const resp = await fetch(`${config.gateway.statsUrl}/pending`, {
-    headers: gatewayHeaders(),
-    signal: AbortSignal.timeout(5000),
-  });
+  const resp = await gatewayFetch('/pending');
   if (!resp.ok) {
+    logger.warn(`gatewayService: GET /pending responded ${resp.status}`);
     throw new Error(`gateway pending responded ${resp.status}`);
   }
   return resp.json();
@@ -40,11 +52,9 @@ export async function getHistory() {
   if (!config.gateway.statsUrl) {
     return null;
   }
-  const resp = await fetch(`${config.gateway.statsUrl}/stats/history`, {
-    headers: gatewayHeaders(),
-    signal: AbortSignal.timeout(5000),
-  });
+  const resp = await gatewayFetch('/stats/history');
   if (!resp.ok) {
+    logger.warn(`gatewayService: GET /stats/history responded ${resp.status}`);
     throw new Error(`gateway history responded ${resp.status}`);
   }
   return resp.json();
@@ -64,10 +74,7 @@ export async function getHealth() {
   if (!config.gateway.statsUrl) {
     return null;
   }
-  const resp = await fetch(`${config.gateway.statsUrl}/health`, {
-    headers: gatewayHeaders(),
-    signal: AbortSignal.timeout(5000),
-  });
+  const resp = await gatewayFetch('/health');
   let body;
   try {
     body = await resp.json();
@@ -84,13 +91,11 @@ export async function resetStats() {
   if (!config.gateway.statsUrl) {
     return null;
   }
-  const resp = await fetch(`${config.gateway.statsUrl}/stats`, {
-    method: 'DELETE',
-    headers: gatewayHeaders(),
-    signal: AbortSignal.timeout(5000),
-  });
+  const resp = await gatewayFetch('/stats', { method: 'DELETE' });
   if (!resp.ok) {
+    logger.warn(`gatewayService: DELETE /stats responded ${resp.status}`);
     throw new Error(`gateway reset responded ${resp.status}`);
   }
+  logger.info('gatewayService: stats reset');
   return resp.json();
 }

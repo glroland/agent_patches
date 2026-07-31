@@ -2,6 +2,7 @@ import * as fleet from '../services/fleet.js';
 import * as centralChat from '../services/centralChat.js';
 import * as chatStore from '../services/chatStore.js';
 import { CENTRAL_CHAT_ID, BROADCAST_CHAT_ID } from '../services/chatStore.js';
+import { logger } from '../utils/logger.js';
 
 // POST /api/chat — broadcast an operator chat message to every agent in the
 // fleet and return each agent's reply (or error). Both sides are recorded in
@@ -15,13 +16,17 @@ export async function broadcastMessage(req, res, next) {
       return res.status(400).json({ error: 'invalid_request', message: '"message" is required' });
     }
 
+    logger.info(`chatController.broadcastMessage: ${username} broadcasting to fleet`, { messageLength: message.length });
     chatStore.appendMessage(username, BROADCAST_CHAT_ID, { role: 'user', text: message });
     chatStore.setPending(username, BROADCAST_CHAT_ID, true);
     try {
       const results = await fleet.broadcastMessage(message);
+      const failed = results.filter((r) => r.error);
+      logger.info(`chatController.broadcastMessage: ${username} broadcast complete — ${results.length - failed.length}/${results.length} agent(s) replied`);
       chatStore.appendMessage(username, BROADCAST_CHAT_ID, { role: 'results', results });
       res.json({ results });
     } catch (err) {
+      logger.error(`chatController.broadcastMessage: ${username} broadcast failed: ${err.message}`);
       chatStore.appendMessage(username, BROADCAST_CHAT_ID, { role: 'results', results: [], error: err.message });
       throw err;
     } finally {
@@ -83,6 +88,7 @@ export function getChatHistory(req, res) {
 
 // DELETE /api/chat/history/:chatId — clear one chat thread for the current user.
 export function clearChatHistory(req, res) {
+  logger.info(`chatController.clearChatHistory: ${req.user.username} cleared chat "${req.params.chatId}"`);
   chatStore.clearChat(req.user.username, req.params.chatId);
   res.json({ cleared: true });
 }

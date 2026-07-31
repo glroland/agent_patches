@@ -1,6 +1,7 @@
 import * as fleet from '../services/fleet.js';
 import { concerns } from '../services/activity.js';
 import { invalidate as invalidateBriefing } from '../services/briefingCache.js';
+import { logger } from '../utils/logger.js';
 
 const SEVERITIES = ['critical', 'warning', 'info'];
 
@@ -30,10 +31,13 @@ export async function resolveIssue(req, res, next) {
       return res.status(400).json({ message: 'agentId is required' });
     }
 
+    const username = req.user?.username ?? 'unknown';
     const result = await fleet.resolveFinding(agentId, id);
+    logger.info(`issuesController.resolveIssue: ${username} resolved finding ${id} on ${agentId}`);
     invalidateBriefing();
     res.json(result);
   } catch (err) {
+    logger.error(`issuesController.resolveIssue: failed to resolve finding ${req.params.id} on ${req.body?.agentId}: ${err.message}`);
     next(err);
   }
 }

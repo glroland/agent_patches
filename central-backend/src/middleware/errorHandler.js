@@ -6,7 +6,7 @@ export function notFoundHandler(req, res) {
 
 // eslint-disable-next-line no-unused-vars
 export function errorHandler(err, req, res, next) {
-  logger.error(err);
   const status = err.status || 500;
+  logger.error(`${req.method} ${req.originalUrl} -> unhandled error (${status}): ${err.message}`, { stack: err.stack });
   res.status(status).json({ error: err.code || 'internal_error', message: err.message || 'Unexpected error' });
 }

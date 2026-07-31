@@ -15,6 +15,18 @@ export class AgentClient {
     this.authToken = authToken;
   }
 
+  // Every silent-failure method below (returns null instead of throwing)
+  // funnels its error through here so *why* an agent looked unreachable is
+  // still traceable in the logs — otherwise a timeout, a connection refusal,
+  // and a non-2xx response are all indistinguishable from the caller's side.
+  _logFailure(method, detail) {
+    logger.debug(`agentClient.${method}: ${this.baseUrl} failed — ${detail}`);
+  }
+
+  _describeError(err) {
+    return err?.name === 'AbortError' ? `timed out after ${this.timeoutMs}ms` : err.message;
+  }
+
   // Fetches GET /status. Returns null if the agent is unreachable, responds
   // with a non-2xx status, or returns invalid JSON — callers should treat
   // null as "offline".
@@ -28,9 +40,13 @@ export class AgentClient {
       }
 
       const res = await fetch(`${this.baseUrl}/status`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('getStatus', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('getStatus', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);
@@ -49,9 +65,13 @@ export class AgentClient {
       }
 
       const res = await fetch(`${this.baseUrl}/memory`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('getMemory', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('getMemory', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);
@@ -69,9 +89,13 @@ export class AgentClient {
         headers.Authorization = `Bearer ${this.authToken}`;
       }
       const res = await fetch(`${this.baseUrl}/memory`, { method: 'DELETE', headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('clearMemory', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('clearMemory', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);
@@ -89,9 +113,13 @@ export class AgentClient {
         headers.Authorization = `Bearer ${this.authToken}`;
       }
       const res = await fetch(`${this.baseUrl}/log`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('getLog', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('getLog', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);
@@ -109,9 +137,13 @@ export class AgentClient {
         headers.Authorization = `Bearer ${this.authToken}`;
       }
       const res = await fetch(`${this.baseUrl}/responsibilities`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('getResponsibilities', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('getResponsibilities', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);
@@ -129,9 +161,13 @@ export class AgentClient {
         headers.Authorization = `Bearer ${this.authToken}`;
       }
       const res = await fetch(`${this.baseUrl}/network-connections`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('getNetworkConnections', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('getNetworkConnections', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);
@@ -149,9 +185,13 @@ export class AgentClient {
         headers.Authorization = `Bearer ${this.authToken}`;
       }
       const res = await fetch(`${this.baseUrl}/interactive-logins`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('getInteractiveLogins', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('getInteractiveLogins', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);
@@ -246,9 +286,13 @@ export class AgentClient {
         headers.Authorization = `Bearer ${this.authToken}`;
       }
       const res = await fetch(`${this.baseUrl}/.well-known/agent-card.json`, { headers, signal: controller.signal });
-      if (!res.ok) return null;
+      if (!res.ok) {
+        this._logFailure('getAgentCard', `HTTP ${res.status}`);
+        return null;
+      }
       return await res.json();
-    } catch {
+    } catch (err) {
+      this._logFailure('getAgentCard', this._describeError(err));
       return null;
     } finally {
       clearTimeout(timer);

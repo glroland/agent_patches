@@ -14,7 +14,15 @@ const server = createServer(app);
 wsHub.attach(server);
 
 server.listen(config.server.port, config.server.host, () => {
-  logger.info(`central-backend listening on http://${config.server.host}:${config.server.port}`);
+  logger.info(`central-backend listening on http://${config.server.host}:${config.server.port} (log level: ${config.logging.level})`);
+  logger.info(
+    'central-backend: feature summary — ' +
+    `email: ${config.email.enabled ? 'enabled' : 'disabled'}, ` +
+    `intelligence: ${config.intelligence.baseUrl ? `enabled (${config.intelligence.model})` : 'disabled'}, ` +
+    `gateway stats: ${config.gateway.statsUrl ? config.gateway.statsUrl : 'disabled'}, ` +
+    `chat persistence: ${config.chat.dataDir || 'in-memory only'}, ` +
+    `agent poll interval: ${config.agents.pollIntervalSeconds}s`
+  );
   notifier.start(config.email);
   poller.start();
   intelligence.start();
