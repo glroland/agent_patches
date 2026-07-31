@@ -364,34 +364,54 @@ async function analyse() {
   }
 }
 
+// Runs are rare enough (every N minutes at most, plus manual triggers) that a
+// simple counter is enough to correlate every log line from a single run
+// without pulling in a UUID dependency.
+let _runCounter = 0;
+
 async function doAnalyse() {
+  const runId = ++_runCounter;
+  const runStart = Date.now();
+  const elapsed = () => `${Date.now() - runStart}ms`;
+
   const agents = getFleet();
   if (!agents) {
-    logger.info('intelligence: fleet data not yet available, skipping');
+    logger.info(`intelligence[${runId}]: fleet data not yet available, skipping`);
     return false;
   }
 
-  logger.info(`intelligence: analysing fleet (${agents.length} agents)`);
+  logger.info(`intelligence[${runId}]: analysing fleet (${agents.length} agents)`);
 
   const fleetText = serializeFleet(agents);
   const history = loadHistory(config.intelligence.historySize);
+  logger.debug(`intelligence[${runId}]: fleet serialized, ${history?.length ?? 0} prior report(s) loaded for context (+${elapsed()})`);
 
   // Gather gateway stats and per-agent responsibility + memory in parallel.
+  logger.info(`intelligence[${runId}]: fetching gateway stats and per-agent responsibilities/memory for ${agents.length} agent(s)`);
   const [gatewayStats, agentDetails] = await Promise.all([
     getStats().catch((err) => {
-      logger.warn(`intelligence: failed to fetch gateway stats: ${err.message}`);
+      logger.warn(`intelligence[${runId}]: failed to fetch gateway stats: ${err.message}`);
       return null;
     }),
     Promise.all(
       agents.map(async (a) => {
+        const agentStart = Date.now();
         const [responsibilities, memory] = await Promise.all([
-          fleet.getAgentResponsibilities(a.id).catch(() => null),
-          fleet.getAgentMemory(a.id).catch(() => null),
+          fleet.getAgentResponsibilities(a.id).catch((err) => {
+            logger.warn(`intelligence[${runId}]: failed to fetch responsibilities for ${a.hostname}: ${err.message}`);
+            return null;
+          }),
+          fleet.getAgentMemory(a.id).catch((err) => {
+            logger.warn(`intelligence[${runId}]: failed to fetch memory for ${a.hostname}: ${err.message}`);
+            return null;
+          }),
         ]);
+        logger.debug(`intelligence[${runId}]: fetched ${a.hostname} details in ${Date.now() - agentStart}ms (responsibilities: ${responsibilities ? 'ok' : 'unavailable'}, memory: ${memory ? 'ok' : 'unavailable'})`);
         return { hostname: a.hostname, responsibilities, memory };
       })
     ),
   ]);
+  logger.info(`intelligence[${runId}]: gateway stats and agent details gathered (+${elapsed()})`);
 
   const tokenText    = serializeTokenStats(gatewayStats, agentDetails);
   const approvalText = serializeApprovalHistory(agentDetails);
@@ -403,6 +423,11 @@ async function doAnalyse() {
 
   let raw;
   try {
+    logger.info(
+      `intelligence[${runId}]: calling LLM (model: ${config.intelligence.model}, ` +
+      `prompt: ${userContent.length} chars, timeout: ${config.intelligence.timeoutMs}ms)`
+    );
+    const llmStart = Date.now();
     const response = await _client.chat.completions.create({
       model: config.intelligence.model,
       max_tokens: 6144,
@@ -411,19 +436,23 @@ async function doAnalyse() {
         { role: 'user', content: userContent },
       ],
     });
+    logger.info(
+      `intelligence[${runId}]: LLM call returned in ${Date.now() - llmStart}ms` +
+      (response?.usage ? ` (prompt_tokens: ${response.usage.prompt_tokens}, completion_tokens: ${response.usage.completion_tokens})` : '')
+    );
 
     if (response?.error) {
-      logger.error(`intelligence: LLM error body`, { error: response.error });
+      logger.error(`intelligence[${runId}]: LLM error body`, { error: response.error });
       return false;
     }
 
     raw = response?.choices?.[0]?.message?.content?.trim() ?? '';
     if (!raw) {
-      logger.error(`intelligence: empty LLM response`);
+      logger.error(`intelligence[${runId}]: empty LLM response`);
       return false;
     }
   } catch (err) {
-    logger.error(`intelligence: API call failed: ${err.message}`);
+    logger.error(`intelligence[${runId}]: API call failed after ${elapsed()}: ${err.message}`);
     return false;
   }
 
@@ -432,7 +461,7 @@ async function doAnalyse() {
     const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
     parsed = JSON.parse(cleaned);
   } catch (err) {
-    logger.error(`intelligence: failed to parse response: ${err.message}\n${raw}`);
+    logger.error(`intelligence[${runId}]: failed to parse response: ${err.message}\n${raw}`);
     return false;
   }
 
@@ -449,7 +478,7 @@ async function doAnalyse() {
   persist(report);
   _hasReport = true;
   logger.info(
-    `intelligence: report ready — ${report.recommendations.length} recommendation(s), ` +
+    `intelligence[${runId}]: report ready in ${elapsed()} — ${report.recommendations.length} recommendation(s), ` +
     `${report.resourceOptimization.length} resource optimization(s), ` +
     `${report.approvalInsights.length} approval insight(s)`
   );

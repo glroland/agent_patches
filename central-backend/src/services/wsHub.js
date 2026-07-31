@@ -132,7 +132,12 @@ export function attach(server) {
   // Also broadcast when a new intelligence report or briefing arrives.
   subscribeIntelligence(() => {
     const fleet = getFleet();
-    if (fleet) broadcast(buildPayload(fleet));
+    if (!fleet) {
+      logger.warn('ws: intelligence report arrived but fleet cache is empty — skipping broadcast');
+      return;
+    }
+    logger.info(`ws: broadcasting new intelligence report to ${wss?.clients.size ?? 0} client(s)`);
+    broadcast(buildPayload(fleet));
   });
 
   subscribeBriefing(() => {
