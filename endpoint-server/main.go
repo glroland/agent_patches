@@ -372,7 +372,7 @@ func runServer(ctx context.Context) {
 	lp.RegisterPreCheck("disk-space-check", check_drives.NewPreCheck(mem))
 	lp.RegisterPreCheck("network-utilization-check", analyze_network_utilization.NewPreCheck(mem))
 	lp.RegisterPreCheck("keep-system-up-to-date", check_for_pending_system_patches.NewPreCheck(mem))
-	statusSvc := status.New(hostInfo, mem, lp, cfg)
+	statusSvc := status.New(hostInfo, mem, lp, cfg, store)
 	memorySvc := memoryapi.New(mem)
 	approvalSvc := approvalapi.New(mem, notify, policyStore)
 	manualRunSvc := manualrunapi.New(mem)

@@ -3,12 +3,14 @@ package memory
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"agent_patches/endpoint-server/utils/config"
@@ -42,18 +44,41 @@ var maxAge = retentionTiers[len(retentionTiers)-1].horizon
 // Domain and Attrs always return the same instance for a given name/path so
 // that the per-instance mutex actually serialises concurrent callers.
 type Store struct {
-	root  string
-	mu    sync.Mutex
-	doms  map[string]*DomainStore
-	attrs *AttrsStore
+	root      string
+	mu        sync.Mutex
+	doms      map[string]*DomainStore
+	attrs     *AttrsStore
+	sizeBytes atomic.Int64
 }
 
-// New creates a Store rooted at cfg.Root.
+// New creates a Store rooted at cfg.Root. The on-disk size of any existing
+// memory under root is measured once here (a single directory walk at
+// startup) so SizeBytes can report it thereafter without touching disk again
+// — see the delta-tracking in DomainStore.writeLocked/prune and
+// AttrsStore.Set/Delete.
 func New(cfg *config.MemorySettings) *Store {
-	return &Store{
+	s := &Store{
 		root: cfg.Root,
 		doms: make(map[string]*DomainStore),
 	}
+	s.sizeBytes.Store(dirSize(cfg.Root))
+	return s
+}
+
+// dirSize sums the size of every regular file under root. A missing root
+// (fresh agent, no memory yet) is not an error — it just contributes 0.
+func dirSize(root string) int64 {
+	var total int64
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, err := d.Info(); err == nil {
+			total += info.Size()
+		}
+		return nil
+	})
+	return total
 }
 
 // Domain returns the DomainStore for the named domain, backed by a
@@ -65,7 +90,7 @@ func (s *Store) Domain(name string) *DomainStore {
 	if d, ok := s.doms[name]; ok {
 		return d
 	}
-	d := &DomainStore{root: filepath.Join(s.root, name), Clock: time.Now}
+	d := &DomainStore{root: filepath.Join(s.root, name), Clock: time.Now, onDelta: func(n int64) { s.sizeBytes.Add(n) }}
 	s.doms[name] = d
 	return d
 }
@@ -76,9 +101,17 @@ func (s *Store) Attrs() *AttrsStore {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.attrs == nil {
-		s.attrs = &AttrsStore{path: filepath.Join(s.root, "attrs.json")}
+		s.attrs = &AttrsStore{path: filepath.Join(s.root, "attrs.json"), onDelta: func(n int64) { s.sizeBytes.Add(n) }}
 	}
 	return s.attrs
+}
+
+// SizeBytes returns the total size in bytes of every memory snapshot file
+// and the attrs file currently on disk under the store root. It is
+// maintained incrementally as writes/prunes happen (see writeLocked, prune,
+// AttrsStore.Set/Delete) — reading it never touches disk.
+func (s *Store) SizeBytes() int64 {
+	return s.sizeBytes.Load()
 }
 
 // Dump is a snapshot of every memory domain's most recent value plus all
@@ -105,6 +138,10 @@ func (s *Store) Clear() error {
 			errs = append(errs, err.Error())
 		}
 	}
+	// Clear bypasses the DomainStore/AttrsStore write paths that normally
+	// keep sizeBytes in sync, so resync it directly. This is a rare,
+	// explicit destructive operation — a one-time re-walk here is fine.
+	s.sizeBytes.Store(dirSize(s.root))
 	if len(errs) > 0 {
 		return fmt.Errorf("memory: clear: %s", strings.Join(errs, "; "))
 	}
@@ -155,9 +192,10 @@ func (s *Store) Dump() (Dump, error) {
 // for the last hour, one per hour for the last 7 days, and one per day for
 // the last 90 days; anything older is deleted on each write.
 type DomainStore struct {
-	root  string
-	mu    sync.Mutex
-	Clock func() time.Time // overridable; defaults to time.Now
+	root    string
+	mu      sync.Mutex
+	Clock   func() time.Time // overridable; defaults to time.Now
+	onDelta func(int64)      // reports net byte-count changes to the parent Store; nil-safe
 }
 
 // Snapshot is one history entry returned by ReadHistory.
@@ -305,7 +343,10 @@ func (d *DomainStore) writeLocked(v any) error {
 		return fmt.Errorf("memory: rename: %w", err)
 	}
 
-	d.prune(now)
+	pruned := d.prune(now)
+	if d.onDelta != nil {
+		d.onDelta(int64(len(data)) - pruned)
+	}
 	return nil
 }
 
@@ -448,11 +489,13 @@ func (d *DomainStore) newestFile() (string, error) {
 // prune deletes snapshots that fall outside the tiered retention policy.
 // A snapshot is assigned to the first tier whose horizon covers its age; only
 // the newest snapshot per tier bucket is kept. Any snapshot older than the
-// last tier's horizon is deleted. Caller must hold d.mu.
-func (d *DomainStore) prune(now time.Time) {
+// last tier's horizon is deleted. Caller must hold d.mu. Returns the total
+// size in bytes of the files actually removed, so the caller can keep the
+// parent Store's SizeBytes counter in sync without re-walking anything.
+func (d *DomainStore) prune(now time.Time) int64 {
 	entries, err := os.ReadDir(d.root)
 	if err != nil {
-		return
+		return 0
 	}
 
 	// bucket key (tier index + bucket index within tier) -> newest file
@@ -463,9 +506,10 @@ func (d *DomainStore) prune(now time.Time) {
 	type entry struct {
 		path string
 		ns   int64
+		size int64
 	}
 	buckets := make(map[bucketKey]entry)
-	var toDelete []string
+	var toDelete []entry
 
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") || strings.HasSuffix(e.Name(), ".tmp") {
@@ -475,11 +519,16 @@ func (d *DomainStore) prune(now time.Time) {
 		if err != nil {
 			continue
 		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
 		t := time.Unix(0, ns)
 		age := now.Sub(t)
+		fe := entry{path: filepath.Join(d.root, e.Name()), ns: ns, size: info.Size()}
 
 		if age > maxAge {
-			toDelete = append(toDelete, filepath.Join(d.root, e.Name()))
+			toDelete = append(toDelete, fe)
 			continue
 		}
 		if age < 0 {
@@ -492,20 +541,23 @@ func (d *DomainStore) prune(now time.Time) {
 				break
 			}
 		}
-		path := filepath.Join(d.root, e.Name())
 		if prev, ok := buckets[key]; !ok || ns > prev.ns {
 			if ok {
-				toDelete = append(toDelete, prev.path)
+				toDelete = append(toDelete, prev)
 			}
-			buckets[key] = entry{path: path, ns: ns}
+			buckets[key] = fe
 		} else {
-			toDelete = append(toDelete, path)
+			toDelete = append(toDelete, fe)
 		}
 	}
 
+	var pruned int64
 	for _, f := range toDelete {
-		_ = os.Remove(f)
+		if err := os.Remove(f.path); err == nil {
+			pruned += f.size
+		}
 	}
+	return pruned
 }
 
 // ---------------------------------------------------------------------------
@@ -516,8 +568,9 @@ func (d *DomainStore) prune(now time.Time) {
 // It has no history retention; each Set overwrites the previous value for
 // that key. A nil AttrsStore is safe to call — Set and Get are no-ops.
 type AttrsStore struct {
-	path string
-	mu   sync.Mutex
+	path    string
+	mu      sync.Mutex
+	onDelta func(int64) // reports net byte-count changes to the parent Store; nil-safe
 }
 
 // Set persists key=value into attrs.json. The write is atomic.
@@ -534,8 +587,10 @@ func (a *AttrsStore) Set(key string, value any) error {
 		return fmt.Errorf("memory: mkdir for attrs: %w", err)
 	}
 
+	var oldSize int64
 	attrs := make(map[string]json.RawMessage)
 	if raw, err := os.ReadFile(a.path); err == nil {
+		oldSize = int64(len(raw))
 		_ = json.Unmarshal(raw, &attrs)
 	}
 
@@ -558,6 +613,9 @@ func (a *AttrsStore) Set(key string, value any) error {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("memory: rename attrs: %w", err)
 	}
+	if a.onDelta != nil {
+		a.onDelta(int64(len(out)) - oldSize)
+	}
 	return nil
 }
 
@@ -571,8 +629,10 @@ func (a *AttrsStore) Delete(key string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	var oldSize int64
 	attrs := make(map[string]json.RawMessage)
 	if raw, err := os.ReadFile(a.path); err == nil {
+		oldSize = int64(len(raw))
 		_ = json.Unmarshal(raw, &attrs)
 	}
 
@@ -593,6 +653,9 @@ func (a *AttrsStore) Delete(key string) error {
 	if err := os.Rename(tmp, a.path); err != nil {
 		_ = os.Remove(tmp)
 		return fmt.Errorf("memory: rename attrs: %w", err)
+	}
+	if a.onDelta != nil {
+		a.onDelta(int64(len(out)) - oldSize)
 	}
 	return nil
 }

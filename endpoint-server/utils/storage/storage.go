@@ -66,6 +66,19 @@ func (s *Store) Append(record TaskRecord) error {
 	return err
 }
 
+// SizeBytes returns the current size of the backing file in bytes. Returns
+// 0, nil if the file has not been created yet (no tasks appended so far).
+func (s *Store) SizeBytes() (int64, error) {
+	info, err := os.Stat(s.path)
+	if errors.Is(err, os.ErrNotExist) {
+		return 0, nil
+	}
+	if err != nil {
+		return 0, fmt.Errorf("storage: stat %s: %w", s.path, err)
+	}
+	return info.Size(), nil
+}
+
 // All reads and returns every TaskRecord from the file.
 // Returns an empty slice (not an error) when the file does not yet exist.
 func (s *Store) All() ([]TaskRecord, error) {

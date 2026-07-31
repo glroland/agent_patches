@@ -15,6 +15,7 @@ import (
 	"agent_patches/endpoint-server/skills/check_for_pending_system_patches/patching"
 	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/storage"
 )
 
 // currentTasker reports which responsibilities are currently in flight.
@@ -32,16 +33,20 @@ type Service struct {
 	summarizer *summarizer
 	patcher    *patching.Patcher
 	purpose    string
+	tasksStore *storage.Store
 }
 
 // New creates a status Service. info is captured once at startup via
-// capture_system_info.Gather.
-func New(info capture_system_info.Info, mem *memory.Store, l currentTasker, cfg *config.Settings) *Service {
+// capture_system_info.Gather. tasksStore is the append-only tool-execution
+// audit log (tasks.jsonl) — reported alongside memory-store size so the
+// dashboard can distinguish bounded/self-pruning state from the one file
+// that can grow unbounded over an agent's uptime.
+func New(info capture_system_info.Info, mem *memory.Store, l currentTasker, cfg *config.Settings, tasksStore *storage.Store) *Service {
 	p, err := patching.New()
 	if err != nil {
 		slog.Warn("status: OS detection failed — last-updated fallback disabled", "error", err)
 	}
-	return &Service{info: info, mem: mem, loop: l, summarizer: newSummarizer(cfg), patcher: p, purpose: cfg.SystemPurpose}
+	return &Service{info: info, mem: mem, loop: l, summarizer: newSummarizer(cfg), patcher: p, purpose: cfg.SystemPurpose, tasksStore: tasksStore}
 }
 
 // Handler returns the http.HandlerFunc for GET /status.
@@ -117,6 +122,13 @@ func (s *Service) build() Response {
 		smartTrends = nil
 	}
 
+	var tasksLogBytes int64
+	if s.tasksStore != nil {
+		if sz, err := s.tasksStore.SizeBytes(); err == nil {
+			tasksLogBytes = sz
+		}
+	}
+
 	return Response{
 		Agent: AgentInfo{
 			Hostname:  s.info.Hostname,
@@ -136,6 +148,8 @@ func (s *Service) build() Response {
 		StatusDescription: statusDescription,
 		DiskTrends:        diskTrends,
 		SmartTrends:       smartTrends,
+		MemoryStoreBytes:  s.mem.SizeBytes(),
+		TasksLogBytes:     tasksLogBytes,
 	}
 }
 

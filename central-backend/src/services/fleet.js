@@ -113,6 +113,12 @@ async function toFleetAgent(inventoryAgent) {
     currentTask: statusBlock.currentTask ?? null,
     lastPatchedAt: data?.lastPatchedAt ?? null,
     buildTime: agentInfo.buildTime ?? null,
+    // On-disk size of this agent's persisted state. memoryStoreBytes is the
+    // bounded/self-pruning memory store; tasksLogBytes is the unbounded
+    // tool-execution audit log (tasks.jsonl) — the one most likely to grow
+    // over time. Both come straight from GET /status, no extra polling.
+    memoryStoreBytes: data?.memoryStoreBytes ?? null,
+    tasksLogBytes: data?.tasksLogBytes ?? null,
     // Sourced live from the agent's own GET /status response — never from
     // the inventory CSV — so it always reflects what's actually deployed.
     purpose: agentInfo.purpose || null,

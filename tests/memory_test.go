@@ -588,8 +588,148 @@ func TestMemoryDump_OmitsDomainWithNoSnapshot(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// Store.SizeBytes — incremental on-disk size tracking
+// ---------------------------------------------------------------------------
+
+func TestMemoryStore_SizeBytes_GrowsWithWrites(t *testing.T) {
+	store, root := newMemoryStore(t)
+	if got := store.SizeBytes(); got != 0 {
+		t.Fatalf("SizeBytes() on empty store = %d, want 0", got)
+	}
+
+	d1 := store.Domain("d1")
+	if err := d1.Write(map[string]string{"a": "1"}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if got, want := store.SizeBytes(), actualDirSize(t, root); got != want {
+		t.Errorf("SizeBytes() after one write = %d, want %d (actual on-disk size)", got, want)
+	}
+
+	d2 := store.Domain("d2")
+	if err := d2.Write(map[string]string{"b": "a much longer value to change the byte count"}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := store.Attrs().Set("k", "v"); err != nil {
+		t.Fatalf("Attrs().Set: %v", err)
+	}
+	if got, want := store.SizeBytes(), actualDirSize(t, root); got != want {
+		t.Errorf("SizeBytes() after further writes = %d, want %d (actual on-disk size)", got, want)
+	}
+	if got := store.SizeBytes(); got == 0 {
+		t.Error("SizeBytes() = 0, want > 0 after writes")
+	}
+}
+
+func TestMemoryStore_SizeBytes_ShrinksOnPrune(t *testing.T) {
+	store, root := newMemoryStore(t)
+	d := store.Domain("prune_size")
+
+	now := time.Now()
+	old := now.Add(-91 * 24 * time.Hour)
+	d.Clock = func() time.Time { return old }
+	if err := d.Write(map[string]string{"when": "old"}); err != nil {
+		t.Fatalf("Write old: %v", err)
+	}
+
+	d.Clock = func() time.Time { return now }
+	if err := d.Write(map[string]string{"when": "now"}); err != nil {
+		t.Fatalf("Write now: %v", err)
+	}
+
+	// The 91-day-old snapshot should have been pruned on the second write —
+	// SizeBytes must reflect only what's actually left on disk.
+	if got, want := store.SizeBytes(), actualDirSize(t, root); got != want {
+		t.Errorf("SizeBytes() after prune = %d, want %d (actual on-disk size)", got, want)
+	}
+}
+
+func TestMemoryStore_SizeBytes_AttrsOverwriteNetsOut(t *testing.T) {
+	store, root := newMemoryStore(t)
+	attrs := store.Attrs()
+
+	if err := attrs.Set("key", "a short value"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	if err := attrs.Set("key", "value"); err != nil { // shrinks attrs.json
+		t.Fatalf("Set: %v", err)
+	}
+	if err := attrs.Set("other", "a much, much longer value than before"); err != nil { // grows it
+		t.Fatalf("Set: %v", err)
+	}
+
+	// Each Set fully rewrites attrs.json; SizeBytes must track the current
+	// file size, not the sum of every write's byte count.
+	if got, want := store.SizeBytes(), actualDirSize(t, root); got != want {
+		t.Errorf("SizeBytes() after overwrites = %d, want %d (actual on-disk size)", got, want)
+	}
+
+	if err := attrs.Delete("other"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if got, want := store.SizeBytes(), actualDirSize(t, root); got != want {
+		t.Errorf("SizeBytes() after delete = %d, want %d (actual on-disk size)", got, want)
+	}
+}
+
+func TestMemoryStore_SizeBytes_SeededFromExistingFilesOnRestart(t *testing.T) {
+	dir := t.TempDir()
+	store1 := memory.New(&config.MemorySettings{Root: dir})
+	if err := store1.Domain("d").Write(map[string]string{"a": "1"}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := store1.Attrs().Set("k", "v"); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+	want := actualDirSize(t, dir)
+
+	// Simulate a process restart: a fresh Store over the same root should
+	// seed its counter from what's already on disk, not start at 0.
+	store2 := memory.New(&config.MemorySettings{Root: dir})
+	if got := store2.SizeBytes(); got != want {
+		t.Errorf("SizeBytes() on restart = %d, want %d (existing on-disk size)", got, want)
+	}
+}
+
+func TestMemoryStore_Clear_ResetsSizeBytes(t *testing.T) {
+	store, _ := newMemoryStore(t)
+	if err := store.Domain("d").Write(map[string]string{"a": "1"}); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if store.SizeBytes() == 0 {
+		t.Fatal("SizeBytes() = 0 before Clear, want > 0")
+	}
+
+	if err := store.Clear(); err != nil {
+		t.Fatalf("Clear: %v", err)
+	}
+	if got := store.SizeBytes(); got != 0 {
+		t.Errorf("SizeBytes() after Clear = %d, want 0", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
+
+// actualDirSize walks dir and sums the size of every regular file, as an
+// independent check on Store.SizeBytes()'s incremental tracking.
+func actualDirSize(t *testing.T, dir string) int64 {
+	t.Helper()
+	var total int64
+	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			total += info.Size()
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("actualDirSize %s: %v", dir, err)
+	}
+	return total
+}
 
 func jsonFilesInDir(t *testing.T, dir string) []string {
 	t.Helper()

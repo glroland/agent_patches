@@ -6,6 +6,7 @@ import AsyncState from '../components/AsyncState';
 import { SearchIcon, HandIcon } from '../components/icons';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { relativeTime } from '../utils/time';
+import { formatBytes } from '../utils/bytes';
 
 const STATUS_FILTERS = [
   { value: 'all', label: 'All' },
@@ -129,6 +130,13 @@ export default function Agents() {
                   <span key={t} className="rounded-full bg-navy-100 px-2 py-1 text-navy-600">{t}</span>
                 ))}
               </div>
+
+              {agent.memoryStoreBytes != null && (
+                <p className="mt-3 text-xs text-navy-500">
+                  Memory {formatBytes(agent.memoryStoreBytes)}
+                  {agent.tasksLogBytes != null && <> &middot; Log {formatBytes(agent.tasksLogBytes)}</>}
+                </p>
+              )}
 
               <p className="mt-4 text-xs text-navy-500">
                 Last successfully polled {agent.lastPoll ? relativeTime(agent.lastPoll) : 'never'}

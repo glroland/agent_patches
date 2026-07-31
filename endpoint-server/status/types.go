@@ -60,4 +60,14 @@ type Response struct {
 	// SmartTrends holds the 30-day rolling SMART attribute history per device.
 	// Omitted when no trend data has been recorded yet.
 	SmartTrends json.RawMessage `json:"smartTrends,omitempty"`
+	// MemoryStoreBytes is the total on-disk size of this agent's memory
+	// store (domain snapshots + attrs.json under memory.root). Not to be
+	// confused with host RAM usage (see the analyze_memory_utilization
+	// skill) — this is disk space used by persisted agent state.
+	MemoryStoreBytes int64 `json:"memoryStoreBytes"`
+	// TasksLogBytes is the size of tasks.jsonl, the append-only audit log of
+	// every tool execution. Unlike the memory store, this log has no
+	// retention/pruning, so it is the figure most likely to grow unbounded
+	// over an agent's uptime.
+	TasksLogBytes int64 `json:"tasksLogBytes"`
 }

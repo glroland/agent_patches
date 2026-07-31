@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"agent_patches/endpoint-server/skillstate"
 	"agent_patches/endpoint-server/status"
 	"agent_patches/endpoint-server/utils/config"
+	"agent_patches/endpoint-server/utils/storage"
 )
 
 // fakeCurrentTasker is a test double for the loop's RunningTasks accessor.
@@ -35,7 +37,8 @@ func newStatusService(t *testing.T, task string) (*status.Service, *memory.Store
 		Distribution: "Ubuntu",
 		Version:      "22.04",
 	}
-	return status.New(info, mem, fakeCurrentTasker{task: task}, &config.Settings{}), mem
+	tasksStore := storage.NewStore(filepath.Join(t.TempDir(), "tasks.jsonl"))
+	return status.New(info, mem, fakeCurrentTasker{task: task}, &config.Settings{}, tasksStore), mem
 }
 
 func doStatusRequest(t *testing.T, svc *status.Service) status.Response {
@@ -209,7 +212,7 @@ func TestStatusHandler_LastPatchedAt_FromAttrs(t *testing.T) {
 func TestStatusHandler_OsLabel_WithDistribAndVersion(t *testing.T) {
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
 	info := capture_system_info.Info{Hostname: "h", OS: "linux", Distribution: "Ubuntu", Version: "24.04"}
-	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{})
+	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{}, nil)
 
 	resp := doStatusRequest(t, svc)
 	if resp.Agent.OS != "Ubuntu 24.04" {
@@ -220,7 +223,7 @@ func TestStatusHandler_OsLabel_WithDistribAndVersion(t *testing.T) {
 func TestStatusHandler_OsLabel_DistribOnly(t *testing.T) {
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
 	info := capture_system_info.Info{Hostname: "h", OS: "linux", Distribution: "Debian"}
-	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{})
+	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{}, nil)
 
 	resp := doStatusRequest(t, svc)
 	if resp.Agent.OS != "Debian" {
@@ -231,7 +234,7 @@ func TestStatusHandler_OsLabel_DistribOnly(t *testing.T) {
 func TestStatusHandler_OsLabel_FallsBackToGOOS(t *testing.T) {
 	mem := memory.New(&config.MemorySettings{Root: t.TempDir()})
 	info := capture_system_info.Info{Hostname: "h", OS: "windows"}
-	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{})
+	svc := status.New(info, mem, fakeCurrentTasker{}, &config.Settings{}, nil)
 
 	resp := doStatusRequest(t, svc)
 	if resp.Agent.OS != "windows" {
