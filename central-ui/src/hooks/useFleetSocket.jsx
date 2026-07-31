@@ -19,6 +19,7 @@ export function FleetSocketProvider({ children }) {
     intelligence: null,
     intelligenceStatus: null,
     briefing: null,
+    central: null,
     connected: false,
   });
 
@@ -52,6 +53,7 @@ export function FleetSocketProvider({ children }) {
               intelligence:       msg.intelligence       !== undefined ? msg.intelligence       : prev.intelligence,
               intelligenceStatus: msg.intelligenceStatus !== undefined ? msg.intelligenceStatus : prev.intelligenceStatus,
               briefing:           msg.briefing           !== undefined ? msg.briefing           : prev.briefing,
+              central:            msg.central             !== undefined ? msg.central            : prev.central,
               connected:    true,
             }));
           }

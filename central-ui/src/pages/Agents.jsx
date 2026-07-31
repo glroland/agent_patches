@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import Badge from '../components/Badge';
 import Card from '../components/Card';
+import StatCard from '../components/StatCard';
 import AsyncState from '../components/AsyncState';
 import { SearchIcon, HandIcon } from '../components/icons';
 import { useFleetSocket } from '../hooks/useFleetSocket';
@@ -17,7 +18,7 @@ const STATUS_FILTERS = [
 ];
 
 export default function Agents() {
-  const { agents } = useFleetSocket();
+  const { agents, central } = useFleetSocket();
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
 
@@ -79,6 +80,16 @@ export default function Agents() {
           </div>
         </div>
       </div>
+
+      {central && (
+        <div>
+          <p className="text-xs font-medium uppercase tracking-wide text-navy-500">Central backend storage</p>
+          <div className="mt-2 grid grid-cols-2 gap-3 sm:w-96">
+            <StatCard label="Chat history" value={formatBytes(central.chatBytes)} />
+            <StatCard label="Intelligence reports" value={formatBytes(central.intelligenceBytes)} />
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
         {filtered.map((agent) => (

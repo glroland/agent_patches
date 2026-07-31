@@ -9,7 +9,7 @@
 // intentionally in-memory only — a backend restart aborts the request, so a
 // persisted flag would never clear.
 
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
@@ -73,6 +73,25 @@ export function clearChat(username, chatId) {
   delete data.chats[chatId];
   pending.get(username)?.delete(chatId);
   persist(username);
+}
+
+// Total on-disk size of every persisted chat-history file. 0 when dataDir is
+// unset (in-memory only) or hasn't been created yet. Cheap: one readdir plus
+// a stat per user file, no different in cost from the write path already in
+// use, and computed on demand rather than cached since the file count here
+// is small (one per user, not one per message).
+export function sizeBytes() {
+  if (!config.chat.dataDir || !existsSync(config.chat.dataDir)) return 0;
+  let total = 0;
+  for (const name of readdirSync(config.chat.dataDir)) {
+    if (!name.startsWith('chats-') || !name.endsWith('.json')) continue;
+    try {
+      total += statSync(join(config.chat.dataDir, name)).size;
+    } catch {
+      // file removed between readdir and stat — ignore
+    }
+  }
+  return total;
 }
 
 export function setPending(username, chatId, isPending) {

@@ -5,6 +5,8 @@ import { getFleet, subscribe as subscribeFleet } from './fleetCache.js';
 import { getReport, getStatus as getIntelligenceStatus, subscribe as subscribeIntelligence, subscribeStatus as subscribeIntelligenceStatus } from './intelligenceCache.js';
 import { getBriefing, subscribe as subscribeBriefing } from './briefingCache.js';
 import { pendingApprovals, recentActivity, concerns } from './activity.js';
+import * as chatStore from './chatStore.js';
+import * as intelligenceStore from './intelligenceStore.js';
 
 const PING_INTERVAL_MS = 30000;
 const ACTIVITY_LIMIT = 8;
@@ -41,6 +43,8 @@ function buildPayload(rawAgents) {
       lastPatchedAt: agent.lastPatchedAt ?? null,
       latestActivity: latest ? { title: latest.title, time: latest.time, type: latest.type } : null,
       pendingApprovalCount: pendingApprovals([agent]).length,
+      memoryStoreBytes: agent.memoryStoreBytes ?? null,
+      tasksLogBytes: agent.tasksLogBytes ?? null,
     };
   });
 
@@ -82,7 +86,14 @@ function buildPayload(rawAgents) {
   const intelligenceStatus = getIntelligenceStatus();
   const briefing = getBriefing();
 
-  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary, intelligence, intelligenceStatus, briefing });
+  // central-backend's own on-disk footprint, alongside every agent's —
+  // cheap to compute (a handful of small files at most), so no caching needed.
+  const central = {
+    chatBytes: chatStore.sizeBytes(),
+    intelligenceBytes: intelligenceStore.sizeBytes(),
+  };
+
+  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary, intelligence, intelligenceStatus, briefing, central });
 }
 
 function broadcast(payload) {

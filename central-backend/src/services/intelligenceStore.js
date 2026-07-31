@@ -2,7 +2,7 @@
 // Writes to INTELLIGENCE_DATA_DIR (a PVC mount in production).
 // When dataDir is unset the module is a no-op — in-memory only behaviour is preserved.
 
-import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
+import { readFileSync, writeFileSync, appendFileSync, existsSync, mkdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
@@ -49,6 +49,21 @@ export function clearAll() {
   } catch (err) {
     logger.warn(`intelligenceStore: failed to clear persisted reports: ${err.message}`);
   }
+}
+
+// Total on-disk size of the persisted latest report plus the full history
+// log. 0 when dataDir is unset (disabled) or neither file exists yet.
+export function sizeBytes() {
+  if (!config.intelligence.dataDir) return 0;
+  let total = 0;
+  for (const path of [latestPath(), historyPath()]) {
+    try {
+      total += statSync(path).size;
+    } catch {
+      // doesn't exist yet — contributes 0
+    }
+  }
+  return total;
 }
 
 // Returns the last n reports from history.jsonl, oldest first.
