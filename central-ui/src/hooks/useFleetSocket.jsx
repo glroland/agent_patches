@@ -17,6 +17,7 @@ export function FleetSocketProvider({ children }) {
     dashboard: null,
     summary: null,
     intelligence: null,
+    intelligenceStatus: null,
     briefing: null,
     connected: false,
   });
@@ -48,8 +49,9 @@ export function FleetSocketProvider({ children }) {
               agents:       msg.agents,
               dashboard:    msg.dashboard,
               summary:      msg.summary,
-              intelligence: msg.intelligence !== undefined ? msg.intelligence : prev.intelligence,
-              briefing:     msg.briefing     !== undefined ? msg.briefing     : prev.briefing,
+              intelligence:       msg.intelligence       !== undefined ? msg.intelligence       : prev.intelligence,
+              intelligenceStatus: msg.intelligenceStatus !== undefined ? msg.intelligenceStatus : prev.intelligenceStatus,
+              briefing:           msg.briefing           !== undefined ? msg.briefing           : prev.briefing,
               connected:    true,
             }));
           }

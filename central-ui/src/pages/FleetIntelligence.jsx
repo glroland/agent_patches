@@ -1,16 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import Card from '../components/Card';
 import AsyncState from '../components/AsyncState';
 import { useFleetSocket } from '../hooks/useFleetSocket';
 import { refreshIntelligence } from '../api/client';
 import { relativeTime } from '../utils/time';
-
-// If no fresh report arrives over the WS within this window, assume the
-// analysis failed server-side and re-enable the button. Kept just above the
-// backend's INTELLIGENCE_TIMEOUT_MS (20 minutes) so a legitimately slow model
-// isn't reported as failed while it's still within its own timeout budget.
-const REFRESH_FALLBACK_MS = 21 * 60 * 1000;
 
 const PRIORITY_STYLES = {
   high:   { badge: 'bg-rose-100 text-rose-700',  border: 'border-rose-200'  },
@@ -44,38 +38,29 @@ function RefreshButton({ refreshing, onClick }) {
 }
 
 export default function FleetIntelligence() {
-  const { intelligence } = useFleetSocket();
-  const [refreshing, setRefreshing] = useState(false);
-  const [refreshError, setRefreshError] = useState(null);
-  const generatedAtOnClick = useRef(null);
-
-  // The refreshed report arrives over the WS; a changed generatedAt means
-  // the run we triggered has completed.
-  const generatedAt = intelligence?.generatedAt ?? null;
-  useEffect(() => {
-    if (!refreshing) return;
-    if (generatedAt !== generatedAtOnClick.current) {
-      setRefreshing(false);
-      return;
-    }
-    const fallback = setTimeout(() => {
-      setRefreshing(false);
-      setRefreshError('Analysis did not complete — check the central-backend logs.');
-    }, REFRESH_FALLBACK_MS);
-    return () => clearTimeout(fallback);
-  }, [refreshing, generatedAt]);
+  const { intelligence, intelligenceStatus } = useFleetSocket();
+  // "Analysing" and "last run failed" are tracked server-side (see
+  // intelligenceCache.getStatus / setStatus) and pushed over the WS, so they
+  // survive a page refresh instead of resetting to the idle button state.
+  const refreshing = intelligenceStatus?.running ?? false;
+  const lastRunError = intelligenceStatus?.lastError ?? null;
+  const [triggerError, setTriggerError] = useState(null);
 
   async function handleRefresh() {
-    setRefreshError(null);
-    generatedAtOnClick.current = generatedAt;
-    setRefreshing(true);
+    setTriggerError(null);
     try {
       await refreshIntelligence();
     } catch (err) {
-      setRefreshing(false);
-      setRefreshError(err.message);
+      setTriggerError(err.message);
     }
   }
+
+  const generatedAt = intelligence?.generatedAt ?? null;
+  const statusMessage = triggerError
+    ? triggerError
+    : lastRunError
+      ? `Last analysis failed (${relativeTime(lastRunError.at)}): ${lastRunError.message}`
+      : null;
 
   if (intelligence === undefined) {
     return (
@@ -104,7 +89,7 @@ export default function FleetIntelligence() {
           </div>
           <div className="flex shrink-0 flex-col items-end gap-2">
             <RefreshButton refreshing={refreshing} onClick={handleRefresh} />
-            {refreshError && <p className="text-xs text-rose-600">{refreshError}</p>}
+            {statusMessage && <p className="text-xs text-rose-600">{statusMessage}</p>}
           </div>
         </div>
         <AsyncState loading loadingLabel="Analysing your fleet…" />
@@ -135,7 +120,7 @@ export default function FleetIntelligence() {
           <div className="text-right">
             <p className="text-xs text-navy-500">Last analysed {relativeTime(generatedAt)}</p>
             {agentCount && <p className="mt-0.5 text-xs text-navy-400">{agentCount} agent{agentCount !== 1 ? 's' : ''} included</p>}
-            {refreshError && <p className="mt-0.5 text-xs text-rose-600">{refreshError}</p>}
+            {statusMessage && <p className="mt-0.5 text-xs text-rose-600">{statusMessage}</p>}
           </div>
         </div>
       </div>

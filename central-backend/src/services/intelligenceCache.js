@@ -26,3 +26,25 @@ export function clear() {
     fn(null);
   }
 }
+
+// Tracks whether an analysis run is currently in flight and the outcome of
+// the last one, so the UI can reflect "analysing" / "last run failed" state
+// that survives a page refresh instead of only living in component state.
+let _status = { running: false, lastError: null };
+const _statusListeners = new Set();
+
+export function getStatus() {
+  return _status;
+}
+
+export function setStatus(status) {
+  _status = status;
+  for (const fn of _statusListeners) {
+    fn(_status);
+  }
+}
+
+export function subscribeStatus(fn) {
+  _statusListeners.add(fn);
+  return () => _statusListeners.delete(fn);
+}

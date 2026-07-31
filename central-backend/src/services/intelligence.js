@@ -7,7 +7,7 @@ import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { getFleet } from './fleetCache.js';
 import { pendingApprovals, concerns } from './activity.js';
-import { setReport } from './intelligenceCache.js';
+import { setReport, setStatus } from './intelligenceCache.js';
 import { getStats } from './gatewayService.js';
 import * as fleet from './fleet.js';
 import { loadLatest, loadHistory, persist } from './intelligenceStore.js';
@@ -349,6 +349,10 @@ Rules:
 - For approvalInsights: cite specific counts, risk levels, and operator reason text where available. Do not fabricate patterns.
 - When a "Prior Fleet Intelligence Analyses" section is present, use it to detect trends across cycles: recurring unactioned recommendations should be escalated in priority; improving or worsening metrics should be noted in the headline; patterns only visible across multiple observations (e.g. steady disk growth, persistent offline agent) should be surfaced explicitly.`;
 
+// Set at the point of failure inside doAnalyse() so analyse() can attach a
+// specific reason to the status broadcast instead of a generic message.
+let _failureReason = null;
+
 // Returns true if a fresh report was produced, false otherwise (already
 // running, fleet data unavailable, or the LLM call/parse failed).
 async function analyse() {
@@ -357,8 +361,15 @@ async function analyse() {
     return false;
   }
   _running = true;
+  _failureReason = null;
+  setStatus({ running: true, lastError: null });
   try {
-    return await doAnalyse();
+    const ok = await doAnalyse();
+    setStatus({
+      running: false,
+      lastError: ok ? null : { message: _failureReason ?? 'Analysis failed — check the central-backend logs.', at: new Date().toISOString() },
+    });
+    return ok;
   } finally {
     _running = false;
   }
@@ -377,6 +388,7 @@ async function doAnalyse() {
   const agents = getFleet();
   if (!agents) {
     logger.info(`intelligence[${runId}]: fleet data not yet available, skipping`);
+    _failureReason = 'Fleet data is not available yet.';
     return false;
   }
 
@@ -443,16 +455,19 @@ async function doAnalyse() {
 
     if (response?.error) {
       logger.error(`intelligence[${runId}]: LLM error body`, { error: response.error });
+      _failureReason = `LLM returned an error: ${response.error.message ?? JSON.stringify(response.error)}`;
       return false;
     }
 
     raw = response?.choices?.[0]?.message?.content?.trim() ?? '';
     if (!raw) {
       logger.error(`intelligence[${runId}]: empty LLM response`);
+      _failureReason = 'LLM returned an empty response.';
       return false;
     }
   } catch (err) {
     logger.error(`intelligence[${runId}]: API call failed after ${elapsed()}: ${err.message}`);
+    _failureReason = `LLM call failed: ${err.message}`;
     return false;
   }
 
@@ -462,6 +477,7 @@ async function doAnalyse() {
     parsed = JSON.parse(cleaned);
   } catch (err) {
     logger.error(`intelligence[${runId}]: failed to parse response: ${err.message}\n${raw}`);
+    _failureReason = `Could not parse the LLM response: ${err.message}`;
     return false;
   }
 

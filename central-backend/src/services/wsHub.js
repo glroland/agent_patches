@@ -2,7 +2,7 @@ import { WebSocketServer } from 'ws';
 import { logger } from '../utils/logger.js';
 import { validateWsToken } from '../middleware/auth.js';
 import { getFleet, subscribe as subscribeFleet } from './fleetCache.js';
-import { getReport, subscribe as subscribeIntelligence } from './intelligenceCache.js';
+import { getReport, getStatus as getIntelligenceStatus, subscribe as subscribeIntelligence, subscribeStatus as subscribeIntelligenceStatus } from './intelligenceCache.js';
 import { getBriefing, subscribe as subscribeBriefing } from './briefingCache.js';
 import { pendingApprovals, recentActivity, concerns } from './activity.js';
 
@@ -79,9 +79,10 @@ function buildPayload(rawAgents) {
   };
 
   const intelligence = getReport();
+  const intelligenceStatus = getIntelligenceStatus();
   const briefing = getBriefing();
 
-  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary, intelligence, briefing });
+  return JSON.stringify({ type: 'fleet_update', agents, dashboard, summary, intelligence, intelligenceStatus, briefing });
 }
 
 function broadcast(payload) {
@@ -141,6 +142,14 @@ export function attach(server) {
   });
 
   subscribeBriefing(() => {
+    const fleet = getFleet();
+    if (fleet) broadcast(buildPayload(fleet));
+  });
+
+  // Also broadcast the moment an analysis run starts/finishes, so the
+  // "Analysing…" state and any failure reason reach clients (including ones
+  // that connect or refresh mid-run) without waiting for a full report.
+  subscribeIntelligenceStatus(() => {
     const fleet = getFleet();
     if (fleet) broadcast(buildPayload(fleet));
   });
